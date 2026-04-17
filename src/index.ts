@@ -136,11 +136,7 @@ async function run(): Promise<void> {
     owner, repo, sha: headSha, state, context: statusContext, description,
   });
 
-  core.info(`Verdict: ${verdict}. Status: ${state}.`);
-
-  if (state === 'failure') {
-    core.setFailed(`Jules review verdict: ${verdict}`);
-  }
+  core.info(`Verdict: ${verdict}. Status check: ${state}.`);
 }
 
 async function pollForReview(

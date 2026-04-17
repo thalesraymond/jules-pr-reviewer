@@ -40770,10 +40770,7 @@ async function run() {
     await octokit.rest.repos.createCommitStatus({
         owner, repo, sha: headSha, state, context: statusContext, description,
     });
-    info(`Verdict: ${verdict}. Status: ${state}.`);
-    if (state === 'failure') {
-        setFailed(`Jules review verdict: ${verdict}`);
-    }
+    info(`Verdict: ${verdict}. Status check: ${state}.`);
 }
 async function pollForReview(session, timeoutMs) {
     const deadline = Date.now() + timeoutMs;
