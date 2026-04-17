@@ -51,6 +51,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+concurrency:
+  group: jules-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
     runs-on: ubuntu-latest
@@ -64,6 +68,8 @@ jobs:
           jules_api_key: ${{ secrets.JULES_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+The `concurrency` block cancels an older review run when a new commit lands, preventing race conditions where a stale run's verdict overwrites a fresh one. **Recommended.**
 
 ### 3. (Optional) Gate merges on the review
 
@@ -164,18 +170,33 @@ The **workflow job itself always passes** if the action ran successfully — the
 
 ## Prerequisites
 
-Your repo must be connected to your Jules account. After authenticating at jules.google.com with GitHub, the repos you authorize become available as sources. You can verify with:
+Your repo must be connected to your Jules account. After authenticating at jules.google.com with GitHub, the repos you authorize become available as sources. To verify, create a file `list-sources.mjs`:
 
-```bash
-JULES_API_KEY=... node -e "import('@google/jules-sdk').then(async m=>{for await (const s of m.jules.sources()) if (s.type==='githubRepo') console.log(s.githubRepo.owner+'/'+s.githubRepo.repo)})"
+```js
+import { jules } from '@google/jules-sdk';
+for await (const s of jules.sources()) {
+  if (s.type === 'githubRepo') {
+    console.log(`${s.githubRepo.owner}/${s.githubRepo.repo}`);
+  }
+}
 ```
+
+Then run: `JULES_API_KEY=... node list-sources.mjs`
+
+## Security
+
+- **Only `pull_request` is supported.** `pull_request_target` is rejected — it runs with base-repo write tokens, and exposes the action to prompt-injection via attacker-controlled diffs.
+- **Fork PRs are skipped by default** (`skip_forks: true`). An untrusted fork's diff/PR description can contain prompt-injection payloads. The action's system prompt has defense-in-depth instructions telling Jules to ignore instructions embedded in untrusted content and flag them as blocking — but skipping forks is the safer default.
+- **`rules_file` is loaded from the base SHA**, not the PR head. An attacker cannot change the review rules by editing them in their PR.
+- **All untrusted content is fenced** in the prompt as "UNTRUSTED" with explicit instructions to Jules.
+- **Failure modes are resilient**: if Jules times out, the API errors, or the action crashes, the commit status is set to `error` and the PR comment is updated with a failure note — merge isn't silently blocked by a stale `pending` check.
 
 ## Notes
 
 - **Latency**: typical review is 40s–5min.
 - **Cost**: each PR open/push creates one Jules session. Rate-limit via `bypass_label`, label-gated workflow triggers, or `paths:` filters.
-- **Fork PRs**: skipped by default. To enable for trusted forks, set `skip_forks: false` and use `pull_request_target` with caution.
 - **Drafts**: skipped by default; mark `ready_for_review` to trigger.
+- **Large diffs**: diff is truncated at 80 KB. When truncated, the prompt tells Jules its review may be incomplete.
 
 ## License
 
