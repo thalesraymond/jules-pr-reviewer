@@ -40749,29 +40749,8 @@ async function run() {
     });
     info(`Jules session: ${session.id}`);
     await waitUntilSessionReady(session);
-    info('Waiting for session to complete…');
-    try {
-        const outcome = await session.result();
-        info(`Session completed: ${outcome.state}`);
-    }
-    catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        warning(`result() error: ${msg}`);
-    }
-    let reviewMessage = '';
-    try {
-        await session.hydrate();
-        for await (const activity of session.history()) {
-            if (activity.type === 'agentMessaged') {
-                reviewMessage = activity.message;
-            }
-        }
-        info(`Collected review (${reviewMessage.length} chars)`);
-    }
-    catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        warning(`history() error: ${msg}`);
-    }
+    const reviewMessage = await pollForReview(session, 15 * 60 * 1000);
+    info(`Collected review (${reviewMessage.length} chars)`);
     if (!reviewMessage) {
         const failBody = `${IN_PROGRESS_MARKER}\n⚠️ **Jules did not return a review.** Session: \`${session.id}\`. Check Jules dashboard or re-run the workflow.`;
         await octokit.rest.issues.updateComment({ owner, repo, comment_id: commentId, body: failBody });
@@ -40795,6 +40774,32 @@ async function run() {
     if (state === 'failure') {
         setFailed(`Jules review verdict: ${verdict}`);
     }
+}
+async function pollForReview(session, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    let attempt = 0;
+    while (Date.now() < deadline) {
+        attempt++;
+        try {
+            await session.hydrate();
+            let last = '';
+            for await (const a of session.history()) {
+                if (a.type === 'agentMessaged')
+                    last = a.message;
+            }
+            if (last) {
+                info(`Got agentMessaged on attempt ${attempt}.`);
+                return last;
+            }
+            info(`No agentMessaged yet (attempt ${attempt})…`);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            info(`hydrate/history error (attempt ${attempt}): ${msg}`);
+        }
+        await new Promise(r => setTimeout(r, 20_000));
+    }
+    return '';
 }
 async function waitUntilSessionReady(session) {
     const maxAttempts = 20;

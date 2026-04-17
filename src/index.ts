@@ -110,28 +110,8 @@ async function run(): Promise<void> {
 
   await waitUntilSessionReady(session);
 
-  core.info('Waiting for session to complete…');
-  try {
-    const outcome = await session.result();
-    core.info(`Session completed: ${outcome.state}`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    core.warning(`result() error: ${msg}`);
-  }
-
-  let reviewMessage = '';
-  try {
-    await (session as any).hydrate();
-    for await (const activity of session.history()) {
-      if (activity.type === 'agentMessaged') {
-        reviewMessage = activity.message;
-      }
-    }
-    core.info(`Collected review (${reviewMessage.length} chars)`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    core.warning(`history() error: ${msg}`);
-  }
+  const reviewMessage = await pollForReview(session as any, 15 * 60 * 1000);
+  core.info(`Collected review (${reviewMessage.length} chars)`);
 
   if (!reviewMessage) {
     const failBody = `${IN_PROGRESS_MARKER}\n⚠️ **Jules did not return a review.** Session: \`${session.id}\`. Check Jules dashboard or re-run the workflow.`;
@@ -161,6 +141,34 @@ async function run(): Promise<void> {
   if (state === 'failure') {
     core.setFailed(`Jules review verdict: ${verdict}`);
   }
+}
+
+async function pollForReview(
+  session: { id: string; hydrate: () => Promise<number>; history: () => AsyncIterable<any> },
+  timeoutMs: number,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    attempt++;
+    try {
+      await session.hydrate();
+      let last = '';
+      for await (const a of session.history()) {
+        if (a.type === 'agentMessaged') last = a.message;
+      }
+      if (last) {
+        core.info(`Got agentMessaged on attempt ${attempt}.`);
+        return last;
+      }
+      core.info(`No agentMessaged yet (attempt ${attempt})…`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      core.info(`hydrate/history error (attempt ${attempt}): ${msg}`);
+    }
+    await new Promise(r => setTimeout(r, 20_000));
+  }
+  return '';
 }
 
 async function waitUntilSessionReady(session: { id: string; info: () => Promise<unknown> }): Promise<void> {
