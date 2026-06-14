@@ -168,7 +168,7 @@ describe("index.ts", () => {
     ];
     await loadIndex();
     expect(mockInfo).toHaveBeenCalledWith(
-      "Bypass label \"skip-review\" present — skipping review."
+      'Bypass label "skip-review" present — skipping review.'
     );
   });
 

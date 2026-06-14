@@ -54,7 +54,7 @@ describe("jules.ts", () => {
 
     it("returns parsed review result", async () => {
       const reviewText =
-        "```json\n{\"summary\": \"test\", \"verdict\": \"approve\"}\n```";
+        '```json\n{"summary": "test", "verdict": "approve"}\n```';
       const mockJulesWith = vi.fn().mockReturnValue({
         session: vi
           .fn()
@@ -74,7 +74,7 @@ describe("jules.ts", () => {
     });
 
     it("returns parsed review result without markdown blocks", async () => {
-      const reviewText = "{\"summary\": \"test2\", \"verdict\": \"approve\"}";
+      const reviewText = '{"summary": "test2", "verdict": "approve"}';
       const mockJulesWith = vi.fn().mockReturnValue({
         session: vi
           .fn()
@@ -143,7 +143,7 @@ describe("jules.ts", () => {
       const mockSession = mockSessionWithHistory([
         {
           type: "agentMessaged",
-          message: "{\"summary\":\"test\",\"verdict\":\"approve\"}",
+          message: '{"summary":"test","verdict":"approve"}',
         },
       ]);
       mockSession.info = sessionInfoMock;
@@ -167,7 +167,7 @@ describe("jules.ts", () => {
       const mockSession = mockSessionWithHistory([
         {
           type: "agentMessaged",
-          message: "{\"summary\":\"test\",\"verdict\":\"approve\"}",
+          message: '{"summary":"test","verdict":"approve"}',
         },
       ]);
       mockSession.info = sessionInfoMock;
@@ -230,7 +230,7 @@ describe("jules.ts", () => {
         { type: "thought", message: "thinking" },
         {
           type: "agentMessaged",
-          message: "{\"summary\":\"test\",\"verdict\":\"approve\"}",
+          message: '{"summary":"test","verdict":"approve"}',
         },
       ]);
       mockSession.hydrate = hydrateMock;

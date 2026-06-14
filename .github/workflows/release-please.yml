@@ -27,9 +27,9 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          
+
           # Force create the major version tag (e.g., v1, v2) pointing to the current commit
           git tag -fa v${{ steps.release.outputs.major }} -m "Release v${{ steps.release.outputs.major }}"
-          
+
           # Force push the tag
           git push origin v${{ steps.release.outputs.major }} --force

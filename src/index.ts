@@ -64,7 +64,9 @@ async function run(): Promise<void> {
   const baseSha: string = pr.base.sha;
   const isDraft: boolean = !!pr.draft;
   const isFork: boolean = pr.head.repo?.full_name !== `${owner}/${repo}`;
-  const labels: string[] = (pr.labels || []).map((l: { name: string }) => l.name);
+  const labels: string[] = (pr.labels || []).map(
+    (l: { name: string }) => l.name
+  );
 
   const octokit = github.getOctokit(token);
 

@@ -12,8 +12,6 @@ export default tseslint.config(
       ecmaVersion: "latest",
       sourceType: "module",
     },
-    rules: {
-      quotes: ["error", "double"],
-    },
+    rules: {},
   }
 );

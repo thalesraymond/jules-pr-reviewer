@@ -11,6 +11,8 @@ jobs:
       contents: read
       statuses: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - uses: ./
         with:
           jules_api_key: ${{ secrets.JULES_API_KEY }}
