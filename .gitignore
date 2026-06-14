@@ -6,3 +6,5 @@ lib/
 .jules/
 .scratch/
 coverage/
+coverage/**
+.scannerwork/

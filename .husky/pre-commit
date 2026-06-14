@@ -5,5 +5,5 @@ if [ -n "$(git status --porcelain dist)" ]; then
   echo "adding forgotten dist changes"
   git add dist
 fi
-pnpm test
+pnpm coverage
 

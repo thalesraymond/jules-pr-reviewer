@@ -6,3 +6,4 @@ pnpm-lock.yaml
 *.yml
 *.yaml
 *.json
+*.properties
