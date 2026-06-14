@@ -35,7 +35,7 @@
     "@commitlint/cli": "^21.0.2",
     "@commitlint/config-conventional": "^21.0.2",
     "@eslint/js": "^10.0.1",
-    "@types/node": "^25.6.0",
+    "@types/node": "^25.9.3",
     "@vercel/ncc": "^0.38.4",
     "@vitest/coverage-v8": "^4.1.8",
     "commitizen": "^4.3.2",
