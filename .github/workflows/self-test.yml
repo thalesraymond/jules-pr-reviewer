@@ -3,6 +3,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+concurrency:
+  group: jules-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   review:
     if: github.actor != 'dependabot[bot]'
