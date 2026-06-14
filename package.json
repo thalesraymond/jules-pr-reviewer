@@ -27,7 +27,7 @@
   },
   "homepage": "https://github.com/thalesraymond/jules-pr-reviewer#readme",
   "dependencies": {
-    "@actions/core": "^3.0.0",
+    "@actions/core": "^3.0.1",
     "@actions/github": "^9.1.1",
     "@google/jules-sdk": "^0.2.0"
   },
