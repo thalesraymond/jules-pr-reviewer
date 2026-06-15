@@ -372,3 +372,53 @@ describe("index.ts", () => {
     );
   });
 });
+
+describe("statusFromVerdict", () => {
+  it("when failOn is never", async () => {
+    const { statusFromVerdict } = await import("../src/index.js");
+    expect(statusFromVerdict("approve", "never")).toEqual({
+      state: "success",
+      description: "Review complete (verdict: approve)",
+    });
+    expect(statusFromVerdict("comment", "never")).toEqual({
+      state: "success",
+      description: "Review complete (verdict: comment)",
+    });
+    expect(statusFromVerdict("block", "never")).toEqual({
+      state: "success",
+      description: "Review complete (verdict: block)",
+    });
+  });
+
+  it("when failOn is any", async () => {
+    const { statusFromVerdict } = await import("../src/index.js");
+    expect(statusFromVerdict("approve", "any")).toEqual({
+      state: "success",
+      description: "Approved",
+    });
+    expect(statusFromVerdict("comment", "any")).toEqual({
+      state: "failure",
+      description: "Review verdict: comment",
+    });
+    expect(statusFromVerdict("block", "any")).toEqual({
+      state: "failure",
+      description: "Review verdict: block",
+    });
+  });
+
+  it("when failOn is blocking", async () => {
+    const { statusFromVerdict } = await import("../src/index.js");
+    expect(statusFromVerdict("approve", "blocking")).toEqual({
+      state: "success",
+      description: "Review complete (verdict: approve)",
+    });
+    expect(statusFromVerdict("comment", "blocking")).toEqual({
+      state: "success",
+      description: "Review complete (verdict: comment)",
+    });
+    expect(statusFromVerdict("block", "blocking")).toEqual({
+      state: "failure",
+      description: "Blocking issues found",
+    });
+  });
+});
