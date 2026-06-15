@@ -59,7 +59,10 @@ function parseJulesResponse(message: string): ReviewResult {
   if (jsonMatch) {
     try {
       return JSON.parse(jsonMatch[1]) as ReviewResult;
-    } catch {
+    } catch (e) {
+      core.warning(
+        `Failed to parse JSON code block: ${e}. Falling back to parsing whole message.`
+      );
       // fallback
     }
   }
