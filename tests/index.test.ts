@@ -12,6 +12,26 @@ vi.mock("@actions/github");
 // We'll reset modules before each test.
 
 describe("index.ts", () => {
+  describe("truncate", () => {
+    it("should return original string if its length is less than or equal to max", async () => {
+      const mod = await import("../src/index.js");
+      expect(mod.truncate("hello", 10)).toBe("hello");
+      expect(mod.truncate("hello", 5)).toBe("hello");
+    });
+
+    it("should truncate string and append ellipsis if length > max", async () => {
+      const mod = await import("../src/index.js");
+      expect(mod.truncate("hello world", 5)).toBe("hell…");
+      expect(mod.truncate("1234567890", 3)).toBe("12…");
+    });
+
+    it("should handle edge cases", async () => {
+      const mod = await import("../src/index.js");
+      expect(mod.truncate("", 5)).toBe("");
+      expect(mod.truncate("a", 1)).toBe("a");
+      expect(mod.truncate("ab", 1)).toBe("…");
+    });
+  });
   let mockGetInput: any;
   let mockSetFailed: any;
   let mockGetBooleanInput: any;
