@@ -11,6 +11,7 @@ import {
 } from "./github.js";
 import { runJulesReview, wrapPermissionError } from "./jules.js";
 import { buildReviewPrompt } from "./prompt.js";
+import { filterDiffFiles } from "./diffUtils.js";
 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
 const VALID_FAIL_ON: FailOn[] = ["never", "blocking", "any"];
@@ -118,6 +119,14 @@ async function run(): Promise<void> {
       headSha
     );
 
+    // Filter out common lock files from the diff to save tokens and prevent noisy reviews
+    const filteredDiff = filterDiffFiles(diff, [
+      /package-lock\.json$/,
+      /yarn\.lock$/,
+      /pnpm-lock\.yaml$/,
+      /bun\.lockb$/,
+    ]);
+
     let rulesFromFile: string | undefined;
     if (rulesFilePath) {
       rulesFromFile = await loadRulesFromBase(
@@ -129,7 +138,10 @@ async function run(): Promise<void> {
       );
     }
 
-    const { text: diffText, truncatedNote } = truncateDiff(diff, 80_000);
+    const { text: diffText, truncatedNote } = truncateDiff(
+      filteredDiff,
+      80_000
+    );
 
     const openThreads = await fetchOpenThreads(octokit, owner, repo, prNumber);
 
