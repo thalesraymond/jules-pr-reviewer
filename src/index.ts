@@ -243,23 +243,23 @@ function statusFromVerdict(
   verdict: Verdict,
   failOn: FailOn
 ): { state: "success" | "failure"; description: string } {
-  if (failOn === "never") {
-    return {
-      state: "success",
-      description: `Review complete (verdict: ${verdict})`,
-    };
-  }
-  if (failOn === "any") {
-    return verdict === "approve"
-      ? { state: "success", description: "Approved" }
-      : { state: "failure", description: `Review verdict: ${verdict}` };
-  }
-  return verdict === "block"
-    ? { state: "failure", description: "Blocking issues found" }
-    : {
-        state: "success",
-        description: `Review complete (verdict: ${verdict})`,
-      };
+  const isFailure =
+    (failOn === "any" && verdict !== "approve") ||
+    (failOn === "blocking" && verdict === "block");
+
+  const descriptions = {
+    never: `Review complete (verdict: ${verdict})`,
+    any: verdict === "approve" ? "Approved" : `Review verdict: ${verdict}`,
+    blocking:
+      verdict === "block"
+        ? "Blocking issues found"
+        : `Review complete (verdict: ${verdict})`,
+  };
+
+  return {
+    state: isFailure ? "failure" : "success",
+    description: descriptions[failOn],
+  };
 }
 
 run().catch((err) => {
