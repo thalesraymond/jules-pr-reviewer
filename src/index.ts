@@ -109,7 +109,9 @@ async function run(): Promise<void> {
       core.info(`Reviewing full PR diff from ${baseShaForDiff} to ${headSha}`);
     }
 
-    const diff = await fetchDiff(
+    // ⚡ Bolt: Parallelize independent GitHub API calls to reduce total I/O wait time
+    // Performance impact: Reduces PR data fetching time from O(a+b+c) to O(max(a,b,c))
+    const diffPromise = fetchDiff(
       octokit,
       owner,
       repo,
@@ -118,20 +120,19 @@ async function run(): Promise<void> {
       headSha
     );
 
-    let rulesFromFile: string | undefined;
-    if (rulesFilePath) {
-      rulesFromFile = await loadRulesFromBase(
-        octokit,
-        owner,
-        repo,
-        rulesFilePath,
-        baseSha
-      );
-    }
+    const rulesPromise = rulesFilePath
+      ? loadRulesFromBase(octokit, owner, repo, rulesFilePath, baseSha)
+      : Promise.resolve(undefined);
+
+    const openThreadsPromise = fetchOpenThreads(octokit, owner, repo, prNumber);
+
+    const [diff, rulesFromFile, openThreads] = await Promise.all([
+      diffPromise,
+      rulesPromise,
+      openThreadsPromise,
+    ]);
 
     const { text: diffText, truncatedNote } = truncateDiff(diff, 80_000);
-
-    const openThreads = await fetchOpenThreads(octokit, owner, repo, prNumber);
 
     const prompt = buildReviewPrompt({
       repoFullName: `${owner}/${repo}`,
