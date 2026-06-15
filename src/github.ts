@@ -122,23 +122,25 @@ export async function resolveThreads(
   octokit: ReturnType<typeof github.getOctokit>,
   threadIds: string[]
 ): Promise<void> {
-  for (const id of threadIds) {
-    try {
-      await octokit.graphql(
-        `
+  await Promise.all(
+    threadIds.map(async (id) => {
+      try {
+        await octokit.graphql(
+          `
         mutation($id: ID!) {
           resolveReviewThread(input: {threadId: $id}) {
             thread { isResolved }
           }
         }
       `,
-        { id }
-      );
-      core.info(`Resolved thread ${id}`);
-    } catch (e) {
-      core.warning(`Failed to resolve thread ${id}: ${e}`);
-    }
-  }
+          { id }
+        );
+        core.info(`Resolved thread ${id}`);
+      } catch (e) {
+        core.warning(`Failed to resolve thread ${id}: ${e}`);
+      }
+    })
+  );
 }
 
 export async function submitReview(
