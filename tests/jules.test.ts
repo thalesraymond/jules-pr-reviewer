@@ -290,6 +290,22 @@ describe("jules.ts", () => {
       expect(isAuthError("status 500 server error")).toBe(false);
     });
 
+    it("returns false for false positives", () => {
+      expect(isAuthError("My ID is 401 and I failed")).toBe(false);
+      expect(isAuthError("Just a string error")).toBe(false);
+      expect(isAuthError("Some other error")).toBe(false);
+      expect(isAuthError("Resource not accessible by integration")).toBe(false);
+    });
+
+    it("returns true for other valid formats", () => {
+      expect(isAuthError("Error code: 403")).toBe(true);
+      expect(isAuthError("Error 401")).toBe(true);
+      expect(isAuthError("401: Unauthorized")).toBe(true);
+      expect(isAuthError("Http 401")).toBe(true);
+      expect(isAuthError("status=401")).toBe(true);
+      expect(isAuthError("Request failed with status 403")).toBe(true);
+    });
+
     it("wraps 403 error with helpful instructions", () => {
       const err = new Error("Request failed with status 403");
       const result = wrapPermissionError(
