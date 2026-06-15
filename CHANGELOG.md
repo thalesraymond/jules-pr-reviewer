@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.1.0...v1.2.0) (2026-06-15)
+
+
+### Features
+
+* dummy feat ([5a5dfc0](https://github.com/thalesraymond/jules-pr-reviewer/commit/5a5dfc0802b4314c8fbf673f910a1d17b802b465))
+* empty feat to test release-please new model ([18f94ea](https://github.com/thalesraymond/jules-pr-reviewer/commit/18f94ea25b274a11c008666db91bfa98b18b4398))
+
 ## [1.1.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.0.0...v1.1.0) (2026-06-14)
 
 
