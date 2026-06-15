@@ -16,6 +16,7 @@ export async function runJulesReview(
   const session = await customJules.session({
     prompt,
     source,
+    title: "Code Review",
     requireApproval: false,
     autoPr: false,
   });
