@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.3.0...v1.3.1) (2026-06-15)
+
+
+### Bug Fixes
+
+* avoid release please losing history ([2dad5f2](https://github.com/thalesraymond/jules-pr-reviewer/commit/2dad5f2c7fdeb433207aaa89345be9261ef1a0b0))
+* **ci:** fix release-please tag ([77b300b](https://github.com/thalesraymond/jules-pr-reviewer/commit/77b300ba5b81f6ccc4e3ba6335c53ad70770fb11))
+
 ## [1.3.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.2.0...v1.3.0) (2026-06-15)
 
 
