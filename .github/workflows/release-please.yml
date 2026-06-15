@@ -19,17 +19,51 @@ jobs:
           release-type: node
 
       # If a release was created, we check out the code to update the major tag
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         if: ${{ steps.release.outputs.release_created }}
 
-      - name: Update major tag
+      - name: Setup Node.js
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install pnpm
+        if: ${{ steps.release.outputs.release_created }}
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Build and Package
+        if: ${{ steps.release.outputs.release_created }}
+        run: |
+          pnpm install
+          pnpm build
+          zip -r dist.zip dist/
+
+      - name: Upload Release Asset
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ steps.release.outputs.tag_name }} dist.zip
+
+      - name: Update tags with built action
         if: ${{ steps.release.outputs.release_created }}
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
 
-          # Force create the major version tag (e.g., v1, v2) pointing to the current commit
-          git tag -fa v${{ steps.release.outputs.major }} -m "Release v${{ steps.release.outputs.major }}"
+          # Force add the ignored dist directory
+          git add -f dist/
+          git commit -m "build: compile action for release ${{ steps.release.outputs.tag_name }} [skip ci]"
 
-          # Force push the tag
+          # Force create the major version tag (e.g., v1) pointing to this commit
+          git tag -fa v${{ steps.release.outputs.major }} -m "Release v${{ steps.release.outputs.major }}"
+          
+          # Force recreate the exact version tag to point to this commit
+          git tag -fa ${{ steps.release.outputs.tag_name }} -m "Release ${{ steps.release.outputs.tag_name }}"
+
+          # Force push the tags
           git push origin v${{ steps.release.outputs.major }} --force
+          git push origin ${{ steps.release.outputs.tag_name }} --force
