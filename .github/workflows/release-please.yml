@@ -63,4 +63,3 @@ jobs:
 
           # Force push the tags
           git push origin v${{ steps.release.outputs.major }} --force
-          git push origin ${{ steps.release.outputs.tag_name }} --force
