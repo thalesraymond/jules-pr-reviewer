@@ -209,3 +209,32 @@ export async function setStatus(
     description,
   });
 }
+
+/**
+ * Extracts a unique list of changed file paths from a standard git diff.
+ * Handles quoted paths and paths with spaces.
+ *
+ * @param diff The git diff string
+ * @returns Array of unique file paths changed in the diff
+ */
+export function extractChangedFilesFromDiff(diff: string): string[] {
+  const files = new Set<string>();
+  const lines = diff.split("\n");
+
+  for (const line of lines) {
+    // Match standard git diff lines
+    // diff --git a/src/index.ts b/src/index.ts
+    // diff --git "a/src/my file.ts" "b/src/my file.ts"
+    const match = line.match(
+      /^diff --git (?:a\/(.*?)|"a\/(.*?)") (?:b\/(.*?)|"b\/(.*?)")$/
+    );
+    if (match) {
+      const file = match[3] || match[4] || match[1] || match[2];
+      if (file) {
+        files.add(file);
+      }
+    }
+  }
+
+  return Array.from(files);
+}

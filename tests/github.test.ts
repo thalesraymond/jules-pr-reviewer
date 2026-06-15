@@ -7,6 +7,7 @@ import {
   setStatus,
   submitReview,
   fetchOpenThreads,
+  extractChangedFilesFromDiff,
 } from "../src/github.js";
 
 describe("github.ts", () => {
@@ -342,5 +343,50 @@ describe("github.ts", () => {
       context: "context",
       description: "desc",
     });
+  });
+});
+
+describe("extractChangedFilesFromDiff", () => {
+  it("should extract standard unquoted file paths", () => {
+    const diff = `
+diff --git a/src/index.ts b/src/index.ts
+--- a/src/index.ts
++++ b/src/index.ts
+diff --git a/tests/index.test.ts b/tests/index.test.ts
+--- a/tests/index.test.ts
++++ b/tests/index.test.ts
+`;
+    const files = extractChangedFilesFromDiff(diff);
+    expect(files).toEqual(["src/index.ts", "tests/index.test.ts"]);
+  });
+
+  it("should extract quoted file paths (e.g. paths with spaces)", () => {
+    const diff = `
+diff --git "a/src/my file.ts" "b/src/my file.ts"
+--- "a/src/my file.ts"
++++ "b/src/my file.ts"
+diff --git "a/my project/config.json" "b/my project/config.json"
+`;
+    const files = extractChangedFilesFromDiff(diff);
+    expect(files).toEqual(["src/my file.ts", "my project/config.json"]);
+  });
+
+  it("should return unique file paths", () => {
+    const diff = `
+diff --git a/src/index.ts b/src/index.ts
+diff --git a/src/index.ts b/src/index.ts
+`;
+    const files = extractChangedFilesFromDiff(diff);
+    expect(files).toEqual(["src/index.ts"]);
+  });
+
+  it("should return empty array if no matches", () => {
+    const diff = `
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,3 +1,3 @@
+`;
+    const files = extractChangedFilesFromDiff(diff);
+    expect(files).toEqual([]);
   });
 });
