@@ -321,6 +321,56 @@ describe("github.ts", () => {
     });
   });
 
+  it("submitReview gracefully falls back to summary only on Unprocessable Entity", async () => {
+    const octokit = {
+      rest: {
+        pulls: {
+          createReview: vi
+            .fn()
+            .mockRejectedValueOnce(
+              new Error(
+                "Unprocessable Entity: Diff entry dist/index.js diff is too large"
+              )
+            )
+            .mockResolvedValueOnce({}),
+        },
+      },
+    } as any;
+
+    await submitReview(octokit, "owner", "repo", 1, "headSHA", "Summary text", [
+      {
+        file: "dist/index.js",
+        line: 10,
+        severity: "High",
+        confidence: "High",
+        message: "Msg",
+      },
+    ]);
+
+    expect(octokit.rest.pulls.createReview).toHaveBeenCalledTimes(2);
+    expect(octokit.rest.pulls.createReview).toHaveBeenNthCalledWith(2, {
+      owner: "owner",
+      repo: "repo",
+      pull_number: 1,
+      commit_id: "headSHA",
+      event: "COMMENT",
+      body: expect.stringContaining("Some inline comments could not be posted"),
+    });
+  });
+
+  it("submitReview throws unexpected errors", async () => {
+    const octokit = {
+      rest: {
+        pulls: {
+          createReview: vi.fn().mockRejectedValue(new Error("Unknown Error")),
+        },
+      },
+    } as any;
+    await expect(
+      submitReview(octokit, "owner", "repo", 1, "headSHA", "Summary text", [])
+    ).rejects.toThrow("Unknown Error");
+  });
+
   it("setStatus sets commit status", async () => {
     const octokit = {
       rest: { repos: { createCommitStatus: vi.fn().mockResolvedValue({}) } },

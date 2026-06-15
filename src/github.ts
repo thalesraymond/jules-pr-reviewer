@@ -180,15 +180,40 @@ ${c.promptForAgents}
     };
   });
 
-  await octokit.rest.pulls.createReview({
-    owner,
-    repo,
-    pull_number: prNumber,
-    commit_id: headSha,
-    event: "COMMENT",
-    body: summary,
-    comments: formattedComments,
-  });
+  try {
+    await octokit.rest.pulls.createReview({
+      owner,
+      repo,
+      pull_number: prNumber,
+      commit_id: headSha,
+      event: "COMMENT",
+      body: summary,
+      comments: formattedComments,
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (
+      msg.includes("diff is too large") ||
+      msg.includes("Unprocessable Entity")
+    ) {
+      core.warning(
+        `Failed to submit inline comments due to large diffs (${msg}). Retrying with summary only.`
+      );
+
+      const fallbackBody = `${summary}\n\n> ⚠️ **Note:** Some inline comments could not be posted due to GitHub's size limits for inline review comments on large diffs.`;
+
+      await octokit.rest.pulls.createReview({
+        owner,
+        repo,
+        pull_number: prNumber,
+        commit_id: headSha,
+        event: "COMMENT",
+        body: fallbackBody,
+      });
+    } else {
+      throw error;
+    }
+  }
 }
 
 export async function setStatus(
