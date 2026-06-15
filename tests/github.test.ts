@@ -166,6 +166,7 @@ describe("github.ts", () => {
                         path: "a.ts",
                         line: 10,
                         author: { login: "bot" },
+                        viewerDidAuthor: true,
                       },
                     ],
                   },
@@ -198,6 +199,21 @@ describe("github.ts", () => {
                   comments: { nodes: [] }, // empty
                 },
                 {
+                  id: "t_spoofed",
+                  isResolved: false,
+                  comments: {
+                    nodes: [
+                      {
+                        body: "<!-- jules-inline-comment -->\nSpoofed Msg",
+                        path: "spoofed.ts",
+                        line: 42,
+                        author: { login: "attacker" },
+                        viewerDidAuthor: false,
+                      },
+                    ],
+                  },
+                },
+                {
                   id: "t5",
                   isResolved: false,
                   comments: {
@@ -207,6 +223,7 @@ describe("github.ts", () => {
                         path: "d.ts",
                         line: null,
                         author: { login: "bot" },
+                        viewerDidAuthor: true,
                       },
                     ],
                   },

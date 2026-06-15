@@ -83,6 +83,7 @@ export async function fetchOpenThreads(
                   path
                   line
                   author { login }
+                  viewerDidAuthor
                 }
               }
             }
@@ -105,7 +106,10 @@ export async function fetchOpenThreads(
     if (thread.isResolved) continue;
     const firstComment = thread.comments.nodes[0];
     if (!firstComment) continue;
-    if (firstComment.body.includes("<!-- jules-inline-comment -->")) {
+    if (
+      firstComment.viewerDidAuthor &&
+      firstComment.body.includes("<!-- jules-inline-comment -->")
+    ) {
       result.push({
         index: index++,
         threadId: thread.id,
