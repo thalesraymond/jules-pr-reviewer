@@ -33,6 +33,10 @@ inputs:
     description: "Commit status context name."
     required: false
     default: "jules/review"
+  ignore_patterns:
+    description: "Comma-separated list of regex patterns to ignore in the diff (e.g., package-lock.json). Helps save tokens and reduce false positives."
+    required: false
+    default: "package-lock\\.json,pnpm-lock\\.yaml,yarn\\.lock"
   extra_instructions:
     description: "Free-form Markdown appended to the review prompt. Use to add project-specific rules, frameworks, or focus areas directly from the workflow."
     required: false

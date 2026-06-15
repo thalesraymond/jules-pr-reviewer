@@ -11,6 +11,7 @@ import {
 } from "./github.js";
 import { runJulesReview, wrapPermissionError } from "./jules.js";
 import { buildReviewPrompt } from "./prompt.js";
+import { filterDiff } from "./diff.js";
 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
 const VALID_FAIL_ON: FailOn[] = ["never", "blocking", "any"];
@@ -32,6 +33,15 @@ async function run(): Promise<void> {
   const skipForks = core.getBooleanInput("skip_forks");
   const bypassLabel = core.getInput("bypass_label");
   const statusContext = core.getInput("status_context");
+  const ignorePatternsRaw = core.getInput("ignore_patterns");
+  const ignorePatterns = ignorePatternsRaw
+    ? ignorePatternsRaw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((p) => new RegExp(p))
+    : [];
+
   const extraInstructions = core.getInput("extra_instructions");
   const rulesFilePath = core.getInput("rules_file");
   const timeoutMinutesRaw = core.getInput("timeout_minutes") || "30";
@@ -118,7 +128,16 @@ async function run(): Promise<void> {
       headSha
     );
 
+    const filteredDiff = filterDiff(diff, ignorePatterns);
+
+    if (filteredDiff.length !== diff.length) {
+      core.info(
+        `Filtered diff from ${diff.length} to ${filteredDiff.length} chars based on ignore_patterns.`
+      );
+    }
+
     let rulesFromFile: string | undefined;
+
     if (rulesFilePath) {
       rulesFromFile = await loadRulesFromBase(
         octokit,
@@ -129,7 +148,10 @@ async function run(): Promise<void> {
       );
     }
 
-    const { text: diffText, truncatedNote } = truncateDiff(diff, 80_000);
+    const { text: diffText, truncatedNote } = truncateDiff(
+      filteredDiff,
+      80_000
+    );
 
     const openThreads = await fetchOpenThreads(octokit, owner, repo, prNumber);
 

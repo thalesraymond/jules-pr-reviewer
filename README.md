@@ -143,6 +143,7 @@ The workflow's `extra_instructions` is appended after the rules file content. Us
 | `skip_forks`         | `true`                          | Skip PRs from forks (diff can contain prompt-injection payloads). |
 | `bypass_label`       | `jules-override`                | If the PR has this label, skip the review.                        |
 | `status_context`     | `jules/review`                  | Commit status context name.                                       |
+| `ignore_patterns`    | `package-lock\.json,pnpm-lock\.yaml,yarn\.lock` | Comma-separated regex patterns to filter out of the diff.         |
 | `extra_instructions` | `''`                            | Markdown appended to the prompt.                                  |
 | `rules_file`         | `.github/jules-review-rules.md` | Path in repo to load as extra rules. Set empty to disable.        |
 | `timeout_minutes`    | `30`                            | How long to wait for Jules to return a review.                    |
