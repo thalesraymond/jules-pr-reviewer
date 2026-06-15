@@ -372,3 +372,63 @@ describe("index.ts", () => {
     );
   });
 });
+
+describe("truncate", () => {
+  let truncate: any;
+
+  beforeEach(async () => {
+    const mod = await import("../src/index.js");
+    truncate = mod.truncate;
+  });
+
+  it("returns original string if length is exactly max", () => {
+    expect(truncate("hello", 5)).toBe("hello");
+  });
+
+  it("returns original string if length is less than max", () => {
+    expect(truncate("hi", 5)).toBe("hi");
+  });
+
+  it("truncates string and appends ellipsis if length exceeds max", () => {
+    expect(truncate("hello world", 5)).toBe("hell…");
+  });
+
+  it("handles empty string", () => {
+    expect(truncate("", 5)).toBe("");
+  });
+
+  it("handles max of 1", () => {
+    expect(truncate("a", 1)).toBe("a");
+    expect(truncate("ab", 1)).toBe("…");
+  });
+});
+
+describe("truncate", () => {
+  let truncate: any;
+
+  beforeEach(async () => {
+    const mod = await import("../src/index.js");
+    truncate = mod.truncate;
+  });
+
+  it("returns original string if length is exactly max", () => {
+    expect(truncate("hello", 5)).toBe("hello");
+  });
+
+  it("returns original string if length is less than max", () => {
+    expect(truncate("hi", 5)).toBe("hi");
+  });
+
+  it("truncates string and appends ellipsis if length exceeds max", () => {
+    expect(truncate("hello world", 5)).toBe("hell…");
+  });
+
+  it("handles empty string", () => {
+    expect(truncate("", 5)).toBe("");
+  });
+
+  it("handles max of 1", () => {
+    expect(truncate("a", 1)).toBe("a");
+    expect(truncate("ab", 1)).toBe("…");
+  });
+});
