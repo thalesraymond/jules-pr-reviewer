@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.1.0...v1.2.0) (2026-06-15)
+
+
+### Features
+
+* dummy-commit ([f334a6f](https://github.com/thalesraymond/jules-pr-reviewer/commit/f334a6ff0da28f8272c28d6ca918d69e9e4da3a8))
+
 ## [1.1.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.0.0...v1.1.0) (2026-06-14)
 
 
