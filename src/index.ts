@@ -11,6 +11,7 @@ import {
 } from "./github.js";
 import { runJulesReview, wrapPermissionError } from "./jules.js";
 import { buildReviewPrompt } from "./prompt.js";
+import { filterDiff } from "./utils.js";
 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
 const VALID_FAIL_ON: FailOn[] = ["never", "blocking", "any"];
@@ -129,7 +130,16 @@ async function run(): Promise<void> {
       );
     }
 
-    const { text: diffText, truncatedNote } = truncateDiff(diff, 80_000);
+    const filteredDiff = filterDiff(diff, [
+      /package-lock\.json$/,
+      /pnpm-lock\.yaml$/,
+      /yarn\.lock$/,
+    ]);
+
+    const { text: diffText, truncatedNote } = truncateDiff(
+      filteredDiff,
+      80_000
+    );
 
     const openThreads = await fetchOpenThreads(octokit, owner, repo, prNumber);
 
