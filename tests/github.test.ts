@@ -9,6 +9,66 @@ import {
   fetchOpenThreads,
 } from "../src/github.js";
 
+import { filterLockfilesFromDiff } from "../src/github.js";
+
+describe("filterLockfilesFromDiff", () => {
+  it("removes lockfile chunks and keeps others", () => {
+    const diff = `diff --git a/index.js b/index.js
+index e69de29..d95f3ad 100644
+--- a/index.js
++++ b/index.js
+@@ -0,0 +1 @@
++console.log("hello");
+diff --git a/package-lock.json b/package-lock.json
+index 123456..789012 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,5 +1,6 @@
+ {
+   "name": "foo",
+-  "version": "1.0.0"
++  "version": "1.0.1"
+ }
+diff --git a/utils.js b/utils.js
+index 123..456 100644
+--- a/utils.js
++++ b/utils.js
+@@ -1,2 +1,3 @@
+ function a() {}
++function b() {}
+`;
+    const filtered = filterLockfilesFromDiff(diff);
+    expect(filtered).toContain("diff --git a/index.js b/index.js");
+    expect(filtered).toContain("diff --git a/utils.js b/utils.js");
+    expect(filtered).not.toContain("package-lock.json");
+    expect(filtered).not.toContain('"version": "1.0.1"');
+  });
+
+  it("handles diffs with no lockfiles", () => {
+    const diff = `diff --git a/index.js b/index.js
+index e69de29..d95f3ad 100644
+--- a/index.js
++++ b/index.js
+@@ -0,0 +1 @@
++console.log("hello");`;
+    const filtered = filterLockfilesFromDiff(diff);
+    expect(filtered).toBe(diff);
+  });
+
+  it("handles diffs consisting entirely of lockfiles", () => {
+    const diff = `diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 123..456 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -1,2 +1,2 @@
+ lockfileVersion: '6.0'
+-dependencies:
++dependencies: {}`;
+    const filtered = filterLockfilesFromDiff(diff);
+    expect(filtered.trim()).toBe("");
+  });
+});
+
 describe("github.ts", () => {
   it("fetchDiff works with compareCommitsWithBasehead", async () => {
     const octokit = {

@@ -2,6 +2,33 @@ import * as github from "@actions/github";
 import * as core from "@actions/core";
 import { OpenThread, ReviewComment } from "./types.js";
 
+export function filterLockfilesFromDiff(diff: string): string {
+  const fileChunks = diff.split(/^diff --git /m);
+  if (fileChunks.length <= 1) return diff;
+
+  const filteredChunks = fileChunks.filter((chunk) => {
+    if (!chunk.trim()) return true;
+    const firstLine = chunk.split("\n", 1)[0];
+    if (
+      firstLine.includes("package-lock.json") ||
+      firstLine.includes("pnpm-lock.yaml") ||
+      firstLine.includes("yarn.lock") ||
+      firstLine.includes("bun.lockb") ||
+      firstLine.includes("Cargo.lock") ||
+      firstLine.includes("Gemfile.lock")
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  return filteredChunks
+    .map((chunk, i) =>
+      i === 0 && !chunk.startsWith("a/") ? chunk : `diff --git ${chunk}`
+    )
+    .join("");
+}
+
 export async function fetchDiff(
   octokit: ReturnType<typeof github.getOctokit>,
   owner: string,
@@ -18,7 +45,7 @@ export async function fetchDiff(
       mediaType: { format: "diff" },
     });
     const data = compare.data as unknown;
-    if (typeof data === "string") return data;
+    if (typeof data === "string") return filterLockfilesFromDiff(data);
   } catch (err) {
     core.warning(
       `compareCommitsWithBasehead failed, falling back to pulls.get: ${String(err)}`
@@ -33,7 +60,7 @@ export async function fetchDiff(
     mediaType: { format: "diff" },
   });
   const data = res.data as unknown;
-  if (typeof data === "string") return data;
+  if (typeof data === "string") return filterLockfilesFromDiff(data);
 
   throw new Error("GitHub returned no diff text.");
 }
