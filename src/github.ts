@@ -1,3 +1,4 @@
+import { withRetry } from "./utils/retry.js";
 import * as github from "@actions/github";
 import * as core from "@actions/core";
 import { OpenThread, ReviewComment } from "./types.js";
@@ -180,15 +181,17 @@ ${c.promptForAgents}
     };
   });
 
-  await octokit.rest.pulls.createReview({
-    owner,
-    repo,
-    pull_number: prNumber,
-    commit_id: headSha,
-    event: "COMMENT",
-    body: summary,
-    comments: formattedComments,
-  });
+  await withRetry(async () =>
+    octokit.rest.pulls.createReview({
+      owner,
+      repo,
+      pull_number: prNumber,
+      commit_id: headSha,
+      event: "COMMENT",
+      body: summary,
+      comments: formattedComments,
+    })
+  );
 }
 
 export async function setStatus(
@@ -200,12 +203,14 @@ export async function setStatus(
   state: "pending" | "success" | "failure" | "error",
   description: string
 ): Promise<void> {
-  await octokit.rest.repos.createCommitStatus({
-    owner,
-    repo,
-    sha,
-    state,
-    context,
-    description,
-  });
+  await withRetry(async () =>
+    octokit.rest.repos.createCommitStatus({
+      owner,
+      repo,
+      sha,
+      state,
+      context,
+      description,
+    })
+  );
 }
