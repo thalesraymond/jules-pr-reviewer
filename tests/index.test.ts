@@ -17,6 +17,7 @@ describe("index.ts", () => {
   let mockGetBooleanInput: any;
   let mockInfo: any;
   let mockOctokit: any;
+  let mockSetSecret: any;
 
   // mock sub-modules
   const mockGithubHelper = {
@@ -41,6 +42,7 @@ describe("index.ts", () => {
     mockGetBooleanInput = vi.spyOn(core, "getBooleanInput");
     mockSetFailed = vi.spyOn(core, "setFailed");
     mockInfo = vi.spyOn(core, "info");
+    mockSetSecret = vi.spyOn(core, "setSecret");
 
     // Default inputs
     mockGetInput.mockImplementation((name: string) => {
@@ -121,6 +123,12 @@ describe("index.ts", () => {
     expect(mockSetFailed).toHaveBeenCalledWith(
       "No pull_request payload found."
     );
+  });
+
+  it("sets tokens as secrets to prevent leaking", async () => {
+    await loadIndex();
+    expect(mockSetSecret).toHaveBeenCalledWith("dummy_key");
+    expect(mockSetSecret).toHaveBeenCalledWith("dummy_token");
   });
 
   it("fails if fail_on is invalid", async () => {

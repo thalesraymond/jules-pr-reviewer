@@ -41062,6 +41062,7 @@ async function run() {
     const apiKey = getInput("jules_api_key", { required: true });
     core_setSecret(apiKey);
     const token = getInput("github_token", { required: true });
+    core_setSecret(token);
     const failOnRaw = getInput("fail_on");
     if (!VALID_FAIL_ON.includes(failOnRaw)) {
         setFailed(`Invalid fail_on: "${failOnRaw}". Must be one of: ${VALID_FAIL_ON.join(", ")}.`);
