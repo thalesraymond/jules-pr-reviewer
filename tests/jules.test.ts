@@ -290,6 +290,20 @@ describe("jules.ts", () => {
       expect(isAuthError("status 500 server error")).toBe(false);
     });
 
+    it("returns false for non-auth usage of 401 and 403 (false positives)", () => {
+      expect(isAuthError("Processed 401 items successfully")).toBe(false);
+      expect(isAuthError("The error code was 1403")).toBe(false);
+      expect(isAuthError("URL: /api/v401/users")).toBe(false);
+      expect(isAuthError("Time elapsed: 403ms")).toBe(false);
+    });
+
+    it("returns true for various valid auth error formats", () => {
+      expect(isAuthError("Request failed with status code 401")).toBe(true);
+      expect(isAuthError("[401 Unauthorized] Request failed")).toBe(true);
+      expect(isAuthError("[403 Forbidden] Operation not allowed")).toBe(true);
+      expect(isAuthError("Error: 401 unauthenticated request")).toBe(true);
+    });
+
     it("wraps 403 error with helpful instructions", () => {
       const err = new Error("Request failed with status 403");
       const result = wrapPermissionError(

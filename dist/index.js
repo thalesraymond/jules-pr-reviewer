@@ -40952,7 +40952,7 @@ async function pollForReview(session, timeoutMs) {
     return "";
 }
 function isAuthError(msg) {
-    return /\b(?:401|403)\b/.test(msg);
+    return /(?:\bstatus(?: code)?\s*(?:401|403)\b|\[(?:401|403)\b|\b(?:401|403)\s+(?:unauthorized|forbidden|unauthenticated)\b)/i.test(msg);
 }
 function wrapPermissionError(err, needed, op) {
     const msg = err instanceof Error ? err.message : String(err);

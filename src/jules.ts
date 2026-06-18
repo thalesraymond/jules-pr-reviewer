@@ -141,7 +141,9 @@ async function pollForReview(
 }
 
 export function isAuthError(msg: string): boolean {
-  return /\b(?:401|403)\b/.test(msg);
+  return /(?:\bstatus(?: code)?\s*(?:401|403)\b|\[(?:401|403)\b|\b(?:401|403)\s+(?:unauthorized|forbidden|unauthenticated)\b)/i.test(
+    msg
+  );
 }
 
 export function wrapPermissionError(
