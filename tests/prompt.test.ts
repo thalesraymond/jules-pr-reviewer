@@ -13,9 +13,15 @@ describe("buildReviewPrompt", () => {
     });
 
     expect(prompt).toContain("# Repository\nowner/repo (PR #123)");
-    expect(prompt).toContain("# UNTRUSTED: PR title\nMy PR");
-    expect(prompt).toContain("# UNTRUSTED: PR description\nPR Description");
-    expect(prompt).toContain("```diff\n+ const a = 1;\n```");
+    expect(prompt).toContain(
+      "# UNTRUSTED: PR title\n<pr_title>\nMy PR\n</pr_title>"
+    );
+    expect(prompt).toContain(
+      "# UNTRUSTED: PR description\n<pr_description>\nPR Description\n</pr_description>"
+    );
+    expect(prompt).toContain(
+      "<pr_diff>\n```diff\n+ const a = 1;\n```\n</pr_diff>"
+    );
     expect(prompt).not.toContain("# UNTRUSTED: Project-specific rules");
     expect(prompt).not.toContain("# Trusted: Additional instructions");
     expect(prompt).not.toContain("NOTE: The diff was truncated");
@@ -46,7 +52,9 @@ describe("buildReviewPrompt", () => {
       openThreads: [],
     });
 
-    expect(prompt).toContain("# UNTRUSTED: PR description\n(no description)");
+    expect(prompt).toContain(
+      "# UNTRUSTED: PR description\n<pr_description>\n(no description)\n</pr_description>"
+    );
   });
 
   it("should include project specific rules", () => {
@@ -61,7 +69,7 @@ describe("buildReviewPrompt", () => {
     });
 
     expect(prompt).toContain(
-      "# UNTRUSTED: Project-specific rules\nDo not use console.log"
+      "# UNTRUSTED: Project-specific rules\n<project_rules>\nDo not use console.log\n</project_rules>"
     );
   });
 
