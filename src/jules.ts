@@ -1,6 +1,7 @@
 import * as core from "@actions/core";
 import { jules } from "@google/jules-sdk";
 import { ReviewResult } from "./types.js";
+import { extractAndParseJSON } from "./utils/json.js";
 
 export async function runJulesReview(
   apiKey: string,
@@ -55,17 +56,8 @@ export async function runJulesReview(
 }
 
 function parseJulesResponse(message: string): ReviewResult {
-  const jsonMatch = message.match(/```json\n([\s\S]*?)\n```/);
-  if (jsonMatch) {
-    try {
-      return JSON.parse(jsonMatch[1]) as ReviewResult;
-    } catch {
-      // fallback
-    }
-  }
-  // Try parsing the whole message if no codeblocks
   try {
-    return JSON.parse(message) as ReviewResult;
+    return extractAndParseJSON<ReviewResult>(message);
   } catch (e) {
     throw new Error("Failed to parse Jules response as JSON", { cause: e });
   }

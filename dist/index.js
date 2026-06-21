@@ -40841,7 +40841,61 @@ const jules = connect();
 
 //# sourceMappingURL=index.mjs.map
 
+;// CONCATENATED MODULE: ./src/utils/json.ts
+/**
+ * Safely extracts and parses JSON from a string, handling markdown blocks
+ * and conversational text wrapper fallbacks.
+ */
+function extractAndParseJSON(message) {
+    // 1. Try to extract from ```json ... ``` or ``` ... ```
+    const blockRegex = /```(?:json)?\n([\s\S]*?)\n```/i;
+    const match = message.match(blockRegex);
+    if (match) {
+        try {
+            return JSON.parse(match[1]);
+        }
+        catch {
+            // If block extraction fails, fall through to other methods
+        }
+    }
+    // 2. Try parsing the raw string directly
+    try {
+        return JSON.parse(message);
+    }
+    catch {
+        // If direct parse fails, fall through to curly/square bracket extraction
+    }
+    // 3. Fallback: try finding the first and last { } or [ ] to strip conversational text
+    const firstCurly = message.indexOf("{");
+    const lastCurly = message.lastIndexOf("}");
+    const firstSquare = message.indexOf("[");
+    const lastSquare = message.lastIndexOf("]");
+    let firstIndex = -1;
+    let lastIndex = -1;
+    if (firstCurly !== -1 &&
+        lastCurly !== -1 &&
+        (firstSquare === -1 || firstCurly < firstSquare)) {
+        firstIndex = firstCurly;
+        lastIndex = lastCurly;
+    }
+    else if (firstSquare !== -1 && lastSquare !== -1) {
+        firstIndex = firstSquare;
+        lastIndex = lastSquare;
+    }
+    if (firstIndex !== -1 && lastIndex !== -1 && lastIndex >= firstIndex) {
+        try {
+            const extracted = message.substring(firstIndex, lastIndex + 1);
+            return JSON.parse(extracted);
+        }
+        catch {
+            // Fall through to throw below
+        }
+    }
+    throw new Error("Failed to extract and parse valid JSON from the response.");
+}
+
 ;// CONCATENATED MODULE: ./src/jules.ts
+
 
 
 async function runJulesReview(apiKey, prompt, 
@@ -40883,18 +40937,8 @@ source, timeoutMinutes) {
     return { reviewResult, sessionId: session.id };
 }
 function parseJulesResponse(message) {
-    const jsonMatch = message.match(/```json\n([\s\S]*?)\n```/);
-    if (jsonMatch) {
-        try {
-            return JSON.parse(jsonMatch[1]);
-        }
-        catch {
-            // fallback
-        }
-    }
-    // Try parsing the whole message if no codeblocks
     try {
-        return JSON.parse(message);
+        return extractAndParseJSON(message);
     }
     catch (e) {
         throw new Error("Failed to parse Jules response as JSON", { cause: e });
