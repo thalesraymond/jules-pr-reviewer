@@ -36367,7 +36367,10 @@ async function loadRulesFromBase(octokit, owner, repo, path, baseSha) {
         return undefined;
     }
     catch (err) {
-        warning(`Failed to load rules from base: ${String(err)}`);
+        const msg = String(err);
+        if (!msg.includes("Not Found")) {
+            warning(`Failed to load rules from base: ${msg}`);
+        }
         return undefined;
     }
 }
