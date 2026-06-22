@@ -109,29 +109,16 @@ async function run(): Promise<void> {
       core.info(`Reviewing full PR diff from ${baseShaForDiff} to ${headSha}`);
     }
 
-    const diff = await fetchDiff(
-      octokit,
-      owner,
-      repo,
-      pr,
-      baseShaForDiff,
-      headSha
-    );
-
-    let rulesFromFile: string | undefined;
-    if (rulesFilePath) {
-      rulesFromFile = await loadRulesFromBase(
-        octokit,
-        owner,
-        repo,
-        rulesFilePath,
-        baseSha
-      );
-    }
+    // ⚡ Bolt: Optimize API calls to run concurrently
+    const [diff, rulesFromFile, openThreads] = await Promise.all([
+      fetchDiff(octokit, owner, repo, pr, baseShaForDiff, headSha),
+      rulesFilePath
+        ? loadRulesFromBase(octokit, owner, repo, rulesFilePath, baseSha)
+        : Promise.resolve(undefined),
+      fetchOpenThreads(octokit, owner, repo, prNumber),
+    ]);
 
     const { text: diffText, truncatedNote } = truncateDiff(diff, 80_000);
-
-    const openThreads = await fetchOpenThreads(octokit, owner, repo, prNumber);
 
     const prompt = buildReviewPrompt({
       repoFullName: `${owner}/${repo}`,
