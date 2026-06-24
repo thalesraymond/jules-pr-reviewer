@@ -14,6 +14,7 @@ vi.mock("@actions/github");
 describe("index.ts", () => {
   let mockGetInput: any;
   let mockSetFailed: any;
+  let mockSetSecret: any;
   let mockGetBooleanInput: any;
   let mockInfo: any;
   let mockOctokit: any;
@@ -40,6 +41,7 @@ describe("index.ts", () => {
     mockGetInput = vi.spyOn(core, "getInput");
     mockGetBooleanInput = vi.spyOn(core, "getBooleanInput");
     mockSetFailed = vi.spyOn(core, "setFailed");
+    mockSetSecret = vi.spyOn(core, "setSecret");
     mockInfo = vi.spyOn(core, "info");
 
     // Default inputs
@@ -98,6 +100,12 @@ describe("index.ts", () => {
     // Allow promises to flush
     await new Promise((resolve) => setTimeout(resolve, 0));
   };
+
+  it("masks secrets explicitly", async () => {
+    await loadIndex();
+    expect(mockSetSecret).toHaveBeenCalledWith("dummy_key");
+    expect(mockSetSecret).toHaveBeenCalledWith("dummy_token");
+  });
 
   it("fails if eventName is pull_request_target", async () => {
     (github as any).context.eventName = "pull_request_target";

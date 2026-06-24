@@ -20,6 +20,7 @@ async function run(): Promise<void> {
   core.setSecret(apiKey);
 
   const token = core.getInput("github_token", { required: true });
+  core.setSecret(token);
   const failOnRaw = core.getInput("fail_on");
   if (!VALID_FAIL_ON.includes(failOnRaw as FailOn)) {
     core.setFailed(
