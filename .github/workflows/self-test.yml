@@ -17,7 +17,7 @@ jobs:
       statuses: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - uses: ./
         with:
           jules_api_key: ${{ secrets.JULES_API_KEY }}

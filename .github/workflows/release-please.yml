@@ -19,7 +19,7 @@ jobs:
           release-type: node
 
       # If a release was created, we check out the code to update the major tag
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         if: ${{ steps.release.outputs.release_created }}
 
       - name: Update major tag
