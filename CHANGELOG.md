@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.2.0...v1.2.1) (2026-06-27)
+
+
+### Bug Fixes
+
+* 🔒 prevent comment spoofing by validating author ([6368835](https://github.com/thalesraymond/jules-pr-reviewer/commit/636883531fe15fa0c7a98bcfc2e2cf1ad3bcd012))
+
 ## [1.2.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.1.0...v1.2.0) (2026-06-15)
 
 
