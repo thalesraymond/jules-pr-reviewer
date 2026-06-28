@@ -99,6 +99,7 @@ async function pollForReview(
     hydrate: () => Promise<number>;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     history: () => AsyncIterable<any>;
+    info: () => Promise<{ state: string }>;
   },
   timeoutMs: number
 ): Promise<string> {
@@ -116,7 +117,18 @@ async function pollForReview(
         core.info(`Got agentMessaged on attempt ${attempt}.`);
         return last;
       }
-      core.info(`No agentMessaged yet (attempt ${attempt})…`);
+
+      const info = await session.info();
+      if (info.state === "completed" || info.state === "failed") {
+        core.info(
+          `Session reached terminal state '${info.state}' without an agent message.`
+        );
+        break;
+      }
+
+      core.info(
+        `No agentMessaged yet (attempt ${attempt}, state: ${info.state})…`
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (isAuthError(msg)) {
