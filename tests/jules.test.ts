@@ -10,10 +10,13 @@ import * as core from "@actions/core";
 
 vi.mock("@actions/core");
 
-const mockSessionWithHistory = (historyEvents: any[]) => {
+const mockSessionWithHistory = (
+  historyEvents: any[],
+  state: string = "active"
+) => {
   return {
     id: "test-session-id",
-    info: vi.fn().mockResolvedValue({}),
+    info: vi.fn().mockResolvedValue({ state }),
     hydrate: vi.fn().mockResolvedValue(1),
     history: async function* () {
       for (const event of historyEvents) {
@@ -258,6 +261,24 @@ describe("jules.ts", () => {
       const result = await promise;
       expect(result.reviewResult?.verdict).toBe("approve");
       expect(hydrateMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("breaks polling early if session is completed", async () => {
+      const mockSession = mockSessionWithHistory([], "completed");
+
+      const mockJulesWith = vi.fn().mockReturnValue({
+        session: vi.fn().mockResolvedValue(mockSession),
+      });
+      (jules as any).with = mockJulesWith;
+
+      const promise = runJulesReview("api-key", "prompt", {}, 1);
+
+      const result = await promise;
+      expect(result).toEqual({
+        reviewResult: null,
+        sessionId: "test-session-id",
+      });
+      // Should exit without advancing timers
     });
 
     it("fails when hydrate throws auth error", async () => {

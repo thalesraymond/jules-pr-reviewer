@@ -31918,7 +31918,7 @@ function notice(message, properties = {}) {
  * Writes info to log with console.log.
  * @param message info message
  */
-function info(message) {
+function core_info(message) {
     process.stdout.write(message + external_os_namespaceObject.EOL);
 }
 /**
@@ -36361,7 +36361,7 @@ async function loadRulesFromBase(octokit, owner, repo, path, baseSha) {
         });
         if ("content" in file.data && typeof file.data.content === "string") {
             const content = Buffer.from(file.data.content, "base64").toString("utf8");
-            info(`Loaded ${content.length} chars from ${path} at base SHA`);
+            core_info(`Loaded ${content.length} chars from ${path} at base SHA`);
             return content;
         }
         return undefined;
@@ -36433,7 +36433,7 @@ async function resolveThreads(octokit, threadIds) {
           }
         }
       `, { id });
-            info(`Resolved thread ${id}`);
+            core_info(`Resolved thread ${id}`);
         }
         catch (e) {
             warning(`Failed to resolve thread ${id}: ${e}`);
@@ -40841,26 +40841,97 @@ const jules = connect();
 
 //# sourceMappingURL=index.mjs.map
 
+;// CONCATENATED MODULE: ./src/utils/json.ts
+function extractAndParseJSON(input) {
+    // Try direct parsing first
+    try {
+        return JSON.parse(input);
+    }
+    catch {
+        // Continue to other strategies
+    }
+    // Look for markdown JSON block
+    const jsonMatch = input.match(/```(?:json)?\n([\s\S]*?)\n```/);
+    if (jsonMatch) {
+        try {
+            return JSON.parse(jsonMatch[1]);
+        }
+        catch {
+            // Continue to conversational extraction
+        }
+    }
+    // Try extracting possible JSON strings using balanced brace/bracket matching
+    const candidates = [];
+    const extractBalanced = (str, openChar, closeChar) => {
+        let start = str.indexOf(openChar);
+        while (start !== -1) {
+            let depth = 0;
+            let inString = false;
+            let escapeNext = false;
+            for (let i = start; i < str.length; i++) {
+                const char = str[i];
+                if (escapeNext) {
+                    escapeNext = false;
+                    continue;
+                }
+                if (char === "\\") {
+                    escapeNext = true;
+                    continue;
+                }
+                if (char === '"') {
+                    inString = !inString;
+                    continue;
+                }
+                if (!inString) {
+                    if (char === openChar)
+                        depth++;
+                    else if (char === closeChar)
+                        depth--;
+                    if (depth === 0) {
+                        candidates.push(str.substring(start, i + 1));
+                        break;
+                    }
+                }
+            }
+            start = str.indexOf(openChar, start + 1);
+        }
+    };
+    extractBalanced(input, "{", "}");
+    extractBalanced(input, "[", "]");
+    // Sort candidates by length (longest first, as it's more likely to be the full JSON if it parses)
+    candidates.sort((a, b) => b.length - a.length);
+    for (const candidate of candidates) {
+        try {
+            return JSON.parse(candidate);
+        }
+        catch {
+            // Continue trying other candidates
+        }
+    }
+    throw new Error("Failed to extract and parse JSON from input.");
+}
+
 ;// CONCATENATED MODULE: ./src/jules.ts
+
 
 
 async function runJulesReview(apiKey, prompt, 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 source, timeoutMinutes) {
     const customJules = jules.with({ apiKey });
-    info("Creating Jules review session…");
+    core_info("Creating Jules review session…");
     const session = await customJules.session({
         prompt,
         source,
         requireApproval: false,
         autoPr: false,
     });
-    info(`Jules session: ${session.id}`);
+    core_info(`Jules session: ${session.id}`);
     await waitUntilSessionReady(session);
     const reviewMessage = await pollForReview(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     session, timeoutMinutes * 60 * 1000);
-    info(`Collected review (${reviewMessage.length} chars)`);
+    core_info(`Collected review (${reviewMessage.length} chars)`);
     if (!reviewMessage) {
         return { reviewResult: null, sessionId: session.id };
     }
@@ -40883,18 +40954,8 @@ source, timeoutMinutes) {
     return { reviewResult, sessionId: session.id };
 }
 function parseJulesResponse(message) {
-    const jsonMatch = message.match(/```json\n([\s\S]*?)\n```/);
-    if (jsonMatch) {
-        try {
-            return JSON.parse(jsonMatch[1]);
-        }
-        catch {
-            // fallback
-        }
-    }
-    // Try parsing the whole message if no codeblocks
     try {
-        return JSON.parse(message);
+        return extractAndParseJSON(message);
     }
     catch (e) {
         throw new Error("Failed to parse Jules response as JSON", { cause: e });
@@ -40906,7 +40967,7 @@ async function waitUntilSessionReady(session) {
     for (let i = 0; i < maxAttempts; i++) {
         try {
             await session.info();
-            info(`Session ${session.id} is ready after ${i + 1} attempt(s).`);
+            core_info(`Session ${session.id} is ready after ${i + 1} attempt(s).`);
             return;
         }
         catch (err) {
@@ -40917,7 +40978,7 @@ async function waitUntilSessionReady(session) {
             if (!msg.includes("404")) {
                 throw new Error(`Jules session.info() failed: ${msg}`, { cause: err });
             }
-            info(`Session not yet ready (attempt ${i + 1}/${maxAttempts})…`);
+            core_info(`Session not yet ready (attempt ${i + 1}/${maxAttempts})…`);
             await new Promise((r) => setTimeout(r, delay));
             delay = Math.min(delay * 1.5, 15000);
         }
@@ -40937,17 +40998,22 @@ async function pollForReview(session, timeoutMs) {
                     last = a.message;
             }
             if (last) {
-                info(`Got agentMessaged on attempt ${attempt}.`);
+                core_info(`Got agentMessaged on attempt ${attempt}.`);
                 return last;
             }
-            info(`No agentMessaged yet (attempt ${attempt})…`);
+            const info = await session.info();
+            if (info.state === "completed" || info.state === "failed") {
+                core_info(`Session reached terminal state '${info.state}' without an agent message.`);
+                break;
+            }
+            core_info(`No agentMessaged yet (attempt ${attempt}, state: ${info.state})…`);
         }
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             if (isAuthError(msg)) {
                 throw new Error(`Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`, { cause: err });
             }
-            info(`hydrate/history error (attempt ${attempt}): ${msg}`);
+            core_info(`hydrate/history error (attempt ${attempt}): ${msg}`);
         }
         await new Promise((r) => setTimeout(r, 20_000));
     }
@@ -41103,15 +41169,15 @@ async function run() {
     const labels = (pr.labels || []).map((l) => l.name);
     const octokit = getOctokit(token);
     if (isDraft && skipDrafts) {
-        info("Skipping draft PR.");
+        core_info("Skipping draft PR.");
         return;
     }
     if (isFork && skipForks) {
-        info("Skipping fork PR (skip_forks=true).");
+        core_info("Skipping fork PR (skip_forks=true).");
         return;
     }
     if (labels.includes(bypassLabel)) {
-        info(`Bypass label "${bypassLabel}" present — skipping review.`);
+        core_info(`Bypass label "${bypassLabel}" present — skipping review.`);
         return;
     }
     try {
@@ -41125,10 +41191,10 @@ async function run() {
         let baseShaForDiff = baseSha;
         if (ctx.payload.action === "synchronize" && ctx.payload.before) {
             baseShaForDiff = ctx.payload.before;
-            info(`Synchronize event detected. Reviewing incremental changes from ${baseShaForDiff} to ${headSha}`);
+            core_info(`Synchronize event detected. Reviewing incremental changes from ${baseShaForDiff} to ${headSha}`);
         }
         else {
-            info(`Reviewing full PR diff from ${baseShaForDiff} to ${headSha}`);
+            core_info(`Reviewing full PR diff from ${baseShaForDiff} to ${headSha}`);
         }
         const diff = await fetchDiff(octokit, owner, repo, pr, baseShaForDiff, headSha);
         let rulesFromFile;
@@ -41169,7 +41235,7 @@ async function run() {
         await submitReview(octokit, owner, repo, prNumber, headSha, finalBody, newComments || []);
         const { state, description } = statusFromVerdict(verdict, failOn);
         await setStatus(octokit, owner, repo, headSha, statusContext, state, description);
-        info(`Verdict: ${verdict}. Status check: ${state}.`);
+        core_info(`Verdict: ${verdict}. Status check: ${state}.`);
     }
     catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
