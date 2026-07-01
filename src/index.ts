@@ -218,7 +218,7 @@ async function run(): Promise<void> {
       headSha,
       statusContext,
       "error",
-      truncate(msg, 140)
+      "Jules PR review failed. See action logs for details."
     ).catch(() => {});
     core.setFailed(`Jules PR review failed: ${msg}`);
   }

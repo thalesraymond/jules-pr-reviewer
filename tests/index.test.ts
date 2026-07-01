@@ -376,7 +376,7 @@ describe("index.ts", () => {
       "headSHA",
       expect.anything(),
       "error",
-      "Fetch diff failed"
+      "Jules PR review failed. See action logs for details."
     );
   });
 });
