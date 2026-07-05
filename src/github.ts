@@ -1,6 +1,7 @@
 import * as github from "@actions/github";
 import * as core from "@actions/core";
 import { OpenThread, ReviewComment } from "./types.js";
+import { withFallback } from "./utils.js";
 
 export async function fetchDiff(
   octokit: ReturnType<typeof github.getOctokit>,
@@ -184,15 +185,36 @@ ${c.promptForAgents}
     };
   });
 
-  await octokit.rest.pulls.createReview({
-    owner,
-    repo,
-    pull_number: prNumber,
-    commit_id: headSha,
-    event: "COMMENT",
-    body: summary,
-    comments: formattedComments,
-  });
+  await withFallback(
+    async () => {
+      await octokit.rest.pulls.createReview({
+        owner,
+        repo,
+        pull_number: prNumber,
+        commit_id: headSha,
+        event: "COMMENT",
+        body: summary,
+        comments: formattedComments,
+      });
+    },
+    async (error) => {
+      core.warning(
+        `Failed to submit inline review comments (likely due to large diff/Unprocessable Entity). Falling back to summary-only review. Error: ${error}`
+      );
+      await octokit.rest.pulls.createReview({
+        owner,
+        repo,
+        pull_number: prNumber,
+        commit_id: headSha,
+        event: "COMMENT",
+        body: summary,
+        comments: [],
+      });
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (error: any) =>
+      error?.status === 422 || String(error).includes("Unprocessable Entity")
+  );
 }
 
 export async function setStatus(

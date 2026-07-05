@@ -36322,7 +36322,30 @@ function getOctokit(token, options, ...additionalPlugins) {
     return new GitHubWithPlugins(getOctokitOptions(token, options));
 }
 //# sourceMappingURL=github.js.map
+;// CONCATENATED MODULE: ./src/utils.ts
+/**
+ * Executes a primary async function. If it throws an error that satisfies the
+ * shouldFallback predicate, the fallback async function is executed instead.
+ *
+ * @param primary The primary async function to execute.
+ * @param fallback The fallback async function to execute if primary fails.
+ * @param shouldFallback A predicate that determines if the error warrants a fallback.
+ * @returns The result of the primary or fallback function.
+ */
+async function withFallback(primary, fallback, shouldFallback) {
+    try {
+        return await primary();
+    }
+    catch (error) {
+        if (shouldFallback(error)) {
+            return await fallback(error);
+        }
+        throw error;
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/github.ts
+
 
 async function fetchDiff(octokit, owner, repo, pr, baseShaForDiff, headSha) {
     try {
@@ -36464,15 +36487,30 @@ ${c.promptForAgents}
             body,
         };
     });
-    await octokit.rest.pulls.createReview({
-        owner,
-        repo,
-        pull_number: prNumber,
-        commit_id: headSha,
-        event: "COMMENT",
-        body: summary,
-        comments: formattedComments,
-    });
+    await withFallback(async () => {
+        await octokit.rest.pulls.createReview({
+            owner,
+            repo,
+            pull_number: prNumber,
+            commit_id: headSha,
+            event: "COMMENT",
+            body: summary,
+            comments: formattedComments,
+        });
+    }, async (error) => {
+        warning(`Failed to submit inline review comments (likely due to large diff/Unprocessable Entity). Falling back to summary-only review. Error: ${error}`);
+        await octokit.rest.pulls.createReview({
+            owner,
+            repo,
+            pull_number: prNumber,
+            commit_id: headSha,
+            event: "COMMENT",
+            body: summary,
+            comments: [],
+        });
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (error) => error?.status === 422 || String(error).includes("Unprocessable Entity"));
 }
 async function setStatus(octokit, owner, repo, sha, context, state, description) {
     await octokit.rest.repos.createCommitStatus({
