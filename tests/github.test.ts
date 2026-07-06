@@ -343,6 +343,58 @@ describe("github.ts", () => {
     });
   });
 
+  it("submitReview falls back to summary-only review on 422 error", async () => {
+    const error422 = new Error("Unprocessable Entity");
+    (error422 as any).status = 422;
+    const octokit = {
+      rest: {
+        pulls: {
+          createReview: vi
+            .fn()
+            .mockRejectedValueOnce(error422) // Primary fails
+            .mockResolvedValueOnce({}), // Fallback succeeds
+        },
+      },
+    } as any;
+    await submitReview(octokit, "owner", "repo", 1, "headSHA", "Summary text", [
+      {
+        file: "a.ts",
+        line: 10,
+        severity: "High",
+        confidence: "High",
+        message: "Msg",
+        promptForAgents: "Fix this issue by doing X",
+      },
+    ]);
+
+    expect(octokit.rest.pulls.createReview).toHaveBeenCalledTimes(2);
+    expect(octokit.rest.pulls.createReview).toHaveBeenNthCalledWith(1, {
+      owner: "owner",
+      repo: "repo",
+      pull_number: 1,
+      commit_id: "headSHA",
+      event: "COMMENT",
+      body: "Summary text",
+      comments: [
+        {
+          path: "a.ts",
+          line: 10,
+          side: "RIGHT",
+          body: "<!-- jules-inline-comment -->\n**Severity:** 🚨 High | **Confidence:** 🟢 High\n\nMsg\n\n<details>\n<summary>🤖 Prompt for Agents</summary>\n\nFix this issue by doing X\n</details>",
+        },
+      ],
+    });
+    expect(octokit.rest.pulls.createReview).toHaveBeenNthCalledWith(2, {
+      owner: "owner",
+      repo: "repo",
+      pull_number: 1,
+      commit_id: "headSHA",
+      event: "COMMENT",
+      body: "Summary text",
+      comments: [],
+    });
+  });
+
   it("setStatus sets commit status", async () => {
     const octokit = {
       rest: { repos: { createCommitStatus: vi.fn().mockResolvedValue({}) } },
