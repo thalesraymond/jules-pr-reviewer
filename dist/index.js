@@ -41214,7 +41214,7 @@ async function run() {
     catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         error(`Review failed: ${msg}`);
-        await setStatus(octokit, owner, repo, headSha, statusContext, "error", truncate(msg, 140)).catch(() => { });
+        await setStatus(octokit, owner, repo, headSha, statusContext, "error", "Review failed. Check GitHub Actions log for details.").catch(() => { });
         setFailed(`Jules PR review failed: ${msg}`);
     }
 }
