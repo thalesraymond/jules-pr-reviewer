@@ -376,7 +376,7 @@ describe("index.ts", () => {
       "headSHA",
       expect.anything(),
       "error",
-      "Fetch diff failed"
+      "Review failed. Check GitHub Actions log for details."
     );
   });
 });

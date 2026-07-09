@@ -205,7 +205,7 @@ async function run(): Promise<void> {
       headSha,
       statusContext,
       "error",
-      truncate(msg, 140)
+      "Review failed. Check GitHub Actions log for details."
     ).catch(() => {});
     core.setFailed(`Jules PR review failed: ${msg}`);
   }
