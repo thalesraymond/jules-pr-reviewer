@@ -36343,6 +36343,32 @@ async function withFallback(primary, fallback, shouldFallback) {
         throw error;
     }
 }
+/**
+ * Retries an asynchronous function with exponential backoff.
+ *
+ * @param operation The async function to execute.
+ * @param maxAttempts Maximum number of attempts before throwing the error.
+ * @param baseDelay Base delay in milliseconds for exponential backoff.
+ * @param maxDelay Maximum delay in milliseconds.
+ * @param shouldRetry A predicate to check if the error is retryable.
+ * @returns The result of the operation.
+ */
+async function withRetry(operation, maxAttempts, baseDelay, maxDelay, shouldRetry) {
+    let delay = baseDelay;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await operation();
+        }
+        catch (error) {
+            if (attempt === maxAttempts || !shouldRetry(error)) {
+                throw error;
+            }
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            delay = Math.min(delay * 1.5, maxDelay);
+        }
+    }
+    throw new Error("Retry loop exhausted"); // Should be unreachable
+}
 
 ;// CONCATENATED MODULE: ./src/github.ts
 
@@ -40882,6 +40908,7 @@ const jules = connect();
 ;// CONCATENATED MODULE: ./src/jules.ts
 
 
+
 async function runJulesReview(apiKey, prompt, 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 source, timeoutMinutes) {
@@ -40939,28 +40966,36 @@ function parseJulesResponse(message) {
     }
 }
 async function waitUntilSessionReady(session) {
-    const maxAttempts = 20;
-    let delay = 2000;
-    for (let i = 0; i < maxAttempts; i++) {
-        try {
+    let attemptCount = 0;
+    try {
+        await withRetry(async () => {
+            attemptCount++;
             await session.info();
-            info(`Session ${session.id} is ready after ${i + 1} attempt(s).`);
-            return;
-        }
-        catch (err) {
+            info(`Session ${session.id} is ready after ${attemptCount} attempt(s).`);
+        }, 20, 2000, 15000, (err) => {
             const msg = err instanceof Error ? err.message : String(err);
             if (isAuthError(msg)) {
                 throw new Error(`Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`, { cause: err });
             }
             if (!msg.includes("404")) {
-                throw new Error(`Jules session.info() failed: ${msg}`, { cause: err });
+                throw new Error(`Jules session.info() failed: ${msg}`, {
+                    cause: err,
+                });
             }
-            info(`Session not yet ready (attempt ${i + 1}/${maxAttempts})…`);
-            await new Promise((r) => setTimeout(r, delay));
-            delay = Math.min(delay * 1.5, 15000);
-        }
+            info(`Session not yet ready (attempt ${attemptCount}/20)…`);
+            return true;
+        });
     }
-    throw new Error("Session did not become ready within timeout.");
+    catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!msg.includes("Jules API rejected request") &&
+            !msg.includes("Jules session.info() failed")) {
+            throw new Error("Session did not become ready within timeout.", {
+                cause: e,
+            });
+        }
+        throw e;
+    }
 }
 async function pollForReview(session, timeoutMs) {
     const deadline = Date.now() + timeoutMs;

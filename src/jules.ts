@@ -1,6 +1,7 @@
 import * as core from "@actions/core";
 import { jules } from "@google/jules-sdk";
 import { ReviewResult } from "./types.js";
+import { withRetry } from "./utils.js";
 
 export async function runJulesReview(
   apiKey: string,
@@ -75,30 +76,48 @@ async function waitUntilSessionReady(session: {
   id: string;
   info: () => Promise<unknown>;
 }): Promise<void> {
-  const maxAttempts = 20;
-  let delay = 2000;
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      await session.info();
-      core.info(`Session ${session.id} is ready after ${i + 1} attempt(s).`);
-      return;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (isAuthError(msg)) {
-        throw new Error(
-          `Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`,
-          { cause: err }
+  let attemptCount = 0;
+  try {
+    await withRetry(
+      async () => {
+        attemptCount++;
+        await session.info();
+        core.info(
+          `Session ${session.id} is ready after ${attemptCount} attempt(s).`
         );
+      },
+      20,
+      2000,
+      15000,
+      (err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (isAuthError(msg)) {
+          throw new Error(
+            `Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`,
+            { cause: err }
+          );
+        }
+        if (!msg.includes("404")) {
+          throw new Error(`Jules session.info() failed: ${msg}`, {
+            cause: err,
+          });
+        }
+        core.info(`Session not yet ready (attempt ${attemptCount}/20)…`);
+        return true;
       }
-      if (!msg.includes("404")) {
-        throw new Error(`Jules session.info() failed: ${msg}`, { cause: err });
-      }
-      core.info(`Session not yet ready (attempt ${i + 1}/${maxAttempts})…`);
-      await new Promise((r) => setTimeout(r, delay));
-      delay = Math.min(delay * 1.5, 15000);
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (
+      !msg.includes("Jules API rejected request") &&
+      !msg.includes("Jules session.info() failed")
+    ) {
+      throw new Error("Session did not become ready within timeout.", {
+        cause: e,
+      });
     }
+    throw e;
   }
-  throw new Error("Session did not become ready within timeout.");
 }
 
 async function pollForReview(
