@@ -41138,8 +41138,6 @@ async function run() {
     const baseSha = pr.base.sha;
     const isDraft = !!pr.draft;
     const isFork = pr.head.repo?.full_name !== `${owner}/${repo}`;
-    const labels = (pr.labels || []).map((l) => l.name);
-    const octokit = getOctokit(token);
     if (isDraft && skipDrafts) {
         info("Skipping draft PR.");
         return;
@@ -41148,10 +41146,12 @@ async function run() {
         info("Skipping fork PR (skip_forks=true).");
         return;
     }
+    const labels = (pr.labels || []).map((l) => l.name);
     if (labels.includes(bypassLabel)) {
         info(`Bypass label "${bypassLabel}" present — skipping review.`);
         return;
     }
+    const octokit = getOctokit(token);
     try {
         try {
             await setStatus(octokit, owner, repo, headSha, statusContext, "pending", "Jules is reviewing this PR…");

@@ -65,11 +65,6 @@ async function run(): Promise<void> {
   const baseSha: string = pr.base.sha;
   const isDraft: boolean = !!pr.draft;
   const isFork: boolean = pr.head.repo?.full_name !== `${owner}/${repo}`;
-  const labels: string[] = (pr.labels || []).map(
-    (l: { name: string }) => l.name
-  );
-
-  const octokit = github.getOctokit(token);
 
   if (isDraft && skipDrafts) {
     core.info("Skipping draft PR.");
@@ -79,10 +74,16 @@ async function run(): Promise<void> {
     core.info("Skipping fork PR (skip_forks=true).");
     return;
   }
+
+  const labels: string[] = (pr.labels || []).map(
+    (l: { name: string }) => l.name
+  );
   if (labels.includes(bypassLabel)) {
     core.info(`Bypass label "${bypassLabel}" present — skipping review.`);
     return;
   }
+
+  const octokit = github.getOctokit(token);
 
   try {
     try {
