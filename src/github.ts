@@ -1,7 +1,7 @@
 import * as github from "@actions/github";
 import * as core from "@actions/core";
 import { OpenThread, ReviewComment } from "./types.js";
-import { withFallback } from "./utils.js";
+import { withFallback, withRetry } from "./utils.js";
 
 export async function fetchDiff(
   octokit: ReturnType<typeof github.getOctokit>,
@@ -130,15 +130,19 @@ export async function resolveThreads(
 ): Promise<void> {
   for (const id of threadIds) {
     try {
-      await octokit.graphql(
-        `
-        mutation($id: ID!) {
-          resolveReviewThread(input: {threadId: $id}) {
-            thread { isResolved }
+      await withRetry(
+        () =>
+          octokit.graphql(
+            `
+          mutation($id: ID!) {
+            resolveReviewThread(input: {threadId: $id}) {
+              thread { isResolved }
+            }
           }
-        }
-      `,
-        { id }
+        `,
+            { id }
+          ),
+        { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 }
       );
       core.info(`Resolved thread ${id}`);
     } catch (e) {
@@ -226,12 +230,16 @@ export async function setStatus(
   state: "pending" | "success" | "failure" | "error",
   description: string
 ): Promise<void> {
-  await octokit.rest.repos.createCommitStatus({
-    owner,
-    repo,
-    sha,
-    state,
-    context,
-    description,
-  });
+  await withRetry(
+    () =>
+      octokit.rest.repos.createCommitStatus({
+        owner,
+        repo,
+        sha,
+        state,
+        context,
+        description,
+      }),
+    { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 }
+  );
 }

@@ -36324,14 +36324,30 @@ function getOctokit(token, options, ...additionalPlugins) {
 //# sourceMappingURL=github.js.map
 ;// CONCATENATED MODULE: ./src/utils.ts
 /**
- * Executes a primary async function. If it throws an error that satisfies the
- * shouldFallback predicate, the fallback async function is executed instead.
+ * Retries an async operation with exponential backoff.
  *
- * @param primary The primary async function to execute.
- * @param fallback The fallback async function to execute if primary fails.
- * @param shouldFallback A predicate that determines if the error warrants a fallback.
- * @returns The result of the primary or fallback function.
+ * @param operation The async operation to execute.
+ * @param options Configuration for retries and backoff.
+ * @returns The result of the operation.
  */
+async function withRetry(operation, options) {
+    const { maxRetries, initialDelayMs, maxDelayMs, shouldRetry } = options;
+    let attempt = 0;
+    let delay = initialDelayMs;
+    while (true) {
+        try {
+            return await operation();
+        }
+        catch (error) {
+            if (attempt >= maxRetries || (shouldRetry && !shouldRetry(error))) {
+                throw error;
+            }
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            attempt++;
+            delay = Math.min(delay * 2, maxDelayMs);
+        }
+    }
+}
 async function withFallback(primary, fallback, shouldFallback) {
     try {
         return await primary();
@@ -36449,13 +36465,13 @@ async function fetchOpenThreads(octokit, owner, repo, prNumber) {
 async function resolveThreads(octokit, threadIds) {
     for (const id of threadIds) {
         try {
-            await octokit.graphql(`
-        mutation($id: ID!) {
-          resolveReviewThread(input: {threadId: $id}) {
-            thread { isResolved }
+            await withRetry(() => octokit.graphql(`
+          mutation($id: ID!) {
+            resolveReviewThread(input: {threadId: $id}) {
+              thread { isResolved }
+            }
           }
-        }
-      `, { id });
+        `, { id }), { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 });
             info(`Resolved thread ${id}`);
         }
         catch (e) {
@@ -36513,14 +36529,14 @@ ${c.promptForAgents}
     (error) => error?.status === 422 || String(error).includes("Unprocessable Entity"));
 }
 async function setStatus(octokit, owner, repo, sha, context, state, description) {
-    await octokit.rest.repos.createCommitStatus({
+    await withRetry(() => octokit.rest.repos.createCommitStatus({
         owner,
         repo,
         sha,
         state,
         context,
         description,
-    });
+    }), { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 });
 }
 
 ;// CONCATENATED MODULE: external "node:path"

@@ -1,5 +1,96 @@
 import { describe, it, expect, vi } from "vitest";
-import { withFallback } from "../src/utils.js";
+import { withFallback, withRetry, RetryOptions } from "../src/utils.js";
+
+describe("withRetry", () => {
+  it("should return the result immediately if the operation succeeds", async () => {
+    const operation = vi.fn().mockResolvedValue("success");
+    const options: RetryOptions = {
+      maxRetries: 3,
+      initialDelayMs: 10,
+      maxDelayMs: 100,
+    };
+
+    const result = await withRetry(operation, options);
+
+    expect(result).toBe("success");
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
+
+  it("should retry and succeed on a subsequent attempt", async () => {
+    const error = new Error("temporary error");
+    const operation = vi
+      .fn()
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce("success");
+    const options: RetryOptions = {
+      maxRetries: 3,
+      initialDelayMs: 10,
+      maxDelayMs: 100,
+    };
+
+    const result = await withRetry(operation, options);
+
+    expect(result).toBe("success");
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
+  it("should exhaust retries and throw the final error", async () => {
+    const error = new Error("persistent error");
+    const operation = vi.fn().mockRejectedValue(error);
+    const options: RetryOptions = {
+      maxRetries: 2,
+      initialDelayMs: 10,
+      maxDelayMs: 100,
+    };
+
+    await expect(withRetry(operation, options)).rejects.toThrow(
+      "persistent error"
+    );
+
+    expect(operation).toHaveBeenCalledTimes(3); // Initial attempt + 2 retries
+  });
+
+  it("should not retry if shouldRetry returns false", async () => {
+    const error = new Error("fatal error");
+    const operation = vi.fn().mockRejectedValue(error);
+    const shouldRetry = vi.fn().mockReturnValue(false);
+    const options: RetryOptions = {
+      maxRetries: 3,
+      initialDelayMs: 10,
+      maxDelayMs: 100,
+      shouldRetry,
+    };
+
+    await expect(withRetry(operation, options)).rejects.toThrow("fatal error");
+
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(shouldRetry).toHaveBeenCalledTimes(1);
+    expect(shouldRetry).toHaveBeenCalledWith(error);
+  });
+
+  it("should retry only if shouldRetry returns true", async () => {
+    const error1 = new Error("temporary error");
+    const error2 = new Error("fatal error");
+    const operation = vi
+      .fn()
+      .mockRejectedValueOnce(error1)
+      .mockRejectedValueOnce(error2);
+    const shouldRetry = vi.fn((err: unknown) => {
+      return (err as Error).message === "temporary error";
+    });
+    const options: RetryOptions = {
+      maxRetries: 3,
+      initialDelayMs: 10,
+      maxDelayMs: 100,
+      shouldRetry,
+    };
+
+    await expect(withRetry(operation, options)).rejects.toThrow("fatal error");
+
+    expect(operation).toHaveBeenCalledTimes(2);
+    expect(shouldRetry).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe("withFallback", () => {
   it("should return the result of the primary function if it succeeds", async () => {
