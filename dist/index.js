@@ -41138,8 +41138,8 @@ async function run() {
     const baseSha = pr.base.sha;
     const isDraft = !!pr.draft;
     const isFork = pr.head.repo?.full_name !== `${owner}/${repo}`;
-    const labels = (pr.labels || []).map((l) => l.name);
-    const octokit = getOctokit(token);
+    // ⚡ Bolt: Optimize bypass label check to stop iterating early and prevent wasteful `.map` array allocation
+    const hasBypassLabel = (pr.labels || []).some((l) => l.name === bypassLabel);
     if (isDraft && skipDrafts) {
         info("Skipping draft PR.");
         return;
@@ -41148,10 +41148,12 @@ async function run() {
         info("Skipping fork PR (skip_forks=true).");
         return;
     }
-    if (labels.includes(bypassLabel)) {
+    if (hasBypassLabel) {
         info(`Bypass label "${bypassLabel}" present — skipping review.`);
         return;
     }
+    // ⚡ Bolt: Delay instantiating the Octokit client until after early returns (draft/fork/bypass) to save memory
+    const octokit = getOctokit(token);
     try {
         try {
             await setStatus(octokit, owner, repo, headSha, statusContext, "pending", "Jules is reviewing this PR…");
