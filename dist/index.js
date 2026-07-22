@@ -29058,6 +29058,7 @@ var __webpack_exports__ = {};
 
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
+  C: () => (/* binding */ statusFromVerdict),
   x: () => (/* binding */ truncate)
 });
 
@@ -40911,7 +40912,7 @@ source, timeoutMinutes) {
         return {
             reviewResult: {
                 summary: "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
-                verdict: "comment",
+                verdict: "block",
                 resolvedCommentIds: [],
                 newComments: [],
             },
@@ -40921,22 +40922,32 @@ source, timeoutMinutes) {
     return { reviewResult, sessionId: session.id };
 }
 function parseJulesResponse(message) {
+    let parsed;
     const jsonMatch = message.match(/```json\n([\s\S]*?)\n```/);
     if (jsonMatch) {
         try {
-            return JSON.parse(jsonMatch[1]);
+            parsed = JSON.parse(jsonMatch[1]);
         }
         catch {
             // fallback
         }
     }
     // Try parsing the whole message if no codeblocks
-    try {
-        return JSON.parse(message);
+    if (!parsed) {
+        try {
+            parsed = JSON.parse(message);
+        }
+        catch (e) {
+            throw new Error("Failed to parse Jules response as JSON", { cause: e });
+        }
     }
-    catch (e) {
-        throw new Error("Failed to parse Jules response as JSON", { cause: e });
+    if (!parsed ||
+        typeof parsed !== "object" ||
+        !("verdict" in parsed) ||
+        !["approve", "comment", "block"].includes(parsed.verdict)) {
+        throw new Error("Invalid or missing verdict in Jules response");
     }
+    return parsed;
 }
 async function waitUntilSessionReady(session) {
     const maxAttempts = 20;
@@ -41233,6 +41244,12 @@ function truncate(s, max) {
     return s.length <= max ? s : s.slice(0, max - 1) + "…";
 }
 function statusFromVerdict(verdict, failOn) {
+    if (!["approve", "comment", "block"].includes(verdict)) {
+        return {
+            state: "failure",
+            description: "Invalid review verdict",
+        };
+    }
     if (failOn === "never") {
         return {
             state: "success",
@@ -41255,7 +41272,8 @@ run().catch((err) => {
     setFailed(err instanceof Error ? err.message : String(err));
 });
 
+var __webpack_exports__statusFromVerdict = __webpack_exports__.C;
 var __webpack_exports__truncate = __webpack_exports__.x;
-export { __webpack_exports__truncate as truncate };
+export { __webpack_exports__statusFromVerdict as statusFromVerdict, __webpack_exports__truncate as truncate };
 
 //# sourceMappingURL=index.js.map
