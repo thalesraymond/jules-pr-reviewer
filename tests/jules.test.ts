@@ -111,7 +111,7 @@ describe("jules.ts", () => {
         reviewResult: {
           summary:
             "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
-          verdict: "comment",
+          verdict: "block",
           resolvedCommentIds: [],
           newComments: [],
         },
@@ -138,7 +138,34 @@ describe("jules.ts", () => {
         reviewResult: {
           summary:
             "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
-          verdict: "comment",
+          verdict: "block",
+          resolvedCommentIds: [],
+          newComments: [],
+        },
+        sessionId: "test-session-id",
+      });
+      expect(core.error).toHaveBeenCalled();
+    });
+
+    it("handles parsing failure when JSON is valid but missing or invalid verdict", async () => {
+      const reviewText = '{"summary": "missing verdict test"}';
+      const mockJulesWith = vi.fn().mockReturnValue({
+        session: vi
+          .fn()
+          .mockResolvedValue(
+            mockSessionWithHistory([
+              { type: "agentMessaged", message: reviewText },
+            ])
+          ),
+      });
+      (jules as any).with = mockJulesWith;
+
+      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      expect(result).toEqual({
+        reviewResult: {
+          summary:
+            "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
+          verdict: "block",
           resolvedCommentIds: [],
           newComments: [],
         },

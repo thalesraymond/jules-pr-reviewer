@@ -43,7 +43,7 @@ export async function runJulesReview(
       reviewResult: {
         summary:
           "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
-        verdict: "comment",
+        verdict: "block",
         resolvedCommentIds: [],
         newComments: [],
       },
@@ -55,20 +55,36 @@ export async function runJulesReview(
 }
 
 function parseJulesResponse(message: string): ReviewResult {
+  let parsed: unknown;
   const jsonMatch = message.match(/```json\n([\s\S]*?)\n```/);
   if (jsonMatch) {
     try {
-      return JSON.parse(jsonMatch[1]) as ReviewResult;
+      parsed = JSON.parse(jsonMatch[1]);
     } catch {
       // fallback
     }
   }
   // Try parsing the whole message if no codeblocks
-  try {
-    return JSON.parse(message) as ReviewResult;
-  } catch (e) {
-    throw new Error("Failed to parse Jules response as JSON", { cause: e });
+  if (!parsed) {
+    try {
+      parsed = JSON.parse(message);
+    } catch (e) {
+      throw new Error("Failed to parse Jules response as JSON", { cause: e });
+    }
   }
+
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    !("verdict" in parsed) ||
+    !["approve", "comment", "block"].includes(
+      (parsed as Record<string, unknown>).verdict as string
+    )
+  ) {
+    throw new Error("Invalid or missing verdict in Jules response");
+  }
+
+  return parsed as ReviewResult;
 }
 
 async function waitUntilSessionReady(session: {
