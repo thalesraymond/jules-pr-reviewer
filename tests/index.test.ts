@@ -381,6 +381,29 @@ describe("index.ts", () => {
   });
 });
 
+describe("statusFromVerdict", () => {
+  let statusFromVerdict: any;
+
+  beforeEach(async () => {
+    const mod = await import("../src/index.js");
+    statusFromVerdict = mod.statusFromVerdict;
+  });
+
+  it("returns failure state with Invalid review verdict when verdict is invalid", () => {
+    const result = statusFromVerdict("invalid-verdict", "blocking");
+    expect(result).toEqual({
+      state: "failure",
+      description: "Invalid review verdict",
+    });
+  });
+
+  it("handles valid verdicts normally", () => {
+    const result = statusFromVerdict("approve", "blocking");
+    expect(result.state).toBe("success");
+    expect(result.description).toContain("complete (verdict: approve)");
+  });
+});
+
 describe("truncate", () => {
   let truncate: any;
 
