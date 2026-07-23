@@ -272,14 +272,24 @@ describe("github.ts", () => {
   });
 
   it("resolveThreads handles failures gracefully", async () => {
+    // Fast mock for withRetry delay so we don't hit the 5000ms Vitest timeout
+    vi.useFakeTimers();
+
     const octokit = {
       graphql: vi
         .fn()
         .mockResolvedValueOnce({})
-        .mockRejectedValueOnce(new Error("fail")),
+        .mockRejectedValue(new Error("fail")), // The first thread succeeds, second thread fails and retries
     } as any;
-    await resolveThreads(octokit, ["t1", "t2"]);
-    expect(octokit.graphql).toHaveBeenCalledTimes(2);
+
+    const resolvePromise = resolveThreads(octokit, ["t1", "t2"]);
+
+    // Fast-forward timers to skip the delay in withRetry
+    await vi.runAllTimersAsync();
+
+    await resolvePromise;
+    expect(octokit.graphql).toHaveBeenCalledTimes(5);
+    vi.useRealTimers();
   });
 
   it("submitReview sends proper payload", async () => {
@@ -416,5 +426,32 @@ describe("github.ts", () => {
       context: "context",
       description: "desc",
     });
+  });
+
+  it("setStatus handles failures gracefully with retries", async () => {
+    vi.useFakeTimers();
+    const octokit = {
+      rest: {
+        repos: {
+          createCommitStatus: vi.fn().mockRejectedValue(new Error("fail")),
+        },
+      },
+    } as any;
+
+    const setStatusPromise = setStatus(
+      octokit,
+      "owner",
+      "repo",
+      "sha",
+      "context",
+      "success",
+      "desc"
+    ).catch(() => {}); // Catch the thrown error after retries are exhausted
+
+    await vi.runAllTimersAsync();
+    await setStatusPromise;
+
+    expect(octokit.rest.repos.createCommitStatus).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
+    vi.useRealTimers();
   });
 });
