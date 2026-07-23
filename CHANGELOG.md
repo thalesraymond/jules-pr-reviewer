@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.3.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.2.0...v1.3.0) (2026-07-23)
+
+
+### Features
+
+* 🚀 Catalyst: [Enhancement] Add and integrate withRetry utility ([99e59f8](https://github.com/thalesraymond/jules-pr-reviewer/commit/99e59f8365bfb552d755a53cfcab2c860105986b))
+* add withFallback utility and integrate into submitReview ([e338834](https://github.com/thalesraymond/jules-pr-reviewer/commit/e33883456878c8985a4953ebd2bdaa4828ce9479))
+* add withRetry utility and integrate into github API mutations ([ca5e62f](https://github.com/thalesraymond/jules-pr-reviewer/commit/ca5e62fac639160bed1cebfc2e1cca7a5ab211f7))
+
+
+### Bug Fixes
+
+* 🔒 prevent comment spoofing by validating author ([6368835](https://github.com/thalesraymond/jules-pr-reviewer/commit/636883531fe15fa0c7a98bcfc2e2cf1ad3bcd012))
+* **oktokit:** optime octokit init ([d9a2233](https://github.com/thalesraymond/jules-pr-reviewer/commit/d9a22334c143b3bee11d34ab0094fb80ba76b2e5))
+* securely format error strings in public commit status ([635b55e](https://github.com/thalesraymond/jules-pr-reviewer/commit/635b55e02e77c46509c079cbbb2b24e906cc75f6))
+
+
+### Performance Improvements
+
+* optimize early returns and instantiation ([a926605](https://github.com/thalesraymond/jules-pr-reviewer/commit/a92660515ee5c40239593eccdae00766d5e1e871))
+* optimize early returns to prevent wasteful allocations ([6b93386](https://github.com/thalesraymond/jules-pr-reviewer/commit/6b933868c9c156e6ab6f1fbc5f260d6cb508964c))
+* parallelize independent github api requests ([0cb6436](https://github.com/thalesraymond/jules-pr-reviewer/commit/0cb6436d00ab46fef922575201f8e90c15e04bdf))
+
 ## [1.2.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.1.0...v1.2.0) (2026-06-15)
 
 
