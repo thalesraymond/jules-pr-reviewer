@@ -65,11 +65,11 @@ async function run(): Promise<void> {
   const baseSha: string = pr.base.sha;
   const isDraft: boolean = !!pr.draft;
   const isFork: boolean = pr.head.repo?.full_name !== `${owner}/${repo}`;
-  const labels: string[] = (pr.labels || []).map(
-    (l: { name: string }) => l.name
-  );
 
-  const octokit = github.getOctokit(token);
+  // ⚡ Bolt: Optimize bypass label check to stop iterating early and prevent wasteful `.map` array allocation
+  const hasBypassLabel = (pr.labels || []).some(
+    (l: { name: string }) => l.name === bypassLabel
+  );
 
   if (isDraft && skipDrafts) {
     core.info("Skipping draft PR.");
@@ -79,10 +79,13 @@ async function run(): Promise<void> {
     core.info("Skipping fork PR (skip_forks=true).");
     return;
   }
-  if (labels.includes(bypassLabel)) {
+  if (hasBypassLabel) {
     core.info(`Bypass label "${bypassLabel}" present — skipping review.`);
     return;
   }
+
+  // ⚡ Bolt: Delay instantiating the Octokit client until after early returns (draft/fork/bypass) to save memory
+  const octokit = github.getOctokit(token);
 
   try {
     try {
@@ -227,10 +230,17 @@ export function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max - 1) + "…";
 }
 
-function statusFromVerdict(
+export function statusFromVerdict(
   verdict: Verdict,
   failOn: FailOn
 ): { state: "success" | "failure"; description: string } {
+  if (!["approve", "comment", "block"].includes(verdict)) {
+    return {
+      state: "failure",
+      description: "Invalid review verdict",
+    };
+  }
+
   if (failOn === "never") {
     return {
       state: "success",

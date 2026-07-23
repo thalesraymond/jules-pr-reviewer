@@ -29043,12 +29043,12 @@ function qstring(str) {
 /******/ 		}
 /******/ 	};
 /******/ })();
-/******/
+/******/ 
 /******/ /* webpack/runtime/hasOwnProperty shorthand */
 /******/ (() => {
 /******/ 	__nccwpck_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
 /******/ })();
-/******/
+/******/ 
 /******/ /* webpack/runtime/compat */
 /******/ 
 /******/ if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = new URL('.', import.meta.url).pathname.slice(import.meta.url.match(/^file:\/\/\/\w:/) ? 1 : 0, -1) + "/";
@@ -29058,6 +29058,7 @@ var __webpack_exports__ = {};
 
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
+  C: () => (/* binding */ statusFromVerdict),
   x: () => (/* binding */ truncate)
 });
 
@@ -36524,7 +36525,7 @@ ${c.promptForAgents}
             body: summary,
             comments: [],
         });
-    },
+    }, 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (error) => error?.status === 422 || String(error).includes("Unprocessable Entity"));
 }
@@ -40927,7 +40928,7 @@ source, timeoutMinutes) {
         return {
             reviewResult: {
                 summary: "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
-                verdict: "comment",
+                verdict: "block",
                 resolvedCommentIds: [],
                 newComments: [],
             },
@@ -40937,22 +40938,32 @@ source, timeoutMinutes) {
     return { reviewResult, sessionId: session.id };
 }
 function parseJulesResponse(message) {
+    let parsed;
     const jsonMatch = message.match(/```json\n([\s\S]*?)\n```/);
     if (jsonMatch) {
         try {
-            return JSON.parse(jsonMatch[1]);
+            parsed = JSON.parse(jsonMatch[1]);
         }
         catch {
             // fallback
         }
     }
     // Try parsing the whole message if no codeblocks
-    try {
-        return JSON.parse(message);
+    if (!parsed) {
+        try {
+            parsed = JSON.parse(message);
+        }
+        catch (e) {
+            throw new Error("Failed to parse Jules response as JSON", { cause: e });
+        }
     }
-    catch (e) {
-        throw new Error("Failed to parse Jules response as JSON", { cause: e });
+    if (!parsed ||
+        typeof parsed !== "object" ||
+        !("verdict" in parsed) ||
+        !["approve", "comment", "block"].includes(parsed.verdict)) {
+        throw new Error("Invalid or missing verdict in Jules response");
     }
+    return parsed;
 }
 async function waitUntilSessionReady(session) {
     const maxAttempts = 20;
@@ -41154,8 +41165,8 @@ async function run() {
     const baseSha = pr.base.sha;
     const isDraft = !!pr.draft;
     const isFork = pr.head.repo?.full_name !== `${owner}/${repo}`;
-    const labels = (pr.labels || []).map((l) => l.name);
-    const octokit = getOctokit(token);
+    // ⚡ Bolt: Optimize bypass label check to stop iterating early and prevent wasteful `.map` array allocation
+    const hasBypassLabel = (pr.labels || []).some((l) => l.name === bypassLabel);
     if (isDraft && skipDrafts) {
         info("Skipping draft PR.");
         return;
@@ -41164,10 +41175,12 @@ async function run() {
         info("Skipping fork PR (skip_forks=true).");
         return;
     }
-    if (labels.includes(bypassLabel)) {
+    if (hasBypassLabel) {
         info(`Bypass label "${bypassLabel}" present — skipping review.`);
         return;
     }
+    // ⚡ Bolt: Delay instantiating the Octokit client until after early returns (draft/fork/bypass) to save memory
+    const octokit = getOctokit(token);
     try {
         try {
             await setStatus(octokit, owner, repo, headSha, statusContext, "pending", "Jules is reviewing this PR…");
@@ -41247,6 +41260,12 @@ function truncate(s, max) {
     return s.length <= max ? s : s.slice(0, max - 1) + "…";
 }
 function statusFromVerdict(verdict, failOn) {
+    if (!["approve", "comment", "block"].includes(verdict)) {
+        return {
+            state: "failure",
+            description: "Invalid review verdict",
+        };
+    }
     if (failOn === "never") {
         return {
             state: "success",
@@ -41269,7 +41288,8 @@ run().catch((err) => {
     setFailed(err instanceof Error ? err.message : String(err));
 });
 
+var __webpack_exports__statusFromVerdict = __webpack_exports__.C;
 var __webpack_exports__truncate = __webpack_exports__.x;
-export { __webpack_exports__truncate as truncate };
+export { __webpack_exports__statusFromVerdict as statusFromVerdict, __webpack_exports__truncate as truncate };
 
 //# sourceMappingURL=index.js.map
