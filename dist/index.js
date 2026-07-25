@@ -38806,6 +38806,11 @@ function parseIgnoredPaths(input) {
         return [];
     }
     const trimmed = input.trim();
+    const splitList = (raw) => raw
+        .split(/[\n,]+/)
+        .map((s) => s.trim())
+        .map((s) => s.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1"))
+        .filter((s) => s.length > 0);
     if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
         try {
             const parsed = JSON.parse(trimmed);
@@ -38817,13 +38822,10 @@ function parseIgnoredPaths(input) {
             }
         }
         catch {
-            // Fallback if JSON parsing fails
+            return splitList(trimmed.slice(1, -1));
         }
     }
-    return trimmed
-        .split(/[\n,]+/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
+    return splitList(trimmed);
 }
 function shouldIgnorePath(filePath, ignoredPatterns) {
     if (!ignoredPatterns || ignoredPatterns.length === 0) {
