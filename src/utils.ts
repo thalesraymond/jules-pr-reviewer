@@ -66,10 +66,18 @@ export function parseIgnoredPaths(input?: string): string[] {
   if (!input || !input.trim()) {
     return [];
   }
+
   const trimmed = input.trim();
+  const splitList = (raw: string): string[] =>
+    raw
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .map((s) => s.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1"))
+      .filter((s) => s.length > 0);
+
   if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
     try {
-      const parsed = JSON.parse(trimmed);
+      const parsed: unknown = JSON.parse(trimmed);
       if (Array.isArray(parsed)) {
         return parsed
           .filter((item): item is string => typeof item === "string")
@@ -77,13 +85,11 @@ export function parseIgnoredPaths(input?: string): string[] {
           .filter((s) => s.length > 0);
       }
     } catch {
-      // Fallback if JSON parsing fails
+      return splitList(trimmed.slice(1, -1));
     }
   }
-  return trimmed
-    .split(/[\n,]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+
+  return splitList(trimmed);
 }
 
 export function shouldIgnorePath(
