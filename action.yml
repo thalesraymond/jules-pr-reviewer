@@ -41,11 +41,15 @@ inputs:
     description: "Path (in the repo) to a Markdown file whose contents are injected into the prompt. Default .github/jules-review-rules.md if it exists. Set to empty string to disable."
     required: false
     default: ".github/jules-review-rules.md"
+  ignored_paths:
+    description: "JSON array or list of file paths/globs to ignore when reviewing diffs (e.g. '[\"dist/**\", \"*.lock\"]')."
+    required: false
+    default: "[]"
   timeout_minutes:
     description: "How long to wait for Jules to return a review before giving up. Default 30. Real reviews on non-trivial PRs often take 15-25 minutes; do not set below 20 or you will miss legitimate reviews."
     required: false
     default: "30"
 
 runs:
-  using: "node20"
+  using: "node24"
   main: "dist/index.js"

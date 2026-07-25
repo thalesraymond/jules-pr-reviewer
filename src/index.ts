@@ -11,6 +11,7 @@ import {
 } from "./github.js";
 import { runJulesReview, wrapPermissionError } from "./jules.js";
 import { buildReviewPrompt } from "./prompt.js";
+import { parseIgnoredPaths, filterDiff } from "./utils.js";
 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
 const VALID_FAIL_ON: FailOn[] = ["never", "blocking", "any"];
@@ -35,6 +36,8 @@ async function run(): Promise<void> {
   const statusContext = core.getInput("status_context");
   const extraInstructions = core.getInput("extra_instructions");
   const rulesFilePath = core.getInput("rules_file");
+  const ignoredPathsRaw = core.getInput("ignored_paths");
+  const ignoredPaths = parseIgnoredPaths(ignoredPathsRaw);
   const timeoutMinutesRaw = core.getInput("timeout_minutes") || "30";
   const timeoutMinutes = Math.max(1, parseInt(timeoutMinutesRaw, 10) || 30);
 
@@ -122,7 +125,11 @@ async function run(): Promise<void> {
       fetchOpenThreads(octokit, owner, repo, prNumber),
     ]);
 
-    const { text: diffText, truncatedNote } = truncateDiff(diff, 80_000);
+    const filteredDiff = filterDiff(diff, ignoredPaths);
+    const { text: diffText, truncatedNote } = truncateDiff(
+      filteredDiff,
+      80_000
+    );
 
     const prompt = buildReviewPrompt({
       repoFullName: `${owner}/${repo}`,

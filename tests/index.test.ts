@@ -228,6 +228,47 @@ describe("index.ts", () => {
     );
   });
 
+  it("filters diff using ignored_paths before passing to Jules", async () => {
+    mockGetInput.mockImplementation((name: string) => {
+      if (name === "ignored_paths") return '["dist/**"]';
+      if (name === "jules_api_key") return "k";
+      if (name === "github_token") return "t";
+      if (name === "fail_on") return "any";
+      return "";
+    });
+
+    const diffWithDist = `diff --git a/src/index.ts b/src/index.ts
+index 123..456 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1 +1 @@
+-old
++new
+diff --git a/dist/index.js b/dist/index.js
+index 789..abc 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1 +1 @@
+-old dist
++new dist`;
+
+    mockGithubHelper.fetchDiff.mockResolvedValue(diffWithDist);
+    await loadIndex();
+
+    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("src/index.ts"),
+      expect.anything(),
+      expect.anything()
+    );
+    expect(mockJulesHelper.runJulesReview).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("dist/index.js"),
+      expect.anything(),
+      expect.anything()
+    );
+  });
+
   it("handles Jules failure to return review", async () => {
     mockJulesHelper.runJulesReview.mockResolvedValue({
       reviewResult: null,

@@ -1,3 +1,5 @@
+import { minimatch } from "minimatch";
+
 /**
  * Executes a primary async function. If it throws an error that satisfies the
  * shouldFallback predicate, the fallback async function is executed instead.
@@ -58,4 +60,96 @@ export async function withFallback<T>(
     }
     throw error;
   }
+}
+
+export function parseIgnoredPaths(input?: string): string[] {
+  if (!input || !input.trim()) {
+    return [];
+  }
+  const trimmed = input.trim();
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((item): item is string => typeof item === "string")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+      }
+    } catch {
+      // Fallback if JSON parsing fails
+    }
+  }
+  return trimmed
+    .split(/[\n,]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+export function shouldIgnorePath(
+  filePath: string,
+  ignoredPatterns: string[]
+): boolean {
+  if (!ignoredPatterns || ignoredPatterns.length === 0) {
+    return false;
+  }
+  const normalizedFilePath = filePath.replace(/\\/g, "/");
+
+  for (const pattern of ignoredPatterns) {
+    const normalizedPattern = pattern.replace(/\\/g, "/");
+
+    const cleanPattern = normalizedPattern.endsWith("/")
+      ? normalizedPattern.slice(0, -1)
+      : normalizedPattern;
+
+    if (
+      normalizedFilePath === cleanPattern ||
+      normalizedFilePath.startsWith(cleanPattern + "/")
+    ) {
+      return true;
+    }
+
+    if (minimatch(normalizedFilePath, normalizedPattern, { dot: true })) {
+      return true;
+    }
+
+    if (
+      !normalizedPattern.endsWith("**") &&
+      minimatch(normalizedFilePath, `${cleanPattern}/**`, { dot: true })
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function filterDiff(diff: string, ignoredPatterns: string[]): string {
+  if (!diff || !ignoredPatterns || ignoredPatterns.length === 0) {
+    return diff;
+  }
+
+  const sections = diff.split(/(?=^diff --git )/m);
+  const keptSections: string[] = [];
+
+  for (const section of sections) {
+    if (!section.trim()) continue;
+
+    const headerMatch = section.match(/^diff --git a\/(\S+) b\/(\S+)/m);
+    if (headerMatch) {
+      const [, pathA, pathB] = headerMatch;
+      const isPathAIgnored =
+        pathA !== "dev/null" && shouldIgnorePath(pathA, ignoredPatterns);
+      const isPathBIgnored =
+        pathB !== "dev/null" && shouldIgnorePath(pathB, ignoredPatterns);
+
+      if (isPathAIgnored || isPathBIgnored) {
+        continue;
+      }
+    }
+
+    keptSections.push(section);
+  }
+
+  return keptSections.join("");
 }

@@ -17,7 +17,7 @@ This is a **GitHub Action** (`jules-pr-reviewer`) that uses the [Google Jules SD
 
 | Layer        | Tool                                                                       |
 | ------------ | -------------------------------------------------------------------------- |
-| Runtime      | Node 20 (GitHub Actions runner)                                            |
+| Runtime      | Node 24 (GitHub Actions runner)                                            |
 | Language     | TypeScript 6 (`strict: true`, ES2022 target, ESNext modules)              |
 | Package Mgr  | pnpm                                                                       |
 | Bundler      | `@vercel/ncc` — single-file output to `dist/index.js`                     |

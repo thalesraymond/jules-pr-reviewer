@@ -29,7 +29,8 @@
   "dependencies": {
     "@actions/core": "^3.0.1",
     "@actions/github": "^9.1.1",
-    "@google/jules-sdk": "^0.2.0"
+    "@google/jules-sdk": "^0.2.0",
+    "minimatch": "^10.2.5"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.1",
