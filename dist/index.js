@@ -38839,12 +38839,13 @@ function shouldIgnorePath(filePath, ignoredPatterns) {
             normalizedFilePath.startsWith(cleanPattern + "/")) {
             return true;
         }
-        if (minimatch(normalizedFilePath, normalizedPattern, { dot: true })) {
-            return true;
+        try {
+            if (minimatch(normalizedFilePath, normalizedPattern, { dot: true })) {
+                return true;
+            }
         }
-        if (!normalizedPattern.endsWith("**") &&
-            minimatch(normalizedFilePath, `${cleanPattern}/**`, { dot: true })) {
-            return true;
+        catch {
+            // Ignore invalid patterns rather than failing the whole action
         }
     }
     return false;
@@ -38858,9 +38859,10 @@ function filterDiff(diff, ignoredPatterns) {
     for (const section of sections) {
         if (!section.trim())
             continue;
-        const headerMatch = section.match(/^diff --git a\/(\S+) b\/(\S+)/m);
+        const headerMatch = section.match(/^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/m);
         if (headerMatch) {
-            const [, pathA, pathB] = headerMatch;
+            const pathA = (headerMatch[1] ?? headerMatch[2]);
+            const pathB = (headerMatch[3] ?? headerMatch[4]);
             const isPathAIgnored = pathA !== "dev/null" && shouldIgnorePath(pathA, ignoredPatterns);
             const isPathBIgnored = pathB !== "dev/null" && shouldIgnorePath(pathB, ignoredPatterns);
             if (isPathAIgnored || isPathBIgnored) {
