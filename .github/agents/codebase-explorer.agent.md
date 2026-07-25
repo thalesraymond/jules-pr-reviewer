@@ -2,17 +2,17 @@
 name: codebase-explorer
 description: 'Read-only subagent that scans directory trees, locates relevant files, greps symbols, and generates concise codebase context summaries for planning.'
 model: 
-  - Gemini 3.6 Flash (copilot)
   - Claude Haiku 4.5 (copilot)
+  - Gemini 3.6 Flash (copilot)
   - GPT-5 mini (copilot)
-user-invocable: true
+user-invocable: false
 disable-model-invocation: false
 tools: [vscode, read, agent, search, todo]
 handoffs:
   - label: 'Draft Spec with Planner'
     agent: spec-planner
-    prompt: 'Use the codebase context summary above to draft a step-by-step implementation plan.'
-    send: false
+    prompt: 'Use the discovery summary to draft a bounded OpenSpec implementation plan with explicit non-goals and verification steps.'
+    send: true
 ---
 
 # Codebase Explorer
@@ -42,3 +42,5 @@ When completing an exploration task, structure your output strictly as follows:
 
 ### 4. Implementation Constraints & Edge Cases
 - Note potential pitfalls, existing patterns to follow, or anti-patterns to avoid.
+
+Keep the summary concise and avoid dumping long raw snippets unless strictly necessary.

@@ -82,6 +82,26 @@ pnpm coverage      # Vitest + v8 — must meet 90% thresholds (lines, functions,
 - Keep commits small and atomic — one logical change per commit.
 - The `dist/` folder is checked in. The pre-commit hook auto-rebuilds and stages it, but verify the bundle is up-to-date if you bypass hooks.
 
+## Multi-Agent Configuration
+
+This project defines specialized agent roles under [`.github/agents/`](./.github/agents/). While these files are consumed by GitHub Copilot agent mode, every agent working on the repository should be aware of them and respect the split responsibilities when coordinating work.
+
+| File | Agent | Purpose |
+| ---- | ----- | ------- |
+| [`.github/agents/builder.agent.md`](./.github/agents/builder.agent.md) | `code-builder` | Executes approved plans, edits files, runs verification commands, and hands off to `code-reviewer`. |
+| [`.github/agents/codebase-explorer.agent.md`](./.github/agents/codebase-explorer.agent.md) | `codebase-explorer` | Read-only discovery agent that summarizes target files, dependencies, and constraints for planners. |
+| [`.github/agents/planner.agent.md`](./.github/agents/planner.agent.md) | `spec-planner` | Produces bounded implementation plans, starts with explorer handoff, and routes execution to `code-builder`. |
+| [`.github/agents/reviewer.agent.md`](./.github/agents/reviewer.agent.md) | `code-reviewer` | Audits uncommitted diffs, runs verification, and routes failures back to `spec-planner` or archive on pass. |
+
+### Handoff Workflow
+
+1. `spec-planner` begins with the `codebase-explorer` handoff to gather context.
+2. `spec-planner` produces a plan and hands it to `code-builder` for implementation.
+3. `code-builder` applies changes and performs verification, then hands off to `code-reviewer`.
+4. `code-reviewer` either returns findings to `spec-planner` for a fix plan, or triggers the archive handoff on success.
+
+Agents that do not natively consume these definitions should still mirror this separation of concerns: read before planning, plan before editing, verify before reviewing, and review before archiving.
+
 ## Key Design Decisions
 
 - **Prompt-injection defence:** The review prompt in [`prompt.ts`](./src/prompt.ts) explicitly labels PR title, description, diff, and rules file as `UNTRUSTED` to prevent the reviewed code from manipulating the LLM verdict.

@@ -34,6 +34,11 @@ describe("index.ts", () => {
     wrapPermissionError: vi.fn(),
   };
 
+  const mockLoggingHelper = {
+    logStructured: vi.fn(),
+    setReviewOutputs: vi.fn(),
+  };
+
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
@@ -80,6 +85,7 @@ describe("index.ts", () => {
     // mock helpers
     vi.doMock("../src/github.js", () => mockGithubHelper);
     vi.doMock("../src/jules.js", () => mockJulesHelper);
+    vi.doMock("../src/logging.js", () => mockLoggingHelper);
 
     // default helper returns
     mockGithubHelper.fetchDiff.mockResolvedValue("diff");
@@ -501,6 +507,224 @@ index 789..abc 100644
       "error",
       "Review failed. Check GitHub Actions log for details."
     );
+  });
+
+  it("emits review_started log on successful start", async () => {
+    await loadIndex();
+    expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
+      "review_started",
+      expect.objectContaining({
+        repoOwner: "owner",
+        repoName: "repo",
+        prNumber: 1,
+        headSha: "headSHA",
+      })
+    );
+  });
+
+  it("emits review_completed log with issue counts", async () => {
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "comment",
+        summary: "Found 2 issues",
+        newComments: [
+          {
+            file: "a.ts",
+            line: 1,
+            severity: "High",
+            confidence: "High",
+            message: "Issue 1",
+            promptForAgents: "",
+          },
+          {
+            file: "b.ts",
+            line: 2,
+            severity: "Warning",
+            confidence: "Medium",
+            message: "Issue 2",
+            promptForAgents: "",
+          },
+          {
+            file: "c.ts",
+            line: 3,
+            severity: "Info",
+            confidence: "Low",
+            message: "Issue 3",
+            promptForAgents: "",
+          },
+        ],
+      },
+      sessionId: "sess123",
+    });
+    await loadIndex();
+    expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
+      "review_completed",
+      expect.objectContaining({
+        verdict: "comment",
+        issuesCount: 3,
+        highIssues: 1,
+        warningIssues: 1,
+        infoIssues: 1,
+        sessionId: "sess123",
+      })
+    );
+  });
+
+  it("emits review_failed log on error", async () => {
+    mockGithubHelper.fetchDiff.mockRejectedValue(new Error("Network error"));
+    await loadIndex();
+    expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
+      "review_failed",
+      expect.objectContaining({
+        reason: "Network error",
+        stage: "review_execution",
+      })
+    );
+  });
+
+  it("emits jules_api_called log with success", async () => {
+    await loadIndex();
+    expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
+      "jules_api_called",
+      expect.objectContaining({
+        success: true,
+        duration: expect.any(Number),
+      })
+    );
+  });
+
+  it("emits review_submitted log after submitReview resolves", async () => {
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "approve",
+        summary: "Good",
+        newComments: [
+          {
+            file: "a.ts",
+            line: 1,
+            severity: "Info",
+            confidence: "High",
+            message: "Note",
+            promptForAgents: "",
+          },
+        ],
+      },
+      sessionId: "sess-submit",
+    });
+
+    await loadIndex();
+
+    expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
+      "review_submitted",
+      expect.objectContaining({
+        verdict: "approve",
+        sessionId: "sess-submit",
+        commentCount: 1,
+      })
+    );
+  });
+
+  it("sets outputs on successful review", async () => {
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "approve",
+        summary: "Good",
+        newComments: [
+          {
+            file: "a.ts",
+            line: 1,
+            severity: "High",
+            confidence: "High",
+            message: "Issue",
+            promptForAgents: "",
+          },
+          {
+            file: "b.ts",
+            line: 2,
+            severity: "Warning",
+            confidence: "Medium",
+            message: "Warning",
+            promptForAgents: "",
+          },
+        ],
+      },
+      sessionId: "sess456",
+    });
+    await loadIndex();
+    expect(mockLoggingHelper.setReviewOutputs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        verdict: "approve",
+        issues_count: 2,
+        high_issues_count: 1,
+        warning_issues_count: 1,
+        info_issues_count: 0,
+        session_id: "sess456",
+      })
+    );
+  });
+
+  it("sets skipped outputs on draft skip", async () => {
+    (github as any).context.payload.pull_request.draft = true;
+    mockGetBooleanInput.mockImplementation(
+      (name: string) => name === "skip_drafts"
+    );
+    await loadIndex();
+    expect(mockLoggingHelper.setReviewOutputs).toHaveBeenCalledWith({
+      verdict: "skipped",
+      issues_count: 0,
+      high_issues_count: 0,
+      warning_issues_count: 0,
+      info_issues_count: 0,
+    });
+  });
+
+  it("sets skipped outputs on fork skip", async () => {
+    (github as any).context.payload.pull_request.head.repo.full_name =
+      "fork/repo";
+    mockGetBooleanInput.mockImplementation(
+      (name: string) => name === "skip_forks"
+    );
+    await loadIndex();
+    expect(mockLoggingHelper.setReviewOutputs).toHaveBeenCalledWith({
+      verdict: "skipped",
+      issues_count: 0,
+      high_issues_count: 0,
+      warning_issues_count: 0,
+      info_issues_count: 0,
+    });
+  });
+
+  it("sets skipped outputs on bypass label skip", async () => {
+    mockGetInput.mockImplementation((name: string) => {
+      if (name === "jules_api_key") return "k";
+      if (name === "github_token") return "t";
+      if (name === "fail_on") return "any";
+      if (name === "bypass_label") return "skip-review";
+      return "";
+    });
+    (github as any).context.payload.pull_request.labels = [
+      { name: "skip-review" },
+    ];
+    await loadIndex();
+    expect(mockLoggingHelper.setReviewOutputs).toHaveBeenCalledWith({
+      verdict: "skipped",
+      issues_count: 0,
+      high_issues_count: 0,
+      warning_issues_count: 0,
+      info_issues_count: 0,
+    });
+  });
+
+  it("sets skipped outputs on error", async () => {
+    mockGithubHelper.fetchDiff.mockRejectedValue(new Error("Fetch failed"));
+    await loadIndex();
+    expect(mockLoggingHelper.setReviewOutputs).toHaveBeenCalledWith({
+      verdict: "skipped",
+      issues_count: 0,
+      high_issues_count: 0,
+      warning_issues_count: 0,
+      info_issues_count: 0,
+    });
   });
 });
 

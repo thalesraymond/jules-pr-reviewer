@@ -29209,16 +29209,16 @@ function file_command_issueFileCommand(command, message) {
     if (!filePath) {
         throw new Error(`Unable to find environment variable for file command ${command}`);
     }
-    if (!fs.existsSync(filePath)) {
+    if (!external_fs_namespaceObject.existsSync(filePath)) {
         throw new Error(`Missing file at path: ${filePath}`);
     }
-    fs.appendFileSync(filePath, `${toCommandValue(message)}${os.EOL}`, {
+    external_fs_namespaceObject.appendFileSync(filePath, `${utils_toCommandValue(message)}${external_os_namespaceObject.EOL}`, {
         encoding: 'utf8'
     });
 }
 function file_command_prepareKeyValueMessage(key, value) {
-    const delimiter = `ghadelimiter_${crypto.randomUUID()}`;
-    const convertedValue = toCommandValue(value);
+    const delimiter = `ghadelimiter_${external_crypto_namespaceObject.randomUUID()}`;
+    const convertedValue = utils_toCommandValue(value);
     // These should realistically never happen, but just in case someone finds a
     // way to exploit uuid generation let's not allow keys or values that contain
     // the delimiter.
@@ -29228,7 +29228,7 @@ function file_command_prepareKeyValueMessage(key, value) {
     if (convertedValue.includes(delimiter)) {
         throw new Error(`Unexpected input: value should not contain the delimiter "${delimiter}"`);
     }
-    return `${key}<<${delimiter}${os.EOL}${convertedValue}${os.EOL}${delimiter}`;
+    return `${key}<<${delimiter}${external_os_namespaceObject.EOL}${convertedValue}${external_os_namespaceObject.EOL}${delimiter}`;
 }
 //# sourceMappingURL=file-command.js.map
 ;// CONCATENATED MODULE: external "path"
@@ -31850,10 +31850,10 @@ function getBooleanInput(name, options) {
 function setOutput(name, value) {
     const filePath = process.env['GITHUB_OUTPUT'] || '';
     if (filePath) {
-        return issueFileCommand('OUTPUT', prepareKeyValueMessage(name, value));
+        return file_command_issueFileCommand('OUTPUT', file_command_prepareKeyValueMessage(name, value));
     }
-    process.stdout.write(os.EOL);
-    issueCommand('set-output', { name }, toCommandValue(value));
+    process.stdout.write(external_os_namespaceObject.EOL);
+    command_issueCommand('set-output', { name }, utils_toCommandValue(value));
 }
 /**
  * Enables or disables the echoing of commands into stdout for the rest of the step.
@@ -43737,7 +43737,93 @@ You MUST output your review as a JSON object, wrapped in a \`\`\`json block. Do 
 `;
 }
 
+;// CONCATENATED MODULE: ./src/logging.ts
+
+/**
+ * Recursively scrub sensitive values from an object to prevent accidental
+ * exposure of API keys, tokens, and untrusted PR content in logs.
+ */
+function scrubSecrets(value) {
+    if (value === null || value === undefined) {
+        return value;
+    }
+    if (typeof value === "string") {
+        // Don't scrub short strings that are unlikely to contain secrets
+        if (value.length < 10) {
+            return value;
+        }
+        let scrubbed = value;
+        // Scrub GitHub token from environment or memory
+        const token = process.env.GITHUB_TOKEN;
+        if (token && value.includes(token)) {
+            scrubbed = scrubbed.replaceAll(token, "[REDACTED_TOKEN]");
+        }
+        // Scrub Jules API key from environment or memory
+        const apiKey = process.env.JULES_API_KEY;
+        if (apiKey && value.includes(apiKey)) {
+            scrubbed = scrubbed.replaceAll(apiKey, "[REDACTED_API_KEY]");
+        }
+        // Scrub common patterns that likely contain diffs or PR content
+        // (e.g., diff headers starting with @@, PR body markers)
+        if (value.startsWith("diff --git") ||
+            value.includes("@@") ||
+            value.startsWith("---") ||
+            value.startsWith("+++")) {
+            return "[REDACTED_DIFF]";
+        }
+        return scrubbed;
+    }
+    if (Array.isArray(value)) {
+        return value.map(scrubSecrets);
+    }
+    if (typeof value === "object") {
+        const scrubbed = {};
+        for (const [key, val] of Object.entries(value)) {
+            // Skip fields that are likely to contain untrusted PR content
+            if (key === "diff" ||
+                key === "prTitle" ||
+                key === "prBody" ||
+                key === "description" ||
+                key === "title") {
+                continue;
+            }
+            scrubbed[key] = scrubSecrets(val);
+        }
+        return scrubbed;
+    }
+    return value;
+}
+/**
+ * Emit a structured log entry as a JSON string prefixed with ::structured::
+ * The entry is written via core.info so it appears in the GitHub Actions log.
+ */
+function logStructured(event, payload) {
+    const scrubbed = scrubSecrets(payload);
+    const entry = {
+        event,
+        timestamp: new Date().toISOString(),
+        payload: scrubbed,
+    };
+    const line = `::structured:: ${JSON.stringify(entry)}`;
+    info(line);
+}
+/**
+ * Set GitHub Action outputs for the review results.
+ * Each field in ReviewOutputs is emitted via core.setOutput.
+ */
+function setReviewOutputs(outputs) {
+    setOutput("verdict", outputs.verdict);
+    setOutput("issues_count", outputs.issues_count.toString());
+    setOutput("high_issues_count", outputs.high_issues_count.toString());
+    setOutput("warning_issues_count", outputs.warning_issues_count.toString());
+    setOutput("info_issues_count", outputs.info_issues_count.toString());
+    if (outputs.session_id) {
+        setOutput("session_id", outputs.session_id);
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/index.ts
+
 
 
 
@@ -43747,10 +43833,13 @@ You MUST output your review as a JSON object, wrapped in a \`\`\`json block. Do 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
 const VALID_FAIL_ON = ["never", "blocking", "any"];
 async function run() {
+    const reviewStartTime = Date.now();
     const apiKey = getInput("jules_api_key", { required: true });
     core_setSecret(apiKey);
+    process.env.JULES_API_KEY = apiKey;
     const token = getInput("github_token", { required: true });
     core_setSecret(token);
+    process.env.GITHUB_TOKEN = token;
     const failOnRaw = getInput("fail_on");
     if (!VALID_FAIL_ON.includes(failOnRaw)) {
         setFailed(`Invalid fail_on: "${failOnRaw}". Must be one of: ${VALID_FAIL_ON.join(", ")}.`);
@@ -43789,18 +43878,46 @@ async function run() {
     const baseSha = pr.base.sha;
     const isDraft = !!pr.draft;
     const isFork = pr.head.repo?.full_name !== `${owner}/${repo}`;
+    // Emit review_started
+    logStructured("review_started", {
+        repoOwner: owner,
+        repoName: repo,
+        prNumber,
+        headSha,
+    });
     // ⚡ Bolt: Optimize bypass label check to stop iterating early and prevent wasteful `.map` array allocation
     const hasBypassLabel = (pr.labels || []).some((l) => l.name === bypassLabel);
     if (isDraft && skipDrafts) {
         info("Skipping draft PR.");
+        setReviewOutputs({
+            verdict: "skipped",
+            issues_count: 0,
+            high_issues_count: 0,
+            warning_issues_count: 0,
+            info_issues_count: 0,
+        });
         return;
     }
     if (isFork && skipForks) {
         info("Skipping fork PR (skip_forks=true).");
+        setReviewOutputs({
+            verdict: "skipped",
+            issues_count: 0,
+            high_issues_count: 0,
+            warning_issues_count: 0,
+            info_issues_count: 0,
+        });
         return;
     }
     if (hasBypassLabel) {
         info(`Bypass label "${bypassLabel}" present — skipping review.`);
+        setReviewOutputs({
+            verdict: "skipped",
+            issues_count: 0,
+            high_issues_count: 0,
+            warning_issues_count: 0,
+            info_issues_count: 0,
+        });
         return;
     }
     // ⚡ Bolt: Delay instantiating the Octokit client until after early returns (draft/fork/bypass) to save memory
@@ -43842,9 +43959,19 @@ async function run() {
             rulesFromFile,
             openThreads,
         });
+        const julesApiCallStart = Date.now();
         const { reviewResult, sessionId } = await runJulesReview(apiKey, prompt, { github: `${owner}/${repo}`, baseBranch: pr.base.ref }, timeoutMinutes);
+        const julesApiDuration = Date.now() - julesApiCallStart;
+        logStructured("jules_api_called", {
+            success: true,
+            duration: julesApiDuration,
+        });
         if (!reviewResult) {
             await setStatus(octokit, owner, repo, headSha, statusContext, "error", "Jules did not return a valid review in time");
+            logStructured("review_failed", {
+                reason: "No valid review returned",
+                stage: "api_response",
+            });
             setFailed(`Jules returned no review message within ${timeoutMinutes} minutes.`);
             return;
         }
@@ -43869,13 +43996,51 @@ async function run() {
             return copy;
         });
         await submitReview(octokit, owner, repo, prNumber, headSha, finalBody, commentsForReview);
+        logStructured("review_submitted", {
+            verdict,
+            sessionId,
+            commentCount: commentsForReview.length,
+        });
         const { state, description } = statusFromVerdict(verdict, failOn);
         await setStatus(octokit, owner, repo, headSha, statusContext, state, description);
+        // Compute issue counts from newComments
+        const highCount = (newComments || []).filter((c) => c.severity === "High").length;
+        const warningCount = (newComments || []).filter((c) => c.severity === "Warning").length;
+        const infoCount = (newComments || []).filter((c) => c.severity === "Info").length;
+        const reviewDuration = Date.now() - reviewStartTime;
+        setReviewOutputs({
+            verdict: verdict,
+            issues_count: (newComments || []).length,
+            high_issues_count: highCount,
+            warning_issues_count: warningCount,
+            info_issues_count: infoCount,
+            session_id: sessionId,
+        });
+        logStructured("review_completed", {
+            verdict,
+            issuesCount: (newComments || []).length,
+            highIssues: highCount,
+            warningIssues: warningCount,
+            infoIssues: infoCount,
+            sessionId,
+            duration: reviewDuration,
+        });
         info(`Verdict: ${verdict}. Status check: ${state}.`);
     }
     catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         error(`Review failed: ${msg}`);
+        logStructured("review_failed", {
+            reason: msg,
+            stage: "review_execution",
+        });
+        setReviewOutputs({
+            verdict: "skipped",
+            issues_count: 0,
+            high_issues_count: 0,
+            warning_issues_count: 0,
+            info_issues_count: 0,
+        });
         await setStatus(octokit, owner, repo, headSha, statusContext, "error", "Review failed. Check GitHub Actions log for details.").catch(() => { });
         setFailed(`Jules PR review failed: ${msg}`);
     }
