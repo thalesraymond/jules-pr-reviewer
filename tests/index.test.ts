@@ -50,6 +50,7 @@ describe("index.ts", () => {
       if (name === "github_token") return "dummy_token";
       if (name === "fail_on") return "any";
       if (name === "timeout_minutes") return "30";
+      if (name === "enable_suggestions") return "false";
       return "";
     });
     mockGetBooleanInput.mockReturnValue(false);
@@ -369,6 +370,87 @@ index 789..abc 100644
       "success",
       "Approved"
     );
+  });
+
+  it("strips suggestion fields when enable_suggestions is false (default)", async () => {
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "approve",
+        summary: "ok",
+        newComments: [
+          {
+            file: "a.ts",
+            line: 10,
+            startLine: 8,
+            severity: "High",
+            confidence: "High",
+            message: "Msg",
+            promptForAgents: "",
+            suggestion: "const x = 1;",
+          },
+        ],
+      },
+      sessionId: "s1",
+    });
+    await loadIndex();
+    expect(mockGithubHelper.submitReview).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      expect.anything(),
+      expect.arrayContaining([
+        expect.objectContaining({
+          file: "a.ts",
+          line: 10,
+          severity: "High",
+          confidence: "High",
+          message: "Msg",
+          promptForAgents: "",
+        }),
+      ])
+    );
+    const submittedComments = mockGithubHelper.submitReview.mock.calls[0][6];
+    expect(submittedComments[0]).not.toHaveProperty("suggestion");
+    expect(submittedComments[0]).not.toHaveProperty("startLine");
+  });
+
+  it("forwards suggestion fields when enable_suggestions is true", async () => {
+    mockGetInput.mockImplementation((name: string) => {
+      if (name === "enable_suggestions") return "true";
+      if (name === "jules_api_key") return "dummy_key";
+      if (name === "github_token") return "dummy_token";
+      if (name === "fail_on") return "any";
+      if (name === "timeout_minutes") return "30";
+      return "";
+    });
+    mockGetBooleanInput.mockImplementation(
+      (name: string) => name === "enable_suggestions"
+    );
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "approve",
+        summary: "ok",
+        newComments: [
+          {
+            file: "a.ts",
+            line: 10,
+            startLine: 8,
+            severity: "High",
+            confidence: "High",
+            message: "Msg",
+            promptForAgents: "",
+            suggestion: "const x = 1;",
+          },
+        ],
+      },
+      sessionId: "s1",
+    });
+    await loadIndex();
+    const submittedComments = mockGithubHelper.submitReview.mock.calls[0][6];
+    expect(submittedComments[0]).toHaveProperty("suggestion", "const x = 1;");
+    expect(submittedComments[0]).toHaveProperty("startLine", 8);
   });
 
   it("fails immediately when initial setStatus throws permission error", async () => {
