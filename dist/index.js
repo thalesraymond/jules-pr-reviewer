@@ -38875,6 +38875,19 @@ function filterDiff(diff, ignoredPatterns) {
     }
     return keptSections.join("");
 }
+function extractJsonPayload(input) {
+    const trimmed = input.trim();
+    const fencedBlockMatch = trimmed.match(/```(?:json|JSON)?\s*([\s\S]*?)\s*```/);
+    if (fencedBlockMatch?.[1]) {
+        return fencedBlockMatch[1].trim();
+    }
+    const firstBrace = trimmed.indexOf("{");
+    const lastBrace = trimmed.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+        return trimmed.slice(firstBrace, lastBrace + 1);
+    }
+    return trimmed;
+}
 
 ;// CONCATENATED MODULE: ./src/github.ts
 
@@ -43414,6 +43427,7 @@ const jules = connect();
 ;// CONCATENATED MODULE: ./src/jules.ts
 
 
+
 async function runJulesReview(apiKey, prompt, 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 source, timeoutMinutes) {
@@ -43453,24 +43467,13 @@ source, timeoutMinutes) {
     return { reviewResult, sessionId: session.id };
 }
 function parseJulesResponse(message) {
+    const jsonPayload = extractJsonPayload(message);
     let parsed;
-    const jsonMatch = message.match(/```json\n([\s\S]*?)\n```/);
-    if (jsonMatch) {
-        try {
-            parsed = JSON.parse(jsonMatch[1]);
-        }
-        catch {
-            // fallback
-        }
+    try {
+        parsed = JSON.parse(jsonPayload);
     }
-    // Try parsing the whole message if no codeblocks
-    if (!parsed) {
-        try {
-            parsed = JSON.parse(message);
-        }
-        catch (e) {
-            throw new Error("Failed to parse Jules response as JSON", { cause: e });
-        }
+    catch (e) {
+        throw new Error("Failed to parse Jules response as JSON", { cause: e });
     }
     if (!parsed ||
         typeof parsed !== "object" ||

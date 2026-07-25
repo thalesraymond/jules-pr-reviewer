@@ -73,6 +73,27 @@ describe("jules.ts", () => {
       });
     });
 
+    it("returns parsed review from fenced JSON with surrounding prose", async () => {
+      const reviewText =
+        'Here is the result:\n```JSON\n{"summary":"from prose","verdict":"comment"}\n```\nDone.';
+      const mockJulesWith = vi.fn().mockReturnValue({
+        session: vi
+          .fn()
+          .mockResolvedValue(
+            mockSessionWithHistory([
+              { type: "agentMessaged", message: reviewText },
+            ])
+          ),
+      });
+      (jules as any).with = mockJulesWith;
+
+      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      expect(result).toEqual({
+        reviewResult: { summary: "from prose", verdict: "comment" },
+        sessionId: "test-session-id",
+      });
+    });
+
     it("returns parsed review result without markdown blocks", async () => {
       const reviewText = '{"summary": "test2", "verdict": "approve"}';
       const mockJulesWith = vi.fn().mockReturnValue({
