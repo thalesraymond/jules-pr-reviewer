@@ -132,14 +132,16 @@ export function filterDiff(diff: string, ignoredPatterns: string[]): string {
   for (const section of sections) {
     if (!section.trim()) continue;
 
-    const headerMatch = section.match(/^diff --git a\/(\S+) b\/(\S+)/m);
+    const headerMatch = section.match(
+      /^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/m
+    );
     if (headerMatch) {
-      const [, pathA, pathB] = headerMatch;
+      const pathA = (headerMatch[1] ?? headerMatch[2])!;
+      const pathB = (headerMatch[3] ?? headerMatch[4])!;
       const isPathAIgnored =
         pathA !== "dev/null" && shouldIgnorePath(pathA, ignoredPatterns);
       const isPathBIgnored =
         pathB !== "dev/null" && shouldIgnorePath(pathB, ignoredPatterns);
-
       if (isPathAIgnored || isPathBIgnored) {
         continue;
       }
