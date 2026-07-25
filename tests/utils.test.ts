@@ -5,6 +5,7 @@ import {
   parseIgnoredPaths,
   shouldIgnorePath,
   filterDiff,
+  extractJsonPayload,
   RetryOptions,
 } from "../src/utils.js";
 
@@ -245,5 +246,24 @@ index 1111111..2222222 100644
   it("returns empty string if all diff blocks are filtered out", () => {
     const filtered = filterDiff(sampleDiff, ["**/*"]);
     expect(filtered).toBe("");
+  });
+});
+
+describe("extractJsonPayload", () => {
+  it("extracts JSON from a fenced json block", () => {
+    const input = '```json\n{"verdict":"approve"}\n```';
+    expect(extractJsonPayload(input)).toBe('{"verdict":"approve"}');
+  });
+
+  it("extracts JSON object from surrounding prose", () => {
+    const input =
+      'Review summary:\n{"summary":"ok","verdict":"comment"}\nThanks';
+    expect(extractJsonPayload(input)).toBe(
+      '{"summary":"ok","verdict":"comment"}'
+    );
+  });
+
+  it("returns trimmed input when no JSON object or code fence exists", () => {
+    expect(extractJsonPayload("  plain text  ")).toBe("plain text");
   });
 });

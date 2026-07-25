@@ -158,3 +158,22 @@ export function filterDiff(diff: string, ignoredPatterns: string[]): string {
 
   return keptSections.join("");
 }
+
+export function extractJsonPayload(input: string): string {
+  const trimmed = input.trim();
+
+  const fencedBlockMatch = trimmed.match(
+    /```(?:json|JSON)?\s*([\s\S]*?)\s*```/
+  );
+  if (fencedBlockMatch?.[1]) {
+    return fencedBlockMatch[1].trim();
+  }
+
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1);
+  }
+
+  return trimmed;
+}
