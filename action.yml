@@ -49,6 +49,10 @@ inputs:
     description: "How long to wait for Jules to return a review before giving up. Default 30. Real reviews on non-trivial PRs often take 15-25 minutes; do not set below 20 or you will miss legitimate reviews."
     required: false
     default: "30"
+  enable_suggestions:
+    description: "Enable GitHub-native one-click suggested changes in review comments. Default false."
+    required: false
+    default: "false"
 
 runs:
   using: "node24"

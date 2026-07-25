@@ -147,6 +147,21 @@ The workflow's `extra_instructions` is appended after the rules file content. Us
 | `rules_file`         | `.github/jules-review-rules.md` | Path in repo to load as extra rules. Set empty to disable.        |
 | `ignored_paths`      | `[]`                            | JSON array **or** comma/newline-separated list of paths/globs to exclude from diff (e.g. `["dist/**", "*.lock"]` or `dist/**, *.lock`). |
 | `timeout_minutes`    | `30`                            | How long to wait for Jules to return a review.                    |
+| `enable_suggestions` | `false`                         | Enable GitHub-native one-click suggested changes in review comments. |
+
+### Enabling suggested changes
+
+Opt-in to include GitHub-native one-click suggested changes in Jules' review comments. When enabled, Jules may propose exact code replacements that reviewers can apply with a single click from the PR interface.
+
+```yaml
+- uses: thalesraymond/jules-pr-reviewer@v1
+  with:
+    jules_api_key: ${{ secrets.JULES_API_KEY }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    enable_suggestions: true
+```
+
+> Suggestions are emitted only for `High` or `Medium` confidence comments. If GitHub rejects a suggestion (for example, because it falls outside a diff hunk), the action automatically retries without suggestions and falls back to the existing summary-only review as a last resort.
 
 ## Severity, Confidence, & Verdict
 

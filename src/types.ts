@@ -28,6 +28,8 @@ export interface ReviewComment {
   confidence: "Low" | "Medium" | "High";
   message: string;
   promptForAgents: string;
+  suggestion?: string;
+  startLine?: number;
 }
 
 export interface ReviewResult {

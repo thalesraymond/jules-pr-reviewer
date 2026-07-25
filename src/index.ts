@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import { FailOn, Verdict } from "./types.js";
+import { FailOn, Verdict, ReviewComment } from "./types.js";
 import {
   fetchDiff,
   loadRulesFromBase,
@@ -40,6 +40,7 @@ async function run(): Promise<void> {
   const ignoredPaths = parseIgnoredPaths(ignoredPathsRaw);
   const timeoutMinutesRaw = core.getInput("timeout_minutes") || "30";
   const timeoutMinutes = Math.max(1, parseInt(timeoutMinutesRaw, 10) || 30);
+  const enableSuggestions = core.getBooleanInput("enable_suggestions");
 
   const ctx = github.context;
   if (ctx.eventName === "pull_request_target") {
@@ -182,6 +183,15 @@ async function run(): Promise<void> {
     // Prepare body for the PR review
     const finalBody = `${COMMENT_MARKER}\n## 🤖 Jules Review\n\n${summary}\n\n---\n_Session: \`${sessionId}\`_`;
 
+    const commentsForReview: ReviewComment[] = (newComments || []).map((c) => {
+      const copy = { ...c };
+      if (!enableSuggestions) {
+        delete copy.suggestion;
+        delete copy.startLine;
+      }
+      return copy;
+    });
+
     await submitReview(
       octokit,
       owner,
@@ -189,7 +199,7 @@ async function run(): Promise<void> {
       prNumber,
       headSha,
       finalBody,
-      newComments || []
+      commentsForReview
     );
 
     const { state, description } = statusFromVerdict(verdict, failOn);

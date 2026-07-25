@@ -266,4 +266,49 @@ describe("extractJsonPayload", () => {
   it("returns trimmed input when no JSON object or code fence exists", () => {
     expect(extractJsonPayload("  plain text  ")).toBe("plain text");
   });
+
+  it("extracts the outer JSON object even when it is wrapped in a fenced block containing nested ``` fences", () => {
+    const body = {
+      summary: "There is a problem",
+      verdict: "block",
+      resolvedCommentIds: [] as number[],
+      newComments: [
+        {
+          file: "src/index.ts",
+          line: 10,
+          severity: "High",
+          confidence: "High",
+          message: "fix me",
+          promptForAgents: "fix it",
+          suggestion: '```bash\nmkdir -p "foo"\n```',
+        },
+      ],
+    };
+    const input = `Here is the review:\n\`\`\`json\n${JSON.stringify(body)}\n\`\`\`\nDone.`;
+
+    expect(JSON.parse(extractJsonPayload(input))).toEqual(body);
+  });
+
+  it("extracts a raw JSON object containing markdown-style backticks", () => {
+    const body = {
+      summary: "This PR introduces OpenSpec agent skills and workflows.",
+      verdict: "block",
+      resolvedCommentIds: [] as number[],
+      newComments: [
+        {
+          file: ".agent/skills/openspec-archive-change/SKILL.md",
+          line: 73,
+          severity: "High",
+          confidence: "High",
+          message: "The file is incomplete or truncated.",
+          promptForAgents: "Modify the file.",
+          suggestion:
+            'Create an `archive` directory:\n```bash\nmkdir -p "<planningHome.changesDir>/archive"\n```',
+        },
+      ],
+    };
+    const input = `Submitted the review via the user response in strict JSON format.\n\n${JSON.stringify(body)}`;
+
+    expect(JSON.parse(extractJsonPayload(input))).toEqual(body);
+  });
 });
