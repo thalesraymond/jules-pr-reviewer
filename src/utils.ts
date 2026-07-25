@@ -1,4 +1,5 @@
 import { minimatch } from "minimatch";
+import { ReviewResult, ReviewComment, Verdict } from "./types.js";
 
 /**
  * Executes a primary async function. If it throws an error that satisfies the
@@ -157,4 +158,121 @@ export function filterDiff(diff: string, ignoredPatterns: string[]): string {
   }
 
   return keptSections.join("");
+}
+
+/**
+ * Strictly validates and normalizes the parsed JSON review result to prevent runtime errors and security bypasses.
+ * Defaults to a secure fallback if validation fails.
+ */
+export function validateAndNormalizeReviewResult(
+  parsed: unknown
+): ReviewResult {
+  // Safe secure fallback default
+  const fallbackResult: ReviewResult = {
+    summary:
+      "Jules returned an invalid response structure. Falling back to a secure blocking state.",
+    verdict: "block",
+    resolvedCommentIds: [],
+    newComments: [],
+  };
+
+  if (!parsed || typeof parsed !== "object") {
+    return fallbackResult;
+  }
+
+  const record = parsed as Record<string, unknown>;
+
+  // 1. Validate verdict strictly (must be approve, comment, or block)
+  const rawVerdict = record.verdict;
+  let verdict: Verdict;
+  if (
+    rawVerdict === "approve" ||
+    rawVerdict === "comment" ||
+    rawVerdict === "block"
+  ) {
+    verdict = rawVerdict;
+  } else {
+    // If verdict is missing or unrecognized, default to 'block' to prevent fail-open bypass.
+    return fallbackResult;
+  }
+
+  // 2. Validate summary
+  const summary =
+    typeof record.summary === "string" ? record.summary.trim() : "";
+  if (!summary) {
+    return fallbackResult;
+  }
+
+  // 3. Validate resolvedCommentIds
+  let resolvedCommentIds: number[] = [];
+  if (Array.isArray(record.resolvedCommentIds)) {
+    resolvedCommentIds = record.resolvedCommentIds
+      .map((id) => (typeof id === "number" ? id : parseInt(String(id), 10)))
+      .filter((id) => !isNaN(id));
+  }
+
+  // 4. Validate newComments array
+  const newComments: ReviewComment[] = [];
+  if (Array.isArray(record.newComments)) {
+    for (const item of record.newComments) {
+      if (!item || typeof item !== "object") continue;
+      const c = item as Record<string, unknown>;
+
+      const file = typeof c.file === "string" ? c.file.trim() : "";
+      if (!file) continue; // File path is required for line comments
+
+      // Parse and validate line number
+      let line = 0;
+      if (typeof c.line === "number") {
+        line = c.line;
+      } else if (typeof c.line === "string") {
+        line = parseInt(c.line, 10);
+      }
+      if (isNaN(line) || line < 0) {
+        line = 0;
+      }
+
+      // Validate severity
+      let severity: "Info" | "Warning" | "High" = "Info";
+      if (
+        c.severity === "Info" ||
+        c.severity === "Warning" ||
+        c.severity === "High"
+      ) {
+        severity = c.severity;
+      }
+
+      // Validate confidence
+      let confidence: "Low" | "Medium" | "High" = "Medium";
+      if (
+        c.confidence === "Low" ||
+        c.confidence === "Medium" ||
+        c.confidence === "High"
+      ) {
+        confidence = c.confidence;
+      }
+
+      const message = typeof c.message === "string" ? c.message.trim() : "";
+      if (!message) continue; // Message is required
+
+      const promptForAgents =
+        typeof c.promptForAgents === "string" ? c.promptForAgents.trim() : "";
+
+      newComments.push({
+        file,
+        line,
+        severity,
+        confidence,
+        message,
+        promptForAgents,
+      });
+    }
+  }
+
+  return {
+    summary,
+    verdict,
+    resolvedCommentIds,
+    newComments,
+  };
 }

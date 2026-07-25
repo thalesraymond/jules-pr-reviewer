@@ -38875,6 +38875,102 @@ function filterDiff(diff, ignoredPatterns) {
     }
     return keptSections.join("");
 }
+/**
+ * Strictly validates and normalizes the parsed JSON review result to prevent runtime errors and security bypasses.
+ * Defaults to a secure fallback if validation fails.
+ */
+function validateAndNormalizeReviewResult(parsed) {
+    // Safe secure fallback default
+    const fallbackResult = {
+        summary: "Jules returned an invalid response structure. Falling back to a secure blocking state.",
+        verdict: "block",
+        resolvedCommentIds: [],
+        newComments: [],
+    };
+    if (!parsed || typeof parsed !== "object") {
+        return fallbackResult;
+    }
+    const record = parsed;
+    // 1. Validate verdict strictly (must be approve, comment, or block)
+    const rawVerdict = record.verdict;
+    let verdict;
+    if (rawVerdict === "approve" ||
+        rawVerdict === "comment" ||
+        rawVerdict === "block") {
+        verdict = rawVerdict;
+    }
+    else {
+        // If verdict is missing or unrecognized, default to 'block' to prevent fail-open bypass.
+        return fallbackResult;
+    }
+    // 2. Validate summary
+    const summary = typeof record.summary === "string" ? record.summary.trim() : "";
+    if (!summary) {
+        return fallbackResult;
+    }
+    // 3. Validate resolvedCommentIds
+    let resolvedCommentIds = [];
+    if (Array.isArray(record.resolvedCommentIds)) {
+        resolvedCommentIds = record.resolvedCommentIds
+            .map((id) => (typeof id === "number" ? id : parseInt(String(id), 10)))
+            .filter((id) => !isNaN(id));
+    }
+    // 4. Validate newComments array
+    const newComments = [];
+    if (Array.isArray(record.newComments)) {
+        for (const item of record.newComments) {
+            if (!item || typeof item !== "object")
+                continue;
+            const c = item;
+            const file = typeof c.file === "string" ? c.file.trim() : "";
+            if (!file)
+                continue; // File path is required for line comments
+            // Parse and validate line number
+            let line = 0;
+            if (typeof c.line === "number") {
+                line = c.line;
+            }
+            else if (typeof c.line === "string") {
+                line = parseInt(c.line, 10);
+            }
+            if (isNaN(line) || line < 0) {
+                line = 0;
+            }
+            // Validate severity
+            let severity = "Info";
+            if (c.severity === "Info" ||
+                c.severity === "Warning" ||
+                c.severity === "High") {
+                severity = c.severity;
+            }
+            // Validate confidence
+            let confidence = "Medium";
+            if (c.confidence === "Low" ||
+                c.confidence === "Medium" ||
+                c.confidence === "High") {
+                confidence = c.confidence;
+            }
+            const message = typeof c.message === "string" ? c.message.trim() : "";
+            if (!message)
+                continue; // Message is required
+            const promptForAgents = typeof c.promptForAgents === "string" ? c.promptForAgents.trim() : "";
+            newComments.push({
+                file,
+                line,
+                severity,
+                confidence,
+                message,
+                promptForAgents,
+            });
+        }
+    }
+    return {
+        summary,
+        verdict,
+        resolvedCommentIds,
+        newComments,
+    };
+}
 
 ;// CONCATENATED MODULE: ./src/github.ts
 
@@ -43414,6 +43510,7 @@ const jules = connect();
 ;// CONCATENATED MODULE: ./src/jules.ts
 
 
+
 async function runJulesReview(apiKey, prompt, 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 source, timeoutMinutes) {
@@ -43472,13 +43569,12 @@ function parseJulesResponse(message) {
             throw new Error("Failed to parse Jules response as JSON", { cause: e });
         }
     }
-    if (!parsed ||
-        typeof parsed !== "object" ||
-        !("verdict" in parsed) ||
-        !["approve", "comment", "block"].includes(parsed.verdict)) {
+    const validated = validateAndNormalizeReviewResult(parsed);
+    if (validated.summary.includes("Jules returned an invalid response structure") ||
+        !validated.summary) {
         throw new Error("Invalid or missing verdict in Jules response");
     }
-    return parsed;
+    return validated;
 }
 async function waitUntilSessionReady(session) {
     const maxAttempts = 20;

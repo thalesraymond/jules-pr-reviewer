@@ -6,6 +6,7 @@ import {
   shouldIgnorePath,
   filterDiff,
   RetryOptions,
+  validateAndNormalizeReviewResult,
 } from "../src/utils.js";
 
 describe("withRetry", () => {
@@ -245,5 +246,173 @@ index 1111111..2222222 100644
   it("returns empty string if all diff blocks are filtered out", () => {
     const filtered = filterDiff(sampleDiff, ["**/*"]);
     expect(filtered).toBe("");
+  });
+});
+
+describe("validateAndNormalizeReviewResult", () => {
+  it("should parse and return a perfectly valid ReviewResult", () => {
+    const valid = {
+      summary: "This is a great PR",
+      verdict: "approve",
+      resolvedCommentIds: [1, 2],
+      newComments: [
+        {
+          file: "src/index.ts",
+          line: 42,
+          severity: "High",
+          confidence: "High",
+          message: "Excellent code, but check this.",
+          promptForAgents: "Check this line",
+        },
+      ],
+    };
+    const result = validateAndNormalizeReviewResult(valid);
+    expect(result).toEqual({
+      summary: "This is a great PR",
+      verdict: "approve",
+      resolvedCommentIds: [1, 2],
+      newComments: [
+        {
+          file: "src/index.ts",
+          line: 42,
+          severity: "High",
+          confidence: "High",
+          message: "Excellent code, but check this.",
+          promptForAgents: "Check this line",
+        },
+      ],
+    });
+  });
+
+  it("should fall back to safe blocking state on non-object inputs", () => {
+    expect(validateAndNormalizeReviewResult(null).verdict).toBe("block");
+    expect(validateAndNormalizeReviewResult("not an object").verdict).toBe(
+      "block"
+    );
+    expect(validateAndNormalizeReviewResult(undefined).verdict).toBe("block");
+  });
+
+  it("should fall back to safe blocking state on missing verdict", () => {
+    const invalid = {
+      summary: "Valid summary",
+      resolvedCommentIds: [],
+      newComments: [],
+    };
+    const result = validateAndNormalizeReviewResult(invalid);
+    expect(result.verdict).toBe("block");
+    expect(result.summary).toContain("invalid response structure");
+  });
+
+  it("should fall back to safe blocking state on invalid verdict value", () => {
+    const invalid = {
+      summary: "Valid summary",
+      verdict: "super-approve",
+      resolvedCommentIds: [],
+      newComments: [],
+    };
+    const result = validateAndNormalizeReviewResult(invalid);
+    expect(result.verdict).toBe("block");
+  });
+
+  it("should fall back to safe blocking state on missing summary", () => {
+    const invalid = {
+      verdict: "approve",
+      resolvedCommentIds: [],
+      newComments: [],
+    };
+    const result = validateAndNormalizeReviewResult(invalid);
+    expect(result.verdict).toBe("block");
+  });
+
+  it("should safely parse resolvedCommentIds and filter out invalid values", () => {
+    const input = {
+      summary: "Some summary",
+      verdict: "comment",
+      resolvedCommentIds: [1, "2", "invalid", 3],
+      newComments: [],
+    };
+    const result = validateAndNormalizeReviewResult(input);
+    expect(result.resolvedCommentIds).toEqual([1, 2, 3]);
+  });
+
+  it("should normalize and filter newComments array", () => {
+    const input = {
+      summary: "Some summary",
+      verdict: "comment",
+      newComments: [
+        // Valid comment
+        {
+          file: "src/a.ts",
+          line: 10,
+          severity: "Warning",
+          confidence: "Medium",
+          message: "Warning message",
+          promptForAgents: "Do action",
+        },
+        // Missing file
+        {
+          line: 20,
+          severity: "High",
+          confidence: "High",
+          message: "No file here",
+        },
+        // Missing message
+        {
+          file: "src/b.ts",
+          line: 30,
+          severity: "High",
+          confidence: "High",
+        },
+        // Malformed line
+        {
+          file: "src/c.ts",
+          line: "abc",
+          severity: "High",
+          confidence: "High",
+          message: "ABC line message",
+        },
+        // Malformed severity/confidence should get defaults
+        {
+          file: "src/d.ts",
+          line: 15,
+          severity: "Severe",
+          confidence: "Unsure",
+          message: "Bad severity message",
+        },
+      ],
+    };
+
+    const result = validateAndNormalizeReviewResult(input);
+    expect(result.newComments).toHaveLength(3);
+
+    // First comment
+    expect(result.newComments[0]).toEqual({
+      file: "src/a.ts",
+      line: 10,
+      severity: "Warning",
+      confidence: "Medium",
+      message: "Warning message",
+      promptForAgents: "Do action",
+    });
+
+    // ABC line comment (line should fall back to 0)
+    expect(result.newComments[1]).toEqual({
+      file: "src/c.ts",
+      line: 0,
+      severity: "High",
+      confidence: "High",
+      message: "ABC line message",
+      promptForAgents: "",
+    });
+
+    // Malformed severity/confidence comment (should get defaults: Info and Medium)
+    expect(result.newComments[2]).toEqual({
+      file: "src/d.ts",
+      line: 15,
+      severity: "Info",
+      confidence: "Medium",
+      message: "Bad severity message",
+      promptForAgents: "",
+    });
   });
 });

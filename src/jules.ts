@@ -1,6 +1,7 @@
 import * as core from "@actions/core";
 import { jules } from "@google/jules-sdk";
 import { ReviewResult } from "./types.js";
+import { validateAndNormalizeReviewResult } from "./utils.js";
 
 export async function runJulesReview(
   apiKey: string,
@@ -73,18 +74,18 @@ function parseJulesResponse(message: string): ReviewResult {
     }
   }
 
+  const validated = validateAndNormalizeReviewResult(parsed);
+
   if (
-    !parsed ||
-    typeof parsed !== "object" ||
-    !("verdict" in parsed) ||
-    !["approve", "comment", "block"].includes(
-      (parsed as Record<string, unknown>).verdict as string
-    )
+    validated.summary.includes(
+      "Jules returned an invalid response structure"
+    ) ||
+    !validated.summary
   ) {
     throw new Error("Invalid or missing verdict in Jules response");
   }
 
-  return parsed as ReviewResult;
+  return validated;
 }
 
 async function waitUntilSessionReady(session: {
