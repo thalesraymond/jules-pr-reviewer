@@ -109,15 +109,12 @@ export function shouldIgnorePath(
       return true;
     }
 
-    if (minimatch(normalizedFilePath, normalizedPattern, { dot: true })) {
-      return true;
-    }
-
-    if (
-      !normalizedPattern.endsWith("**") &&
-      minimatch(normalizedFilePath, `${cleanPattern}/**`, { dot: true })
-    ) {
-      return true;
+    try {
+      if (minimatch(normalizedFilePath, normalizedPattern, { dot: true })) {
+        return true;
+      }
+    } catch {
+      // Ignore invalid patterns rather than failing the whole action
     }
   }
 
