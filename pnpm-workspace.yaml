@@ -1,5 +1,2 @@
 packages:
   - .
-
-minimumReleaseAgeExclude:
-  - eslint@10.8.0
