@@ -145,6 +145,7 @@ The workflow's `extra_instructions` is appended after the rules file content. Us
 | `status_context`     | `jules/review`                  | Commit status context name.                                       |
 | `extra_instructions` | `''`                            | Markdown appended to the prompt.                                  |
 | `rules_file`         | `.github/jules-review-rules.md` | Path in repo to load as extra rules. Set empty to disable.        |
+| `ignored_paths`      | `[]`                            | JSON array **or** comma/newline-separated list of paths/globs to exclude from diff (e.g. `["dist/**", "*.lock"]` or `dist/**, *.lock`). |
 | `timeout_minutes`    | `30`                            | How long to wait for Jules to return a review.                    |
 
 ## Severity, Confidence, & Verdict

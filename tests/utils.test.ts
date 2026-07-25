@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
-import { withFallback, withRetry, RetryOptions } from "../src/utils.js";
+import {
+  withFallback,
+  withRetry,
+  parseIgnoredPaths,
+  shouldIgnorePath,
+  filterDiff,
+  RetryOptions,
+} from "../src/utils.js";
 
 describe("withRetry", () => {
   it("should return the result immediately if the operation succeeds", async () => {
@@ -152,5 +159,91 @@ describe("withFallback", () => {
     expect(primary).toHaveBeenCalledTimes(1);
     expect(shouldFallback).toHaveBeenCalledWith(primaryError);
     expect(fallback).toHaveBeenCalledWith(primaryError);
+  });
+});
+
+describe("parseIgnoredPaths", () => {
+  it("returns empty array for empty or undefined input", () => {
+    expect(parseIgnoredPaths()).toEqual([]);
+    expect(parseIgnoredPaths("")).toEqual([]);
+    expect(parseIgnoredPaths("   ")).toEqual([]);
+  });
+
+  it("parses valid JSON array strings", () => {
+    expect(parseIgnoredPaths('["dist/**", "*.lock"]')).toEqual([
+      "dist/**",
+      "*.lock",
+    ]);
+  });
+
+  it("filters out non-string items or empty strings in JSON array", () => {
+    expect(
+      parseIgnoredPaths('["dist/**", 123, "", null, "  *.lock "]')
+    ).toEqual(["dist/**", "*.lock"]);
+  });
+
+  it("falls back to comma or newline separated values if not valid JSON", () => {
+    expect(parseIgnoredPaths("dist/**, *.lock\nbuild/*")).toEqual([
+      "dist/**",
+      "*.lock",
+      "build/*",
+    ]);
+  });
+});
+
+describe("shouldIgnorePath", () => {
+  it("returns false if ignoredPatterns is empty", () => {
+    expect(shouldIgnorePath("dist/index.js", [])).toBe(false);
+  });
+
+  it("matches exact paths and glob patterns", () => {
+    const patterns = ["dist/**", "*.lock", "config/secret.json"];
+    expect(shouldIgnorePath("dist/index.js", patterns)).toBe(true);
+    expect(shouldIgnorePath("yarn.lock", patterns)).toBe(true);
+    expect(shouldIgnorePath("config/secret.json", patterns)).toBe(true);
+    expect(shouldIgnorePath("src/index.ts", patterns)).toBe(false);
+  });
+
+  it("matches folder prefix when pattern has trailing slash or folder name", () => {
+    expect(shouldIgnorePath("dist/index.js", ["dist/"])).toBe(true);
+    expect(shouldIgnorePath("dist/index.js", ["dist"])).toBe(true);
+  });
+});
+
+describe("filterDiff", () => {
+  const sampleDiff = `diff --git a/src/index.ts b/src/index.ts
+index 1234567..89abcdef 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,3 +1,4 @@
+ import * as core from "@actions/core";
+
+diff --git a/dist/index.js b/dist/index.js
+index abcdef1..2345678 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1,5 +1,5 @@
+ module.exports = ...
+diff --git a/package-lock.json b/package-lock.json
+index 1111111..2222222 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,5 +1,5 @@
+ {}`;
+
+  it("returns original diff if ignoredPatterns is empty", () => {
+    expect(filterDiff(sampleDiff, [])).toBe(sampleDiff);
+  });
+
+  it("filters out matching file blocks from diff", () => {
+    const filtered = filterDiff(sampleDiff, ["dist/**", "*.json"]);
+    expect(filtered).toContain("src/index.ts");
+    expect(filtered).not.toContain("dist/index.js");
+    expect(filtered).not.toContain("package-lock.json");
+  });
+
+  it("returns empty string if all diff blocks are filtered out", () => {
+    const filtered = filterDiff(sampleDiff, ["**/*"]);
+    expect(filtered).toBe("");
   });
 });
