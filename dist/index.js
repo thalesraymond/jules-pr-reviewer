@@ -38877,16 +38877,59 @@ function filterDiff(diff, ignoredPatterns) {
 }
 function extractJsonPayload(input) {
     const trimmed = input.trim();
+    // Prefer the outermost balanced JSON object. This is resilient to nested
+    // markdown code fences (e.g. ```bash ... ```) inside JSON string values,
+    // which a regex-based fence extractor would otherwise truncate.
+    const balanced = extractBalancedJsonObject(trimmed);
+    if (balanced) {
+        return balanced;
+    }
     const fencedBlockMatch = trimmed.match(/```(?:json|JSON)?\s*([\s\S]*?)\s*```/);
     if (fencedBlockMatch?.[1]) {
         return fencedBlockMatch[1].trim();
     }
-    const firstBrace = trimmed.indexOf("{");
-    const lastBrace = trimmed.lastIndexOf("}");
-    if (firstBrace !== -1 && lastBrace > firstBrace) {
-        return trimmed.slice(firstBrace, lastBrace + 1);
-    }
     return trimmed;
+}
+function extractBalancedJsonObject(input) {
+    const start = input.indexOf("{");
+    if (start === -1) {
+        return null;
+    }
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < input.length; i++) {
+        const char = input[i];
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (char === "\\") {
+                escaped = true;
+                continue;
+            }
+            if (char === '"') {
+                inString = false;
+            }
+            continue;
+        }
+        if (char === '"') {
+            inString = true;
+            continue;
+        }
+        if (char === "{") {
+            depth++;
+            continue;
+        }
+        if (char === "}") {
+            depth--;
+            if (depth === 0) {
+                return input.slice(start, i + 1);
+            }
+        }
+    }
+    return null;
 }
 
 ;// CONCATENATED MODULE: ./src/github.ts
