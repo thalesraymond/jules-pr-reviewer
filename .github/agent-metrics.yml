@@ -1,0 +1,44 @@
+metrics:
+  cost:
+    avg_cost_per_task_usd_target: 0.25
+    alert_threshold_usd: 0.40
+    dimensions:
+      - task_type
+      - model_used
+      - handoff_count
+
+  model_mix:
+    # Measures low-cost/fast engines vs escalation reasoning engines
+    tier_distribution_target:
+      light_medium_models_percent_min: 80 # Haiku 4.5, Gemini 3.6 Flash, Kimi K2.7, GPT-5 mini
+      heavy_reasoning_models_percent_max: 20 # Claude Sonnet 5
+    tracked_models:
+      - gemini_3_6_flash
+      - claude_haiku_4_5
+      - kimi_k2_7_code
+      - gpt_5_mini
+      - claude_sonnet_5
+
+  workflow:
+    planner_or_explorer_entry_required_percent: 95
+    handoff_send_enabled_percent: 100
+    builder_direct_invocation_percent: 0
+
+  quality_gates:
+    lint_pass_rate_percent: 100
+    type_check_pass_rate_percent: 100
+    test_pass_rate_percent: 100
+    coverage_pass_rate_percent: 100
+    build_pass_rate_percent: 100
+    openspec_artifact_consistency_percent: 100
+
+  cycle_time:
+    median_review_loop_count_target: 1.5
+    max_review_loop_count_alert: 3
+
+reporting:
+  review_cadence: monthly
+  owner: repo-maintainers
+  notes: |
+    Tracks execution cost and quality gate outcomes across Copilot custom agents and OpenCode pipelines.
+    If quality drops, tighten reviewer prompt instructions before escalating default agent models to higher cost tiers.

@@ -38,3 +38,25 @@ export interface ReviewResult {
   resolvedCommentIds: number[];
   newComments: ReviewComment[];
 }
+
+export type StructuredLogEvent =
+  | "review_started"
+  | "review_completed"
+  | "review_failed"
+  | "jules_api_called"
+  | "review_submitted";
+
+export interface StructuredLogEntry {
+  event: StructuredLogEvent;
+  timestamp: string;
+  payload: unknown;
+}
+
+export interface ReviewOutputs {
+  verdict: "approve" | "comment" | "block" | "skipped";
+  issues_count: number;
+  high_issues_count: number;
+  warning_issues_count: number;
+  info_issues_count: number;
+  session_id?: string;
+}
