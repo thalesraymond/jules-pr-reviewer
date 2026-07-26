@@ -68,7 +68,12 @@ describe("jules.ts", () => {
 
       const result = await runJulesReview("api-key", "prompt", {}, 1);
       expect(result).toEqual({
-        reviewResult: { summary: "test", verdict: "approve" },
+        reviewResult: {
+          summary: "test",
+          verdict: "approve",
+          resolvedCommentIds: [],
+          newComments: [],
+        },
         sessionId: "test-session-id",
       });
     });
@@ -89,7 +94,12 @@ describe("jules.ts", () => {
 
       const result = await runJulesReview("api-key", "prompt", {}, 1);
       expect(result).toEqual({
-        reviewResult: { summary: "from prose", verdict: "comment" },
+        reviewResult: {
+          summary: "from prose",
+          verdict: "comment",
+          resolvedCommentIds: [],
+          newComments: [],
+        },
         sessionId: "test-session-id",
       });
     });
@@ -109,7 +119,12 @@ describe("jules.ts", () => {
 
       const result = await runJulesReview("api-key", "prompt", {}, 1);
       expect(result).toEqual({
-        reviewResult: { summary: "test2", verdict: "approve" },
+        reviewResult: {
+          summary: "test2",
+          verdict: "approve",
+          resolvedCommentIds: [],
+          newComments: [],
+        },
         sessionId: "test-session-id",
       });
     });

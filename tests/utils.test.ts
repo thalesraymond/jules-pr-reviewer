@@ -6,6 +6,7 @@ import {
   shouldIgnorePath,
   filterDiff,
   extractJsonPayload,
+  strictValidateReviewResult,
   RetryOptions,
 } from "../src/utils.js";
 
@@ -310,5 +311,96 @@ describe("extractJsonPayload", () => {
     const input = `Submitted the review via the user response in strict JSON format.\n\n${JSON.stringify(body)}`;
 
     expect(JSON.parse(extractJsonPayload(input))).toEqual(body);
+  });
+});
+
+describe("strictValidateReviewResult", () => {
+  it("successfully validates a correctly formed payload with all fields present", () => {
+    const payload = {
+      summary: "Looks good",
+      verdict: "approve",
+      resolvedCommentIds: [1, 2],
+      newComments: [
+        {
+          file: "src/index.ts",
+          line: 10,
+          severity: "High",
+          confidence: "High",
+          message: "Fix this",
+          promptForAgents: "Do this",
+          suggestion: "const a = 1;",
+          startLine: 9,
+        },
+      ],
+    };
+    const result = strictValidateReviewResult(payload);
+    expect(result).toEqual(payload);
+  });
+
+  it("throws an error if verdict is missing or invalid", () => {
+    expect(() => strictValidateReviewResult({})).toThrow(
+      "Invalid or missing verdict"
+    );
+    expect(() => strictValidateReviewResult({ verdict: "invalid" })).toThrow(
+      "Invalid or missing verdict"
+    );
+    expect(() => strictValidateReviewResult(null)).toThrow(
+      "Invalid or missing review result object"
+    );
+  });
+
+  it("supplies a default string for missing or non-string summary", () => {
+    const result1 = strictValidateReviewResult({ verdict: "approve" });
+    expect(result1.summary).toBe("No summary provided.");
+
+    const result2 = strictValidateReviewResult({
+      verdict: "approve",
+      summary: 123,
+    });
+    expect(result2.summary).toBe("No summary provided.");
+  });
+
+  it("filters out non-number items from resolvedCommentIds", () => {
+    const payload = {
+      verdict: "comment",
+      resolvedCommentIds: [1, "two", 3, null],
+    };
+    const result = strictValidateReviewResult(payload);
+    expect(result.resolvedCommentIds).toEqual([1, 3]);
+  });
+
+  it("filters out invalid items from newComments", () => {
+    const payload = {
+      verdict: "comment",
+      newComments: [
+        null,
+        "string",
+        { file: "a.ts", line: "not-a-number", message: "msg" }, // invalid line
+        { line: 10, message: "msg" }, // missing file
+        { file: "a.ts", line: 10 }, // missing message
+        { file: "b.ts", line: 20, message: "valid" }, // valid
+      ],
+    };
+    const result = strictValidateReviewResult(payload);
+    expect(result.newComments).toHaveLength(1);
+    expect(result.newComments[0].file).toBe("b.ts");
+  });
+
+  it("applies fallback defaults for invalid severity and confidence", () => {
+    const payload = {
+      verdict: "comment",
+      newComments: [
+        {
+          file: "a.ts",
+          line: 10,
+          message: "msg",
+          severity: "SuperHigh", // invalid
+          confidence: 123, // invalid
+        },
+      ],
+    };
+    const result = strictValidateReviewResult(payload);
+    expect(result.newComments[0].severity).toBe("Info");
+    expect(result.newComments[0].confidence).toBe("Low");
   });
 });

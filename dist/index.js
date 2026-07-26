@@ -38931,6 +38931,65 @@ function extractBalancedJsonObject(input) {
     }
     return null;
 }
+function strictValidateReviewResult(parsed) {
+    if (!parsed || typeof parsed !== "object") {
+        throw new Error("Invalid or missing review result object");
+    }
+    const raw = parsed;
+    const verdict = String(raw.verdict);
+    if (!["approve", "comment", "block"].includes(verdict)) {
+        throw new Error("Invalid or missing verdict in Jules response");
+    }
+    const summary = typeof raw.summary === "string" ? raw.summary : "No summary provided.";
+    let resolvedCommentIds = [];
+    if (Array.isArray(raw.resolvedCommentIds)) {
+        resolvedCommentIds = raw.resolvedCommentIds.filter((id) => typeof id === "number");
+    }
+    const newComments = [];
+    if (Array.isArray(raw.newComments)) {
+        for (const rawComment of raw.newComments) {
+            if (!rawComment || typeof rawComment !== "object")
+                continue;
+            const c = rawComment;
+            if (typeof c.file !== "string" ||
+                typeof c.line !== "number" ||
+                typeof c.message !== "string") {
+                continue; // Skip invalid comments without throwing, but ensure no fail-open.
+            }
+            let severity = "Info";
+            if (typeof c.severity === "string" &&
+                ["Info", "Warning", "High"].includes(c.severity)) {
+                severity = c.severity;
+            }
+            let confidence = "Low";
+            if (typeof c.confidence === "string" &&
+                ["Low", "Medium", "High"].includes(c.confidence)) {
+                confidence = c.confidence;
+            }
+            const comment = {
+                file: c.file,
+                line: c.line,
+                severity,
+                confidence,
+                message: c.message,
+                promptForAgents: typeof c.promptForAgents === "string" ? c.promptForAgents : "",
+            };
+            if (typeof c.suggestion === "string") {
+                comment.suggestion = c.suggestion;
+            }
+            if (typeof c.startLine === "number") {
+                comment.startLine = c.startLine;
+            }
+            newComments.push(comment);
+        }
+    }
+    return {
+        summary,
+        verdict: verdict,
+        resolvedCommentIds,
+        newComments,
+    };
+}
 
 ;// CONCATENATED MODULE: ./src/github.ts
 
@@ -43530,6 +43589,7 @@ source, timeoutMinutes) {
         prompt,
         source,
         requireApproval: false,
+        title: "Code Review",
         autoPr: false,
     });
     info(`Jules session: ${session.id}`);
@@ -43568,13 +43628,7 @@ function parseJulesResponse(message) {
     catch (e) {
         throw new Error("Failed to parse Jules response as JSON", { cause: e });
     }
-    if (!parsed ||
-        typeof parsed !== "object" ||
-        !("verdict" in parsed) ||
-        !["approve", "comment", "block"].includes(parsed.verdict)) {
-        throw new Error("Invalid or missing verdict in Jules response");
-    }
-    return parsed;
+    return strictValidateReviewResult(parsed);
 }
 async function waitUntilSessionReady(session) {
     const maxAttempts = 20;
