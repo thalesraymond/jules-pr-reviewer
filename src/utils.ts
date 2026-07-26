@@ -1,4 +1,5 @@
 import { minimatch } from "minimatch";
+import { ReviewResult, Verdict, ReviewComment } from "./types.js";
 
 /**
  * Executes a primary async function. If it throws an error that satisfies the
@@ -227,4 +228,86 @@ function extractBalancedJsonObject(input: string): string | null {
   }
 
   return null;
+}
+
+
+export function strictValidateReviewResult(parsed: unknown): ReviewResult {
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Invalid or missing review result object");
+  }
+
+  const raw = parsed as Record<string, unknown>;
+
+  const verdict = String(raw.verdict);
+  if (!["approve", "comment", "block"].includes(verdict)) {
+    throw new Error("Invalid or missing verdict in Jules response");
+  }
+
+  const summary =
+    typeof raw.summary === "string" ? raw.summary : "No summary provided.";
+
+  let resolvedCommentIds: number[] = [];
+  if (Array.isArray(raw.resolvedCommentIds)) {
+    resolvedCommentIds = raw.resolvedCommentIds.filter(
+      (id): id is number => typeof id === "number"
+    );
+  }
+
+  const newComments: ReviewComment[] = [];
+  if (Array.isArray(raw.newComments)) {
+    for (const rawComment of raw.newComments) {
+      if (!rawComment || typeof rawComment !== "object") continue;
+      const c = rawComment as Record<string, unknown>;
+
+      if (
+        typeof c.file !== "string" ||
+        typeof c.line !== "number" ||
+        typeof c.message !== "string"
+      ) {
+        continue; // Skip invalid comments without throwing, but ensure no fail-open.
+      }
+
+      let severity: "Info" | "Warning" | "High" = "Info";
+      if (
+        typeof c.severity === "string" &&
+        ["Info", "Warning", "High"].includes(c.severity)
+      ) {
+        severity = c.severity as "Info" | "Warning" | "High";
+      }
+
+      let confidence: "Low" | "Medium" | "High" = "Low";
+      if (
+        typeof c.confidence === "string" &&
+        ["Low", "Medium", "High"].includes(c.confidence)
+      ) {
+        confidence = c.confidence as "Low" | "Medium" | "High";
+      }
+
+      const comment: ReviewComment = {
+        file: c.file,
+        line: c.line,
+        severity,
+        confidence,
+        message: c.message,
+        promptForAgents:
+          typeof c.promptForAgents === "string" ? c.promptForAgents : "",
+      };
+
+      if (typeof c.suggestion === "string") {
+        comment.suggestion = c.suggestion;
+      }
+      if (typeof c.startLine === "number") {
+        comment.startLine = c.startLine;
+      }
+
+      newComments.push(comment);
+    }
+  }
+
+  return {
+    summary,
+    verdict: verdict as Verdict,
+    resolvedCommentIds,
+    newComments,
+  };
 }
