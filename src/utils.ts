@@ -230,7 +230,6 @@ function extractBalancedJsonObject(input: string): string | null {
   return null;
 }
 
-
 export function strictValidateReviewResult(parsed: unknown): ReviewResult {
   if (!parsed || typeof parsed !== "object") {
     throw new Error("Invalid or missing review result object");
