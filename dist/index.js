@@ -43589,6 +43589,7 @@ source, timeoutMinutes) {
         prompt,
         source,
         requireApproval: false,
+        title: "Code Review",
         autoPr: false,
     });
     info(`Jules session: ${session.id}`);

@@ -18,6 +18,7 @@ export async function runJulesReview(
     prompt,
     source,
     requireApproval: false,
+    title: "Code Review",
     autoPr: false,
   });
   core.info(`Jules session: ${session.id}`);
