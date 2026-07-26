@@ -149,6 +149,39 @@ The workflow's `extra_instructions` is appended after the rules file content. Us
 | `timeout_minutes`    | `30`                            | How long to wait for Jules to return a review.                    |
 | `enable_suggestions` | `false`                         | Enable GitHub-native one-click suggested changes in review comments. |
 
+## Outputs
+
+The action emits the following outputs that can be consumed by downstream workflow steps:
+
+| Output                | Type   | Description                                             |
+| --------------------- | ------ | ------------------------------------------------------- |
+| `verdict`             | string | Final review verdict: `approve`, `comment`, `block`, or `skipped`. |
+| `issues_count`        | number | Total count of review issues found.                     |
+| `high_issues_count`   | number | Count of high-severity issues.                          |
+| `warning_issues_count` | number | Count of warning-level issues.                          |
+| `info_issues_count`   | number | Count of info-level issues.                             |
+| `session_id`          | string | Jules review session ID for reference and debugging.    |
+
+### Example: Branch on verdict
+
+```yaml
+- uses: thalesraymond/jules-pr-reviewer@v1
+  id: jules
+  with:
+    jules_api_key: ${{ secrets.JULES_API_KEY }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+
+- name: Report results
+  run: |
+    echo "Verdict: ${{ steps.jules.outputs.verdict }}"
+    echo "High issues: ${{ steps.jules.outputs.high_issues_count }}"
+    echo "Session: ${{ steps.jules.outputs.session_id }}"
+
+- name: Fail if blocking issues
+  if: steps.jules.outputs.verdict == 'block'
+  run: exit 1
+```
+
 ### Enabling suggested changes
 
 Opt-in to include GitHub-native one-click suggested changes in Jules' review comments. When enabled, Jules may propose exact code replacements that reviewers can apply with a single click from the PR interface.
@@ -232,6 +265,27 @@ Then run: `JULES_API_KEY=... node list-sources.mjs`
 - **Cost**: each PR open/push creates one Jules session. Rate-limit via `bypass_label`, label-gated workflow triggers, or `paths:` filters.
 - **Drafts**: skipped by default; mark `ready_for_review` to trigger.
 - **Large diffs**: diff is truncated at 80 KB. When truncated, the prompt tells Jules its review may be incomplete.
+
+## Agent Workflow (OpenSpec + Cost Control)
+
+For internal agent workflows, use a planner-led chain to reduce overhead:
+
+1. Start from the planner agent.
+2. Planner invokes a small code-explorer subagent for discovery.
+3. Planner hands off to builder for execution.
+4. Builder updates OpenSpec artifacts first, then implements code tasks.
+5. Builder hands off to reviewer for pass/fail audit.
+6. On fail, loop fixes through planner -> builder until pass.
+7. After pass and verification checks, archive the completed OpenSpec change.
+
+Recommended invocation policy:
+
+- Planner: user invocable.
+- Reviewer: user invocable.
+- Explorer: subagent only.
+- Builder: subagent only.
+
+This policy minimizes accidental high-cost runs and keeps execution aligned to approved scope.
 
 ## Development
 

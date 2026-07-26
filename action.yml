@@ -54,6 +54,20 @@ inputs:
     required: false
     default: "false"
 
+outputs:
+  verdict:
+    description: "Review verdict (approve, comment, block, or skipped)."
+  issues_count:
+    description: "Total count of review issues found."
+  high_issues_count:
+    description: "Count of high-severity issues."
+  warning_issues_count:
+    description: "Count of warning-level issues."
+  info_issues_count:
+    description: "Count of info-level issues."
+  session_id:
+    description: "Jules review session ID for reference and debugging."
+
 runs:
   using: "node24"
   main: "dist/index.js"

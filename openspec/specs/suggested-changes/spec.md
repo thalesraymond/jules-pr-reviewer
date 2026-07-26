@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Support opt-in code suggestions in PR review comments from the Jules AI reviewer, with guardrails for security, formatting, and graceful submission degradation.
+
+## Requirements
 
 ### Requirement: Opt-in suggestions flag
 The action SHALL support an `enable_suggestions` boolean input (default `false`). When `false`, the action MUST NOT emit `suggestion` fields in any review comment, regardless of LLM output. When `true`, the action SHALL forward any `suggestion` fields returned by Jules to the GitHub review API.
