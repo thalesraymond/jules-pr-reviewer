@@ -34,22 +34,23 @@ describe("jules.ts", () => {
   });
 
   describe("runJulesReview", () => {
-    it("returns null if no reviewMessage is collected", async () => {
+    it("returns null if no reviewMessage is collected (both attempts timeout)", async () => {
+      const sessionMock = vi.fn().mockResolvedValue(mockSessionWithHistory([]));
       const mockJulesWith = vi.fn().mockReturnValue({
-        session: vi.fn().mockResolvedValue(mockSessionWithHistory([])),
+        session: sessionMock,
       });
       (jules as any).with = mockJulesWith;
 
       const promise = runJulesReview("api-key", "prompt", {}, 1);
 
-      // Fast-forward to timeout
-      await vi.advanceTimersByTimeAsync(60 * 1000 + 1000);
+      // Fast-forward past both retry attempts (1 min each = 120s total)
+      await vi.advanceTimersByTimeAsync(125 * 1000);
 
       const result = await promise;
-      expect(result).toEqual({
-        reviewResult: null,
-        sessionId: "test-session-id",
-      });
+      expect(result.reviewResult).toBeNull();
+      expect(result.sessionId).toBe("test-session-id");
+      // Both attempts should have created sessions
+      expect(sessionMock).toHaveBeenCalledTimes(2);
     });
 
     it("returns parsed review result", async () => {
@@ -338,6 +339,287 @@ describe("jules.ts", () => {
       await expect(promise).rejects.toThrow(
         "Jules API rejected request (403 Forbidden). Check JULES_API_KEY is valid."
       );
+    });
+
+    // ── Retry behavior tests ──────────────────────────────────────────
+
+    it("retries on timeout: first attempt times out, second succeeds", async () => {
+      const reviewText = '{"summary": "retry success", "verdict": "approve"}';
+      const timeoutSession = {
+        id: "timeout-session-1",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        history: async function* () {
+          /* no agentMessaged */
+        },
+      };
+      const successSession = {
+        id: "success-session-2",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        history: async function* () {
+          yield { type: "agentMessaged", message: reviewText };
+        },
+      };
+
+      const sessionMock = vi
+        .fn()
+        .mockResolvedValueOnce(timeoutSession)
+        .mockResolvedValueOnce(successSession);
+      const mockJulesWith = vi.fn().mockReturnValue({
+        session: sessionMock,
+      });
+      (jules as any).with = mockJulesWith;
+
+      const promise = runJulesReview("api-key", "prompt", {}, 1);
+      // First attempt times out after ~60s
+      await vi.advanceTimersByTimeAsync(61 * 1000);
+
+      const result = await promise;
+      expect(result.reviewResult).toEqual({
+        summary: "retry success",
+        verdict: "approve",
+        resolvedCommentIds: [],
+        newComments: [],
+      });
+      expect(result.sessionId).toBe("success-session-2");
+      // Only two sessions created
+      expect(sessionMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries on timeout: both attempts timeout returns null with error log", async () => {
+      const session1 = {
+        id: "fail-session-1",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        history: async function* () {
+          /* no agentMessaged */
+        },
+      };
+      const session2 = {
+        id: "fail-session-2",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        history: async function* () {
+          /* no agentMessaged */
+        },
+      };
+
+      const sessionMock = vi
+        .fn()
+        .mockResolvedValueOnce(session1)
+        .mockResolvedValueOnce(session2);
+      const mockJulesWith = vi.fn().mockReturnValue({
+        session: sessionMock,
+      });
+      (jules as any).with = mockJulesWith;
+
+      const promise = runJulesReview("api-key", "prompt", {}, 1);
+      // Both attempts: 1 min each = 120s total
+      await vi.advanceTimersByTimeAsync(125 * 1000);
+
+      const result = await promise;
+      expect(result.reviewResult).toBeNull();
+      expect(result.sessionId).toBe("fail-session-2");
+      // core.error should be called with both session IDs
+      expect(core.error).toHaveBeenCalledWith(
+        expect.stringContaining("fail-session-1")
+      );
+      expect(core.error).toHaveBeenCalledWith(
+        expect.stringContaining("fail-session-2")
+      );
+    });
+
+    it("does not retry on auth error (401)", async () => {
+      const mockSession = {
+        id: "auth-fail-session",
+        info: vi.fn().mockRejectedValue(new Error("401 Unauthorized")),
+        hydrate: vi.fn().mockResolvedValue(1),
+        history: async function* () {
+          yield {
+            type: "agentMessaged",
+            message: '{"summary":"s","verdict":"approve"}',
+          };
+        },
+      };
+
+      const sessionMock = vi.fn().mockResolvedValue(mockSession);
+      const mockJulesWith = vi.fn().mockReturnValue({
+        session: sessionMock,
+      });
+      (jules as any).with = mockJulesWith;
+
+      await expect(runJulesReview("api-key", "prompt", {}, 1)).rejects.toThrow(
+        "Jules API rejected request"
+      );
+      // Only one session created — no retry
+      expect(sessionMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not retry on auth error (403)", async () => {
+      const mockSession = {
+        id: "forbidden-session",
+        info: vi.fn().mockRejectedValue(new Error("403 Forbidden")),
+        hydrate: vi.fn().mockResolvedValue(1),
+        history: async function* () {
+          yield {
+            type: "agentMessaged",
+            message: '{"summary":"s","verdict":"approve"}',
+          };
+        },
+      };
+
+      const sessionMock = vi.fn().mockResolvedValue(mockSession);
+      const mockJulesWith = vi.fn().mockReturnValue({
+        session: sessionMock,
+      });
+      (jules as any).with = mockJulesWith;
+
+      await expect(runJulesReview("api-key", "prompt", {}, 1)).rejects.toThrow(
+        "Jules API rejected request"
+      );
+      expect(sessionMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not retry on parse error — returns fallback", async () => {
+      const mockSession = {
+        id: "parse-fail-session",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        history: async function* () {
+          yield { type: "agentMessaged", message: "not valid json at all" };
+        },
+      };
+
+      const sessionMock = vi.fn().mockResolvedValue(mockSession);
+      const mockJulesWith = vi.fn().mockReturnValue({
+        session: sessionMock,
+      });
+      (jules as any).with = mockJulesWith;
+
+      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      expect(result.reviewResult).toEqual({
+        summary:
+          "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
+        verdict: "block",
+        resolvedCommentIds: [],
+        newComments: [],
+      });
+      expect(result.sessionId).toBe("parse-fail-session");
+      // Only one session — no retry on parse error
+      expect(sessionMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not retry on readiness failure (404 loop)", async () => {
+      const mockSession = {
+        id: "ready-fail-session",
+        info: vi.fn().mockRejectedValue(new Error("404 not found")),
+        hydrate: vi.fn().mockResolvedValue(1),
+        history: async function* () {
+          yield {
+            type: "agentMessaged",
+            message: '{"summary":"s","verdict":"approve"}',
+          };
+        },
+      };
+
+      const sessionMock = vi.fn().mockResolvedValue(mockSession);
+      const mockJulesWith = vi.fn().mockReturnValue({
+        session: sessionMock,
+      });
+      (jules as any).with = mockJulesWith;
+
+      const promise = expect(
+        runJulesReview("api-key", "prompt", {}, 1)
+      ).rejects.toThrow("Session did not become ready within timeout.");
+
+      for (let i = 0; i < 20; i++) {
+        await vi.advanceTimersToNextTimerAsync();
+      }
+
+      await promise;
+      // Only one session — no retry
+      expect(sessionMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("logs retry event with structured data", async () => {
+      const timeoutSession = {
+        id: "timeout-logs-session",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        history: async function* () {
+          /* no agentMessaged */
+        },
+      };
+      const successSession = {
+        id: "success-logs-session",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        history: async function* () {
+          yield {
+            type: "agentMessaged",
+            message: '{"summary":"ok","verdict":"approve"}',
+          };
+        },
+      };
+
+      const sessionMock = vi
+        .fn()
+        .mockResolvedValueOnce(timeoutSession)
+        .mockResolvedValueOnce(successSession);
+      const mockJulesWith = vi.fn().mockReturnValue({
+        session: sessionMock,
+      });
+      (jules as any).with = mockJulesWith;
+
+      const promise = runJulesReview("api-key", "prompt", {}, 1);
+      await vi.advanceTimersByTimeAsync(61 * 1000);
+
+      const result = await promise;
+      expect(result.sessionId).toBe("success-logs-session");
+
+      // Should have logged retry info with structured data
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining("timeout-logs-session")
+      );
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining("Retrying with a fresh session")
+      );
+      // Structured log event
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('"event":"jules_retry"')
+      );
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('"failedSessionId":"timeout-logs-session"')
+      );
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('"attempt":1')
+      );
+    });
+
+    it("first attempt succeeds — no second session created", async () => {
+      const reviewText = '{"summary": "first try works", "verdict": "comment"}';
+      const sessionMock = vi
+        .fn()
+        .mockResolvedValue(
+          mockSessionWithHistory([
+            { type: "agentMessaged", message: reviewText },
+          ])
+        );
+      const mockJulesWith = vi.fn().mockReturnValue({
+        session: sessionMock,
+      });
+      (jules as any).with = mockJulesWith;
+
+      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      expect(result.reviewResult).toEqual({
+        summary: "first try works",
+        verdict: "comment",
+        resolvedCommentIds: [],
+        newComments: [],
+      });
+      // Only one session created
+      expect(sessionMock).toHaveBeenCalledTimes(1);
     });
   });
 

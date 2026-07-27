@@ -43584,40 +43584,62 @@ async function runJulesReview(apiKey, prompt,
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 source, timeoutMinutes) {
     const customJules = jules.with({ apiKey });
-    info("Creating Jules review session…");
-    const session = await customJules.session({
-        prompt,
-        source,
-        requireApproval: false,
-        title: "Code Review",
-        autoPr: false,
-    });
-    info(`Jules session: ${session.id}`);
-    await waitUntilSessionReady(session);
-    const reviewMessage = await pollForReview(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    session, timeoutMinutes * 60 * 1000);
-    info(`Collected review (${reviewMessage.length} chars)`);
-    if (!reviewMessage) {
-        return { reviewResult: null, sessionId: session.id };
+    let firstSessionId = "";
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        info(`Creating Jules review session (attempt ${attempt}/2)…`);
+        const session = await customJules.session({
+            prompt,
+            source,
+            requireApproval: false,
+            title: "Code Review",
+            autoPr: false,
+        });
+        info(`Jules session: ${session.id}`);
+        if (attempt === 1) {
+            firstSessionId = session.id;
+        }
+        await waitUntilSessionReady(session);
+        const reviewMessage = await pollForReview(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        session, timeoutMinutes * 60 * 1000);
+        info(`Collected review (${reviewMessage.length} chars)`);
+        if (reviewMessage) {
+            let reviewResult;
+            try {
+                reviewResult = parseJulesResponse(reviewMessage);
+            }
+            catch (err) {
+                error(`Failed to parse Jules response: ${err}`);
+                return {
+                    reviewResult: {
+                        summary: "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
+                        verdict: "block",
+                        resolvedCommentIds: [],
+                        newComments: [],
+                    },
+                    sessionId: session.id,
+                };
+            }
+            return { reviewResult, sessionId: session.id };
+        }
+        // Timeout on this attempt
+        if (attempt === 1) {
+            info(`Jules session ${session.id} timed out. Retrying with a fresh session…`);
+            info(JSON.stringify({
+                event: "jules_retry",
+                failedSessionId: session.id,
+                attempt: 1,
+            }));
+            // Continue to attempt 2
+        }
+        else {
+            // Both attempts timed out
+            error(`Jules did not respond: session ${firstSessionId} and retry session ${session.id} both timed out within ${timeoutMinutes} minutes each.`);
+            return { reviewResult: null, sessionId: session.id };
+        }
     }
-    let reviewResult;
-    try {
-        reviewResult = parseJulesResponse(reviewMessage);
-    }
-    catch (err) {
-        error(`Failed to parse Jules response: ${err}`);
-        return {
-            reviewResult: {
-                summary: "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
-                verdict: "block",
-                resolvedCommentIds: [],
-                newComments: [],
-            },
-            sessionId: session.id,
-        };
-    }
-    return { reviewResult, sessionId: session.id };
+    // Unreachable — loop always returns or throws, but TypeScript needs it
+    throw new Error("Unexpected: retry loop exhausted without returning");
 }
 function parseJulesResponse(message) {
     const jsonPayload = extractJsonPayload(message);
