@@ -108,3 +108,17 @@ Agents that do not natively consume these definitions should still mirror this s
 - **`pull_request_target` is blocked:** The action refuses to run on `pull_request_target` to avoid token-scope escalation from fork PRs.
 - **Incremental diffs:** On `synchronize` events the action diffs only the new commits (`payload.before → head.sha`) instead of the full PR diff.
 - **Thread resolution:** The LLM can mark previous review comments as resolved by index, and the action resolves the corresponding GitHub review threads via GraphQL.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub issues on `thalesraymond/jules-pr-reviewer`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical roles map to: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: `CONTEXT.md` at repo root + `docs/adr/`. See `docs/agents/domain.md`.
