@@ -1,7 +1,11 @@
 import * as core from "@actions/core";
 import { jules } from "@google/jules-sdk";
 import { ReviewResult } from "./types.js";
-import { extractJsonPayload, strictValidateReviewResult } from "./utils.js";
+import {
+  extractJsonPayload,
+  strictValidateReviewResult,
+  getErrorMessage,
+} from "./utils.js";
 
 export async function runJulesReview(
   apiKey: string,
@@ -109,7 +113,7 @@ async function waitUntilSessionReady(session: {
       core.info(`Session ${session.id} is ready after ${i + 1} attempt(s).`);
       return;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getErrorMessage(err);
       if (isAuthError(msg)) {
         throw new Error(
           `Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`,
@@ -152,7 +156,7 @@ async function pollForReview(
       }
       core.info(`No agentMessaged yet (attempt ${attempt})…`);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getErrorMessage(err);
       if (isAuthError(msg)) {
         throw new Error(
           `Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`,
@@ -175,7 +179,7 @@ export function wrapPermissionError(
   needed: string,
   op: string
 ): Error {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = getErrorMessage(err);
   if (isAuthError(msg) || msg.includes("Resource not accessible")) {
     return new Error(
       `${op} failed with 403. The github_token likely lacks ${needed}. Add to your workflow:\n` +
