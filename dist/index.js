@@ -38990,6 +38990,15 @@ function strictValidateReviewResult(parsed) {
         newComments,
     };
 }
+function getErrorMessage(error) {
+    if (error instanceof Error) {
+        return error.message;
+    }
+    if (error !== null && typeof error === "object" && "message" in error) {
+        return String(error.message);
+    }
+    return String(error);
+}
 
 ;// CONCATENATED MODULE: ./src/github.ts
 
@@ -39058,7 +39067,7 @@ function buildApiComment(comment, includeSuggestion) {
 }
 function isUnprocessableEntity(error) {
     return (error?.status === 422 ||
-        String(error).includes("Unprocessable Entity"));
+        getErrorMessage(error).includes("Unprocessable Entity"));
 }
 async function fetchDiff(octokit, owner, repo, pr, baseShaForDiff, headSha) {
     try {
@@ -39073,7 +39082,7 @@ async function fetchDiff(octokit, owner, repo, pr, baseShaForDiff, headSha) {
             return data;
     }
     catch (err) {
-        warning(`compareCommitsWithBasehead failed, falling back to pulls.get: ${String(err)}`);
+        warning(`compareCommitsWithBasehead failed, falling back to pulls.get: ${getErrorMessage(err)}`);
     }
     // fallback to full PR diff
     const res = await octokit.rest.pulls.get({
@@ -39103,7 +39112,7 @@ async function loadRulesFromBase(octokit, owner, repo, path, baseSha) {
         return undefined;
     }
     catch (err) {
-        warning(`Failed to load rules from base: ${String(err)}`);
+        warning(`Failed to load rules from base: ${getErrorMessage(err)}`);
         return undefined;
     }
 }
@@ -43664,7 +43673,7 @@ async function waitUntilSessionReady(session) {
             return;
         }
         catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
+            const msg = getErrorMessage(err);
             if (isAuthError(msg)) {
                 throw new Error(`Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`, { cause: err });
             }
@@ -43697,7 +43706,7 @@ async function pollForReview(session, timeoutMs) {
             info(`No agentMessaged yet (attempt ${attempt})…`);
         }
         catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
+            const msg = getErrorMessage(err);
             if (isAuthError(msg)) {
                 throw new Error(`Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`, { cause: err });
             }
@@ -43711,7 +43720,7 @@ function isAuthError(msg) {
     return /\b(?:401|403)\b/.test(msg);
 }
 function wrapPermissionError(err, needed, op) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     if (isAuthError(msg) || msg.includes("Resource not accessible")) {
         return new Error(`${op} failed with 403. The github_token likely lacks ${needed}. Add to your workflow:\n` +
             "    permissions:\n      pull-requests: write\n      contents: read\n      statuses: write\n" +
@@ -44106,7 +44115,7 @@ async function run() {
         info(`Verdict: ${verdict}. Status check: ${state}.`);
     }
     catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = getErrorMessage(err);
         error(`Review failed: ${msg}`);
         logStructured("review_failed", {
             reason: msg,
@@ -44161,7 +44170,7 @@ function statusFromVerdict(verdict, failOn) {
         };
 }
 run().catch((err) => {
-    setFailed(err instanceof Error ? err.message : String(err));
+    setFailed(getErrorMessage(err));
 });
 
 var __webpack_exports__statusFromVerdict = __webpack_exports__.C;
