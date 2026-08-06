@@ -39040,12 +39040,14 @@ ${comment.suggestion}
 \`\`\``;
     }
     if (comment.promptForAgents) {
+        // Sanitize user input to prevent XSS and breaking out of details tag
+        const sanitizedPrompt = comment.promptForAgents.replace(/<\/details\s*>/gi, "&lt;/details&gt;");
         body += `
 
 <details>
 <summary>🤖 Prompt for Agents</summary>
 
-${comment.promptForAgents}
+${sanitizedPrompt}
 </details>`;
     }
     return body;
