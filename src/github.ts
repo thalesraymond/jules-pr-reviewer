@@ -1,7 +1,7 @@
 import * as github from "@actions/github";
 import * as core from "@actions/core";
 import { OpenThread, ReviewComment } from "./types.js";
-import { withFallback, withRetry } from "./utils.js";
+import { withFallback, withRetry, getErrorMessage } from "./utils.js";
 
 const SUGGESTION_ATTRIBUTION =
   "> ⚠️ Jules suggested this fix — review carefully before applying.";
@@ -105,7 +105,7 @@ function buildApiComment(
 function isUnprocessableEntity(error: unknown): boolean {
   return (
     (error as { status?: number })?.status === 422 ||
-    String(error).includes("Unprocessable Entity")
+    getErrorMessage(error).includes("Unprocessable Entity")
   );
 }
 
@@ -128,7 +128,7 @@ export async function fetchDiff(
     if (typeof data === "string") return data;
   } catch (err) {
     core.warning(
-      `compareCommitsWithBasehead failed, falling back to pulls.get: ${String(err)}`
+      `compareCommitsWithBasehead failed, falling back to pulls.get: ${getErrorMessage(err)}`
     );
   }
 
@@ -166,7 +166,7 @@ export async function loadRulesFromBase(
     }
     return undefined;
   } catch (err) {
-    core.warning(`Failed to load rules from base: ${String(err)}`);
+    core.warning(`Failed to load rules from base: ${getErrorMessage(err)}`);
     return undefined;
   }
 }

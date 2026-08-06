@@ -11,7 +11,7 @@ import {
 } from "./github.js";
 import { runJulesReview, wrapPermissionError } from "./jules.js";
 import { buildReviewPrompt } from "./prompt.js";
-import { parseIgnoredPaths, filterDiff } from "./utils.js";
+import { parseIgnoredPaths, filterDiff, getErrorMessage } from "./utils.js";
 import { logStructured, setReviewOutputs } from "./logging.js";
 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
@@ -297,7 +297,7 @@ async function run(): Promise<void> {
 
     core.info(`Verdict: ${verdict}. Status check: ${state}.`);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     core.error(`Review failed: ${msg}`);
 
     logStructured("review_failed", {
@@ -373,5 +373,5 @@ export function statusFromVerdict(
 }
 
 run().catch((err) => {
-  core.setFailed(err instanceof Error ? err.message : String(err));
+  core.setFailed(getErrorMessage(err));
 });
