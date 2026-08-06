@@ -11,7 +11,8 @@ import {
 } from "./github.js";
 import { runJulesReview, wrapPermissionError } from "./jules.js";
 import { buildReviewPrompt } from "./prompt.js";
-import { parseIgnoredPaths, filterDiff, getErrorMessage } from "./utils.js";
+import { parseIgnoredPaths, filterDiff } from "./filtering.js";
+import { getErrorMessage } from "./errors.js";
 import { logStructured, setReviewOutputs } from "./logging.js";
 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";

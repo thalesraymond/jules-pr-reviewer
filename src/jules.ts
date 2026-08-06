@@ -1,11 +1,8 @@
 import * as core from "@actions/core";
 import { jules } from "@google/jules-sdk";
 import { ReviewResult } from "./types.js";
-import {
-  extractJsonPayload,
-  strictValidateReviewResult,
-  getErrorMessage,
-} from "./utils.js";
+import { parseReviewResponse } from "./validation.js";
+import { getErrorMessage } from "./errors.js";
 
 export async function runJulesReview(
   apiKey: string,
@@ -89,16 +86,7 @@ export async function runJulesReview(
 }
 
 function parseJulesResponse(message: string): ReviewResult {
-  const jsonPayload = extractJsonPayload(message);
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(jsonPayload);
-  } catch (e) {
-    throw new Error("Failed to parse Jules response as JSON", { cause: e });
-  }
-
-  return strictValidateReviewResult(parsed);
+  return parseReviewResponse(message);
 }
 
 async function waitUntilSessionReady(session: {

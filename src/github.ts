@@ -1,7 +1,8 @@
 import * as github from "@actions/github";
 import * as core from "@actions/core";
 import { OpenThread, ReviewComment } from "./types.js";
-import { withFallback, withRetry, getErrorMessage } from "./utils.js";
+import { withFallback, withRetry } from "./resilience.js";
+import { getErrorMessage } from "./errors.js";
 
 const SUGGESTION_ATTRIBUTION =
   "> ⚠️ Jules suggested this fix — review carefully before applying.";
