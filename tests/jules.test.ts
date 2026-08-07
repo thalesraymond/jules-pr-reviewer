@@ -773,7 +773,7 @@ describe("jules.ts", () => {
       expect(result.fallbackReason).toBe("timeout");
     });
 
-    it("falls back when changedFiles is empty", async () => {
+    it("proceeds when changedFiles is empty — mismatch is logged only", async () => {
       const reviewText =
         '{"summary":"empty files","verdict":"approve","changedFiles":[]}';
       const mockSession = {
@@ -797,11 +797,17 @@ describe("jules.ts", () => {
         { reported: [], actual: ["src/a.ts"] }
       );
 
-      expect(result.fallback).toBe(true);
-      expect(result.fallbackReason).toBe("verification_mismatch");
+      expect(result.fallback).toBe(false);
+      expect(result.reviewResult?.verdict).toBe("approve");
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('"event":"verification_mismatch"')
+      );
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('"tier":"empty"')
+      );
     });
 
-    it("falls back when changedFiles is partial", async () => {
+    it("proceeds when changedFiles is partial — fewer files reported than actual", async () => {
       const reviewText =
         '{"summary":"partial","verdict":"approve","changedFiles":["src/a.ts"]}';
       const mockSession = {
@@ -825,8 +831,41 @@ describe("jules.ts", () => {
         { reported: ["src/a.ts"], actual: ["src/a.ts", "src/b.ts"] }
       );
 
-      expect(result.fallback).toBe(true);
-      expect(result.fallbackReason).toBe("verification_mismatch");
+      expect(result.fallback).toBe(false);
+      expect(result.reviewResult?.verdict).toBe("approve");
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('"event":"verification_mismatch"')
+      );
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('"tier":"partial"')
+      );
+    });
+
+    it("proceeds when changedFiles is omitted — no fallback", async () => {
+      const reviewText = '{"summary":"no files field","verdict":"approve"}';
+      const mockSession = {
+        id: "omitted-files-session",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        archive: vi.fn().mockResolvedValue(undefined),
+        history: async function* () {
+          yield { type: "agentMessaged", message: reviewText };
+        },
+      };
+
+      const sessionMock = vi.fn().mockResolvedValue(mockSession);
+      (jules as any).with = vi.fn().mockReturnValue({ session: sessionMock });
+
+      const result = await runAgenticReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        30,
+        { reported: [], actual: ["src/a.ts"] }
+      );
+
+      expect(result.fallback).toBe(false);
+      expect(result.reviewResult?.verdict).toBe("approve");
     });
 
     it("proceeds when changedFiles is extra-only (superset)", async () => {

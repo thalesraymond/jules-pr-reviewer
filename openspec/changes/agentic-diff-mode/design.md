@@ -13,7 +13,7 @@ The change adds a `diff_mode` input that selects between the existing prompt pip
 **Goals:**
 - Add `diff_mode` input (`prompt` | `agentic`, default `prompt`)
 - Agentic prompt: SHA-based diff instruction with branch-ref fallback, read-only prohibition, merged ignored_paths, soft nudge for >50 files
-- Fallback state machine: session-creation failure and timeout → prompt-mode fallback; verification mismatch (empty/partial) → fallback; extra-only → warn+proceed
+- Fallback state machine: session-creation failure and timeout → prompt-mode fallback; changedFiles mismatch (empty/partial/extra-only) → log-only, no fallback
 - Session archiving: best-effort archive of every session the action creates
 - `changedFiles: string[]` optional field in `ReviewResult`, logged but not enforced
 
@@ -53,7 +53,7 @@ The change adds a `diff_mode` input that selects between the existing prompt pip
 
 ### D5: `changedFiles` verification uses existing `compareCommitsWithBasehead`
 
-**Why:** The action already has the actual changed-file set from `fetchDiff` / GitHub API. Comparing Jules's `changedFiles` against this set requires no new API calls. The tiered policy (empty → fallback, partial → fallback, extra-only → warn) is computed in `index.ts` after parsing.
+**Why:** The action already has the actual changed-file set from `fetchDiff` / GitHub API. Comparing Jules's `changedFiles` against this set requires no new API calls. The mismatch is informational: any difference (empty, partial, extra-only) is logged as a `verification_mismatch` event but never triggers a fallback or a retry.
 
 **Alternatives considered:** New API call to `pulls.listFiles` — rejected; redundant with data already available.
 
@@ -74,18 +74,14 @@ index.ts
                                      │                    pollForReview()
                                      │                    parseReviewResponse()
                                      │                          │
-                                     │                    changedFiles verification
+                                     │                    changedFiles check
+                                     │                    (log-only, no fallback)
                                      │                          │
-                                     │              ┌─── pass ──┤─── fail ──┐
-                                     │              │           │           │
-                                     │              ▼           ▼           ▼
-                                     │          submit      fallback    fallback
-                                     │          review      (prompt)    (prompt)
-                                     │              │           │           │
-                                     │              ▼           ▼           ▼
-                                     │          archive     archive     archive
-                                     │          session     agentic     prompt
-                                     │                      session     session
+                                     │                          ▼
+                                     │                     submit review
+                                     │                          │
+                                     │                          ▼
+                                     │                     archive session
 ```
 
 ## Files Modified
@@ -106,7 +102,7 @@ index.ts
 |------|------------|
 | Agentic mode adds latency (Jules must clone + diff) | Prompt mode unchanged as default; agentic is opt-in |
 | Abandoned agentic sessions consume Jules resources | Best-effort archive + read-only prohibition limits blast radius |
-| `changedFiles` may be incomplete (LLM hallucination) | Tiered verification; empty/partial triggers fallback; extra-only warns |
+| `changedFiles` may be incomplete (LLM hallucination) | Informational verification; any mismatch is logged and surfaced to the user, never treated as a failure |
 | Prompt injection via agentic diff instructions | UNTRUSTED labels on all user-controllable sections; SHA-based instructions |
 
 ## Migration Plan

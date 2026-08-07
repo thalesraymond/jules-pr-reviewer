@@ -73,6 +73,27 @@ The `ReviewResult` type SHALL include an optional `changedFiles` field of type `
 
 ---
 
+### Requirement: changedFiles mismatch is informational (no fallback)
+
+Differences between the files Jules reports reviewing (`changedFiles`) and the actual changed-file set SHALL NOT trigger a fallback or a retry. The action SHALL log a human-readable line and a structured `verification_mismatch` event so the user is informed, then proceed with the agentic review.
+
+#### Scenario: Partial changedFiles — fewer files reported than actual
+- **WHEN** Jules returns a review with `changedFiles` that is a strict subset of the actual changed files
+- **THEN** the action logs a `verification_mismatch` event with `{ tier: "partial", reportedCount, actualCount }`
+- **AND** the action proceeds with the agentic review (no fallback, no retry)
+
+#### Scenario: Empty or missing changedFiles
+- **WHEN** Jules returns a review with `changedFiles` absent or empty (`[]`)
+- **THEN** the action logs a `verification_mismatch` event with `{ tier: "empty", reportedCount, actualCount }`
+- **AND** the action proceeds with the agentic review (no fallback, no retry)
+
+#### Scenario: Extra-only changedFiles — superset
+- **WHEN** Jules returns a review with `changedFiles` that is a superset of the actual changed files (every real file covered, plus extras)
+- **THEN** the action logs a `verification_mismatch` event with `{ tier: "extra_only", reportedCount, actualCount }`
+- **AND** the action proceeds with the agentic review
+
+---
+
 ### Requirement: Agentic fallback triggers
 
 The action SHALL fall back from agentic to prompt mode on the following conditions. On fallback, the agentic review result is discarded and the prompt-mode result is authoritative.
@@ -88,21 +109,6 @@ The action SHALL fall back from agentic to prompt mode on the following conditio
 - **THEN** the action falls back to prompt mode
 - **AND** the prompt fallback uses the full `timeoutMinutes` budget
 - **AND** a structured log event `agentic_fallback` is emitted with `{ reason: "timeout" }`
-
-#### Scenario: Verification mismatch — empty/missing changedFiles
-- **WHEN** Jules returns a review with `changedFiles` absent or empty (`[]`)
-- **THEN** the action falls back to prompt mode
-- **AND** a structured log event `agentic_fallback` is emitted with `{ reason: "verification_mismatch", tier: "empty" }`
-
-#### Scenario: Verification mismatch — partial changedFiles
-- **WHEN** Jules returns a review with `changedFiles` that is a strict subset of the actual changed files
-- **THEN** the action falls back to prompt mode
-- **AND** a structured log event `agentic_fallback` is emitted with `{ reason: "verification_mismatch", tier: "partial" }`
-
-#### Scenario: Verification mismatch — extra-only changedFiles
-- **WHEN** Jules returns a review with `changedFiles` that is a superset of the actual changed files (every real file covered, plus extras)
-- **THEN** the action proceeds with the agentic review
-- **AND** a structured log event `verification_mismatch` is emitted with `{ tier: "extra_only" }`
 
 ---
 

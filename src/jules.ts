@@ -197,8 +197,7 @@ export interface AgenticReviewResult {
   reviewResult: ReviewResult | null;
   sessionId: string;
   fallback: boolean;
-  fallbackReason?:
-    "session_creation_failed" | "timeout" | "verification_mismatch";
+  fallbackReason?: "session_creation_failed" | "timeout";
 }
 
 export interface ChangedFilesCheck {
@@ -302,7 +301,9 @@ export async function runAgenticReview(
       };
     }
 
-    // changedFiles verification
+    // changedFiles verification — informational only. A mismatch between the
+    // files Jules reports and the actual changed files is logged and surfaced
+    // to the user, but never triggers a fallback or a retry.
     if (changedFilesCheck) {
       const reported = reviewResult.changedFiles ?? [];
       const result = verifyChangedFiles({
@@ -311,25 +312,15 @@ export async function runAgenticReview(
       });
 
       if (!result.ok) {
-        core.info(
-          `changedFiles verification failed: ${result.reason} (reported: ${reported.length}, actual: ${changedFilesCheck.actual.length})`
+        core.warning(
+          `changedFiles mismatch: ${result.reason} (reported: ${reported.length}, actual: ${changedFilesCheck.actual.length})`
         );
-        logStructured("agentic_fallback", {
-          reason: "verification_mismatch",
+        logStructured("verification_mismatch", {
           tier: result.reason,
           reportedCount: reported.length,
           actualCount: changedFilesCheck.actual.length,
         });
-        await archiveSession(session);
-        return {
-          reviewResult: null,
-          sessionId: session.id,
-          fallback: true,
-          fallbackReason: "verification_mismatch",
-        };
-      }
-
-      if (reported.length > changedFilesCheck.actual.length) {
+      } else if (reported.length > changedFilesCheck.actual.length) {
         logStructured("verification_mismatch", {
           tier: "extra_only",
           reportedCount: reported.length,

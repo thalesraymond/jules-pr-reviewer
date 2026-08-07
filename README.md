@@ -214,7 +214,8 @@ In agentic mode:
 - Jules is instructed to fetch the diff with SHA-pinned `git diff` commands (with a branch-ref fallback) and is explicitly prohibited from modifying the repository.
 - Ignored paths are passed to Jules as a hint merged with the repo's `.gitignore`, while the action-side filter stays active as defence-in-depth.
 - Reviews of large PRs (>50 changed files) include a soft nudge to prioritize high-impact, high-confidence findings.
-- If the agentic session fails to start, times out, or returns a `changedFiles` list that is empty or misses real changed files, the action automatically falls back to the standard prompt-mode pipeline so the PR still gets exactly one review.
+- If the agentic session fails to start or times out, the action automatically falls back to the standard prompt-mode pipeline so the PR still gets exactly one review.
+- The `changedFiles` list Jules reports is compared against the actual changed files; any mismatch is logged and surfaced as a warning, but it is never treated as a failure and does not trigger a fallback.
 - Every Jules session created by the action is archived (best-effort) once the review is done.
 
 ## Severity, Confidence, & Verdict

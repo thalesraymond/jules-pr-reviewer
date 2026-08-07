@@ -41391,7 +41391,9 @@ source, timeoutMinutes, changedFilesCheck) {
                 fallback: false,
             };
         }
-        // changedFiles verification
+        // changedFiles verification — informational only. A mismatch between the
+        // files Jules reports and the actual changed files is logged and surfaced
+        // to the user, but never triggers a fallback or a retry.
         if (changedFilesCheck) {
             const reported = reviewResult.changedFiles ?? [];
             const result = verifyChangedFiles({
@@ -41399,22 +41401,14 @@ source, timeoutMinutes, changedFilesCheck) {
                 actual: changedFilesCheck.actual,
             });
             if (!result.ok) {
-                info(`changedFiles verification failed: ${result.reason} (reported: ${reported.length}, actual: ${changedFilesCheck.actual.length})`);
-                logStructured("agentic_fallback", {
-                    reason: "verification_mismatch",
+                warning(`changedFiles mismatch: ${result.reason} (reported: ${reported.length}, actual: ${changedFilesCheck.actual.length})`);
+                logStructured("verification_mismatch", {
                     tier: result.reason,
                     reportedCount: reported.length,
                     actualCount: changedFilesCheck.actual.length,
                 });
-                await archiveSession(session);
-                return {
-                    reviewResult: null,
-                    sessionId: session.id,
-                    fallback: true,
-                    fallbackReason: "verification_mismatch",
-                };
             }
-            if (reported.length > changedFilesCheck.actual.length) {
+            else if (reported.length > changedFilesCheck.actual.length) {
                 logStructured("verification_mismatch", {
                     tier: "extra_only",
                     reportedCount: reported.length,
