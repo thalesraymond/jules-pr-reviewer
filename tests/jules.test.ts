@@ -17,6 +17,7 @@ const mockSessionWithHistory = (historyEvents: any[]) => {
     id: "test-session-id",
     info: vi.fn().mockResolvedValue({}),
     hydrate: vi.fn().mockResolvedValue(1),
+    archive: vi.fn().mockResolvedValue(undefined),
     history: async function* () {
       for (const event of historyEvents) {
         yield event;
@@ -622,6 +623,117 @@ describe("jules.ts", () => {
       });
       // Only one session created
       expect(sessionMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("archives the session on successful review", async () => {
+      const reviewText = '{"summary":"ok","verdict":"approve"}';
+      const session = mockSessionWithHistory([
+        { type: "agentMessaged", message: reviewText },
+      ]);
+      (jules as any).with = vi.fn().mockReturnValue({
+        session: vi.fn().mockResolvedValue(session),
+      });
+
+      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      expect(result.reviewResult?.verdict).toBe("approve");
+      expect(session.archive).toHaveBeenCalledTimes(1);
+    });
+
+    it("archives the session when response parsing fails", async () => {
+      const session = mockSessionWithHistory([
+        { type: "agentMessaged", message: "invalid json" },
+      ]);
+      (jules as any).with = vi.fn().mockReturnValue({
+        session: vi.fn().mockResolvedValue(session),
+      });
+
+      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      expect(result.reviewResult?.verdict).toBe("block");
+      expect(session.archive).toHaveBeenCalledTimes(1);
+    });
+
+    it("archives the timed-out session before retrying and the final session on success", async () => {
+      const reviewText = '{"summary": "retry success", "verdict": "approve"}';
+      const timeoutSession = {
+        id: "timeout-archive-session",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        archive: vi.fn().mockResolvedValue(undefined),
+        history: async function* () {
+          /* no agentMessaged */
+        },
+      };
+      const successSession = {
+        id: "success-archive-session",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        archive: vi.fn().mockResolvedValue(undefined),
+        history: async function* () {
+          yield { type: "agentMessaged", message: reviewText };
+        },
+      };
+
+      const sessionMock = vi
+        .fn()
+        .mockResolvedValueOnce(timeoutSession)
+        .mockResolvedValueOnce(successSession);
+      (jules as any).with = vi.fn().mockReturnValue({
+        session: sessionMock,
+      });
+
+      const promise = runJulesReview("api-key", "prompt", {}, 1);
+      await vi.advanceTimersByTimeAsync(61 * 1000);
+
+      const result = await promise;
+      expect(result.reviewResult?.verdict).toBe("approve");
+      expect(timeoutSession.archive).toHaveBeenCalledTimes(1);
+      expect(successSession.archive).toHaveBeenCalledTimes(1);
+    });
+
+    it("archives both sessions when both attempts time out", async () => {
+      const makeTimeoutSession = (id: string) => ({
+        id,
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        archive: vi.fn().mockResolvedValue(undefined),
+        history: async function* () {
+          /* no agentMessaged */
+        },
+      });
+      const session1 = makeTimeoutSession("fail-archive-1");
+      const session2 = makeTimeoutSession("fail-archive-2");
+
+      const sessionMock = vi
+        .fn()
+        .mockResolvedValueOnce(session1)
+        .mockResolvedValueOnce(session2);
+      (jules as any).with = vi.fn().mockReturnValue({
+        session: sessionMock,
+      });
+
+      const promise = runJulesReview("api-key", "prompt", {}, 1);
+      await vi.advanceTimersByTimeAsync(125 * 1000);
+
+      const result = await promise;
+      expect(result.reviewResult).toBeNull();
+      expect(session1.archive).toHaveBeenCalledTimes(1);
+      expect(session2.archive).toHaveBeenCalledTimes(1);
+    });
+
+    it("archives the session when readiness fails with an auth error", async () => {
+      const mockSession = mockSessionWithHistory([]);
+      mockSession.info = vi
+        .fn()
+        .mockRejectedValue(new Error("401 Unauthorized"));
+
+      (jules as any).with = vi.fn().mockReturnValue({
+        session: vi.fn().mockResolvedValue(mockSession),
+      });
+
+      await expect(runJulesReview("api-key", "prompt", {}, 1)).rejects.toThrow(
+        "Jules API rejected request"
+      );
+      expect(mockSession.archive).toHaveBeenCalledTimes(1);
     });
   });
 

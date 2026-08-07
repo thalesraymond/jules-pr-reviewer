@@ -41195,44 +41195,56 @@ source, timeoutMinutes) {
         if (attempt === 1) {
             firstSessionId = session.id;
         }
-        await waitUntilSessionReady(session);
-        const reviewMessage = await pollForReview(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        session, timeoutMinutes * 60 * 1000);
-        info(`Collected review (${reviewMessage.length} chars)`);
-        if (reviewMessage) {
-            let reviewResult;
-            try {
-                reviewResult = parseJulesResponse(reviewMessage);
+        try {
+            await waitUntilSessionReady(session);
+            const reviewMessage = await pollForReview(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            session, timeoutMinutes * 60 * 1000);
+            info(`Collected review (${reviewMessage.length} chars)`);
+            if (reviewMessage) {
+                let reviewResult;
+                try {
+                    reviewResult = parseJulesResponse(reviewMessage);
+                }
+                catch (err) {
+                    error(`Failed to parse Jules response: ${err}`);
+                    await archiveSession(session);
+                    return {
+                        reviewResult: {
+                            summary: "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
+                            verdict: "block",
+                            resolvedCommentIds: [],
+                            newComments: [],
+                        },
+                        sessionId: session.id,
+                    };
+                }
+                await archiveSession(session);
+                return { reviewResult, sessionId: session.id };
             }
-            catch (err) {
-                error(`Failed to parse Jules response: ${err}`);
-                return {
-                    reviewResult: {
-                        summary: "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
-                        verdict: "block",
-                        resolvedCommentIds: [],
-                        newComments: [],
-                    },
-                    sessionId: session.id,
-                };
+            // Timeout on this attempt
+            if (attempt === 1) {
+                info(`Jules session ${session.id} timed out. Retrying with a fresh session…`);
+                info(JSON.stringify({
+                    event: "jules_retry",
+                    failedSessionId: session.id,
+                    attempt: 1,
+                }));
+                await archiveSession(session);
+                // Continue to attempt 2
             }
-            return { reviewResult, sessionId: session.id };
+            else {
+                // Both attempts timed out
+                error(`Jules did not respond: session ${firstSessionId} and retry session ${session.id} both timed out within ${timeoutMinutes} minutes each.`);
+                await archiveSession(session);
+                return { reviewResult: null, sessionId: session.id };
+            }
         }
-        // Timeout on this attempt
-        if (attempt === 1) {
-            info(`Jules session ${session.id} timed out. Retrying with a fresh session…`);
-            info(JSON.stringify({
-                event: "jules_retry",
-                failedSessionId: session.id,
-                attempt: 1,
-            }));
-            // Continue to attempt 2
-        }
-        else {
-            // Both attempts timed out
-            error(`Jules did not respond: session ${firstSessionId} and retry session ${session.id} both timed out within ${timeoutMinutes} minutes each.`);
-            return { reviewResult: null, sessionId: session.id };
+        catch (err) {
+            const msg = getErrorMessage(err);
+            error(`Jules review failed: ${msg}`);
+            await archiveSession(session);
+            throw err;
         }
     }
     // Unreachable — loop always returns or throws, but TypeScript needs it

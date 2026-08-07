@@ -31,54 +31,65 @@ export async function runJulesReview(
       firstSessionId = session.id;
     }
 
-    await waitUntilSessionReady(session);
+    try {
+      await waitUntilSessionReady(session);
 
-    const reviewMessage = await pollForReview(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      session as any,
-      timeoutMinutes * 60 * 1000
-    );
-    core.info(`Collected review (${reviewMessage.length} chars)`);
+      const reviewMessage = await pollForReview(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        session as any,
+        timeoutMinutes * 60 * 1000
+      );
+      core.info(`Collected review (${reviewMessage.length} chars)`);
 
-    if (reviewMessage) {
-      let reviewResult: ReviewResult;
-      try {
-        reviewResult = parseJulesResponse(reviewMessage);
-      } catch (err) {
-        core.error(`Failed to parse Jules response: ${err}`);
-        return {
-          reviewResult: {
-            summary:
-              "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
-            verdict: "block",
-            resolvedCommentIds: [],
-            newComments: [],
-          },
-          sessionId: session.id,
-        };
+      if (reviewMessage) {
+        let reviewResult: ReviewResult;
+        try {
+          reviewResult = parseJulesResponse(reviewMessage);
+        } catch (err) {
+          core.error(`Failed to parse Jules response: ${err}`);
+          await archiveSession(session);
+          return {
+            reviewResult: {
+              summary:
+                "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
+              verdict: "block",
+              resolvedCommentIds: [],
+              newComments: [],
+            },
+            sessionId: session.id,
+          };
+        }
+        await archiveSession(session);
+        return { reviewResult, sessionId: session.id };
       }
-      return { reviewResult, sessionId: session.id };
-    }
 
-    // Timeout on this attempt
-    if (attempt === 1) {
-      core.info(
-        `Jules session ${session.id} timed out. Retrying with a fresh session…`
-      );
-      core.info(
-        JSON.stringify({
-          event: "jules_retry",
-          failedSessionId: session.id,
-          attempt: 1,
-        })
-      );
-      // Continue to attempt 2
-    } else {
-      // Both attempts timed out
-      core.error(
-        `Jules did not respond: session ${firstSessionId} and retry session ${session.id} both timed out within ${timeoutMinutes} minutes each.`
-      );
-      return { reviewResult: null, sessionId: session.id };
+      // Timeout on this attempt
+      if (attempt === 1) {
+        core.info(
+          `Jules session ${session.id} timed out. Retrying with a fresh session…`
+        );
+        core.info(
+          JSON.stringify({
+            event: "jules_retry",
+            failedSessionId: session.id,
+            attempt: 1,
+          })
+        );
+        await archiveSession(session);
+        // Continue to attempt 2
+      } else {
+        // Both attempts timed out
+        core.error(
+          `Jules did not respond: session ${firstSessionId} and retry session ${session.id} both timed out within ${timeoutMinutes} minutes each.`
+        );
+        await archiveSession(session);
+        return { reviewResult: null, sessionId: session.id };
+      }
+    } catch (err) {
+      const msg = getErrorMessage(err);
+      core.error(`Jules review failed: ${msg}`);
+      await archiveSession(session);
+      throw err;
     }
   }
 
