@@ -6,9 +6,9 @@ import {
   loadRulesFromBase,
   fetchOpenThreads,
   resolveThreads,
-  submitReview,
   setStatus,
 } from "./github.js";
+import { submitReview } from "./submission.js";
 import { runJulesReview, wrapPermissionError } from "./jules.js";
 import { buildReviewPrompt } from "./prompt.js";
 import { parseIgnoredPaths, filterDiff } from "./filtering.js";

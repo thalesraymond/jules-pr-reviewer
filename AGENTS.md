@@ -33,16 +33,18 @@ This is a **GitHub Action** (`jules-pr-reviewer`) that uses the [Google Jules SD
 ```
 src/
 ├── index.ts       # Action entry point — input parsing, orchestration, status reporting
-├── github.ts      # GitHub API helpers (diff fetching, thread management, review submission)
+├── github.ts      # GitHub API helpers (diff fetching, thread management, status)
+├── submission.ts  # Review submission pipeline (formatting, sanitization, fallback ladder)
 ├── jules.ts       # Jules SDK integration (session lifecycle, polling, response parsing)
 ├── prompt.ts      # Prompt builder for the review request
 └── types.ts       # Shared type definitions (FailOn, Verdict, ReviewResult, etc.)
 
 tests/
-├── index.test.ts  # Tests for the action orchestrator
-├── github.test.ts # Tests for GitHub API helpers
-├── jules.test.ts  # Tests for Jules SDK integration
-└── prompt.test.ts # Tests for prompt building
+├── index.test.ts      # Tests for the action orchestrator
+├── github.test.ts     # Tests for GitHub API helpers
+├── submission.test.ts # Tests for review submission pipeline
+├── jules.test.ts      # Tests for Jules SDK integration
+└── prompt.test.ts     # Tests for prompt building
 ```
 
 ## Verification Commands

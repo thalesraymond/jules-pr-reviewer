@@ -25,8 +25,11 @@ describe("index.ts", () => {
     loadRulesFromBase: vi.fn(),
     fetchOpenThreads: vi.fn(),
     resolveThreads: vi.fn(),
-    submitReview: vi.fn(),
     setStatus: vi.fn(),
+  };
+
+  const mockSubmissionHelper = {
+    submitReview: vi.fn(),
   };
 
   const mockJulesHelper = {
@@ -84,6 +87,7 @@ describe("index.ts", () => {
 
     // mock helpers
     vi.doMock("../src/github.js", () => mockGithubHelper);
+    vi.doMock("../src/submission.js", () => mockSubmissionHelper);
     vi.doMock("../src/jules.js", () => mockJulesHelper);
     vi.doMock("../src/logging.js", () => mockLoggingHelper);
 
@@ -91,6 +95,7 @@ describe("index.ts", () => {
     mockGithubHelper.fetchDiff.mockResolvedValue("diff");
     mockGithubHelper.fetchOpenThreads.mockResolvedValue([]);
     mockGithubHelper.setStatus.mockResolvedValue(undefined);
+    mockSubmissionHelper.submitReview.mockResolvedValue(undefined);
     mockJulesHelper.runJulesReview.mockResolvedValue({
       reviewResult: {
         verdict: "approve",
@@ -326,7 +331,7 @@ index 789..abc 100644
       sessionId: "s1",
     });
     await loadIndex();
-    expect(mockGithubHelper.submitReview).toHaveBeenCalled();
+    expect(mockSubmissionHelper.submitReview).toHaveBeenCalled();
     expect(mockGithubHelper.setStatus).toHaveBeenCalledWith(
       expect.anything(),
       "owner",
@@ -399,7 +404,7 @@ index 789..abc 100644
       sessionId: "s1",
     });
     await loadIndex();
-    expect(mockGithubHelper.submitReview).toHaveBeenCalledWith(
+    expect(mockSubmissionHelper.submitReview).toHaveBeenCalledWith(
       expect.anything(),
       "owner",
       "repo",
@@ -417,7 +422,8 @@ index 789..abc 100644
         }),
       ])
     );
-    const submittedComments = mockGithubHelper.submitReview.mock.calls[0][6];
+    const submittedComments =
+      mockSubmissionHelper.submitReview.mock.calls[0][6];
     expect(submittedComments[0]).not.toHaveProperty("suggestion");
     expect(submittedComments[0]).not.toHaveProperty("startLine");
   });
@@ -454,7 +460,8 @@ index 789..abc 100644
       sessionId: "s1",
     });
     await loadIndex();
-    const submittedComments = mockGithubHelper.submitReview.mock.calls[0][6];
+    const submittedComments =
+      mockSubmissionHelper.submitReview.mock.calls[0][6];
     expect(submittedComments[0]).toHaveProperty("suggestion", "const x = 1;");
     expect(submittedComments[0]).toHaveProperty("startLine", 8);
   });

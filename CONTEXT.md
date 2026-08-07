@@ -10,6 +10,8 @@
 
 **Errors module** (`src/errors.ts`) — cross-cutting error message extraction. Exports `getErrorMessage` which handles Error objects, objects with message properties, and raw values.
 
+**Submission module** (`src/submission.ts`) — formats and submits review comments to GitHub. Exports `submitReview` which handles the 3-tier fallback ladder (with suggestions → without suggestions → summary-only), XSS sanitization, suggestion escaping, and comment formatting. The formatting pipeline (severity emojis, confidence indicators, prompt-for-agents collapsible blocks) is hidden as an implementation detail.
+
 ## Key concepts
 
 **ReviewResult** — the structured output from the LLM: verdict (approve/comment/block), summary, resolved comment IDs, and new comments with file/line/severity/confidence/message.
