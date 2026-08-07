@@ -422,7 +422,8 @@ index 789..abc 100644
         }),
       ])
     );
-    const submittedComments = mockSubmissionHelper.submitReview.mock.calls[0][6];
+    const submittedComments =
+      mockSubmissionHelper.submitReview.mock.calls[0][6];
     expect(submittedComments[0]).not.toHaveProperty("suggestion");
     expect(submittedComments[0]).not.toHaveProperty("startLine");
   });
@@ -459,7 +460,8 @@ index 789..abc 100644
       sessionId: "s1",
     });
     await loadIndex();
-    const submittedComments = mockSubmissionHelper.submitReview.mock.calls[0][6];
+    const submittedComments =
+      mockSubmissionHelper.submitReview.mock.calls[0][6];
     expect(submittedComments[0]).toHaveProperty("suggestion", "const x = 1;");
     expect(submittedComments[0]).toHaveProperty("startLine", 8);
   });
