@@ -161,7 +161,7 @@ ${prTitle}
 # UNTRUSTED: PR description
 ${prBody || "(no description)"}
 
-# How to obtain the diff
+# UNTRUSTED: How to obtain the diff
 Run the following command to see the changes in this PR:
 
 \`\`\`bash

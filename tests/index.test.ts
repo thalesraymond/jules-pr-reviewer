@@ -359,10 +359,7 @@ index 789..abc 100644
       github: "owner/repo",
       baseBranch: "feature",
     });
-    expect(agenticCall[4]).toEqual({
-      reported: [],
-      actual: ["src/index.ts", "src/utils.ts"],
-    });
+    expect(agenticCall[4]).toEqual(["src/index.ts", "src/utils.ts"]);
     expect(mockSubmissionHelper.submitReview).toHaveBeenCalledTimes(1);
   });
 

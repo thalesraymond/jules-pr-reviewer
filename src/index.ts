@@ -214,7 +214,7 @@ async function run(): Promise<void> {
         agenticPrompt,
         { github: `${owner}/${repo}`, baseBranch: pr.head.ref },
         timeoutMinutes,
-        { reported: [], actual: changedFiles }
+        changedFiles
       );
       sessionId = agentic.sessionId;
 

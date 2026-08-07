@@ -8,7 +8,7 @@ The current prompt-mode pipeline embeds the entire PR diff as a fenced code bloc
 
 - New `diff_mode` input (`prompt` | `agentic`, default `prompt`) controls which review pipeline runs.
 - **Agentic prompt contract:** Jules receives SHA-based diff instructions (`git diff <base_sha>...HEAD`) with branch-ref fallback, a read-only security prohibition, merged `ignored_paths` with `.gitignore`, a soft nudge for >50-file PRs, and an optional `changedFiles: string[]` field in `ReviewResult`.
-- **Fallback state machine:** Session-creation failure and timeout both trigger immediate prompt-mode fallback (no agentic retry). Verification mismatches (empty/partial `changedFiles`) also trigger fallback; extra-only mismatches warn and proceed. Abandoned agentic sessions are archived best-effort.
+- **Fallback state machine:** Session-creation failure and timeout both trigger immediate prompt-mode fallback (no agentic retry). Verification mismatches (empty/partial/extra-only `changedFiles`) are informational only — they are logged and never trigger a fallback. Abandoned agentic sessions are archived best-effort.
 - **Session lifecycle:** Every session the action creates is archived (best-effort) once done, keeping the user's Jules list clean.
 - `parseReviewResponse` gains optional `changedFiles` field handling.
 

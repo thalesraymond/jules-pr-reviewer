@@ -1,15 +1,16 @@
 import * as core from "@actions/core";
-import { jules, type SessionClient } from "@google/jules-sdk";
+import { jules, type SessionClient, type SourceInput } from "@google/jules-sdk";
 import { ReviewResult } from "./types.js";
 import { parseReviewResponse } from "./validation.js";
 import { getErrorMessage } from "./errors.js";
 import { logStructured } from "./logging.js";
 
+type PollableSession = SessionClient & { hydrate: () => Promise<number> };
+
 export async function runJulesReview(
   apiKey: string,
   prompt: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  source: any,
+  source: SourceInput,
   timeoutMinutes: number
 ): Promise<{ reviewResult: ReviewResult | null; sessionId: string }> {
   const customJules = jules.with({ apiKey });
@@ -35,8 +36,7 @@ export async function runJulesReview(
       await waitUntilSessionReady(session);
 
       const reviewMessage = await pollForReview(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        session as any,
+        session as PollableSession,
         timeoutMinutes * 60 * 1000
       );
       core.info(`Collected review (${reviewMessage.length} chars)`);
@@ -132,12 +132,7 @@ async function waitUntilSessionReady(session: {
 }
 
 async function pollForReview(
-  session: {
-    id: string;
-    hydrate: () => Promise<number>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    history: () => AsyncIterable<any>;
-  },
+  session: PollableSession,
   timeoutMs: number
 ): Promise<string> {
   const deadline = Date.now() + timeoutMs;
@@ -211,16 +206,10 @@ export interface AgenticReviewResult {
   fallbackReason?: "session_creation_failed" | "timeout";
 }
 
-export interface ChangedFilesCheck {
-  reported: string[];
-  actual: string[];
-}
-
 function verifyChangedFiles(
-  check: ChangedFilesCheck
+  reported: string[],
+  actual: string[]
 ): { ok: true } | { ok: false; reason: "empty" | "partial" } {
-  const { reported, actual } = check;
-
   if (reported.length === 0) {
     return { ok: false, reason: "empty" };
   }
@@ -238,10 +227,9 @@ function verifyChangedFiles(
 export async function runAgenticReview(
   apiKey: string,
   prompt: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  source: any,
+  source: SourceInput,
   timeoutMinutes: number,
-  changedFilesCheck?: ChangedFilesCheck
+  actualChangedFiles?: string[]
 ): Promise<AgenticReviewResult> {
   const customJules = jules.with({ apiKey });
 
@@ -276,8 +264,7 @@ export async function runAgenticReview(
     await waitUntilSessionReady(session);
 
     const reviewMessage = await pollForReview(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      session as any,
+      session as PollableSession,
       timeoutMinutes * 60 * 1000
     );
 
@@ -315,27 +302,24 @@ export async function runAgenticReview(
     // changedFiles verification — informational only. A mismatch between the
     // files Jules reports and the actual changed files is logged and surfaced
     // to the user, but never triggers a fallback or a retry.
-    if (changedFilesCheck) {
+    if (actualChangedFiles) {
       const reported = reviewResult.changedFiles ?? [];
-      const result = verifyChangedFiles({
-        reported,
-        actual: changedFilesCheck.actual,
-      });
+      const result = verifyChangedFiles(reported, actualChangedFiles);
 
       if (!result.ok) {
         core.warning(
-          `changedFiles mismatch: ${result.reason} (reported: ${reported.length}, actual: ${changedFilesCheck.actual.length})`
+          `changedFiles mismatch: ${result.reason} (reported: ${reported.length}, actual: ${actualChangedFiles.length})`
         );
         logStructured("verification_mismatch", {
           tier: result.reason,
           reportedCount: reported.length,
-          actualCount: changedFilesCheck.actual.length,
+          actualCount: actualChangedFiles.length,
         });
-      } else if (reported.length > changedFilesCheck.actual.length) {
+      } else if (reported.length > actualChangedFiles.length) {
         logStructured("verification_mismatch", {
           tier: "extra_only",
           reportedCount: reported.length,
-          actualCount: changedFilesCheck.actual.length,
+          actualCount: actualChangedFiles.length,
         });
       }
     }
@@ -345,11 +329,7 @@ export async function runAgenticReview(
   } catch (err) {
     const msg = getErrorMessage(err);
     core.error(`Agentic review failed: ${msg}`);
-    try {
-      await archiveSession(session);
-    } catch {
-      // archive already handled inside archiveSession
-    }
+    await archiveSession(session);
     throw err;
   }
 }
