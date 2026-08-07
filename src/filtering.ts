@@ -30,6 +30,30 @@ export function parseIgnoredPaths(input?: string): string[] {
   return splitList(trimmed);
 }
 
+export function extractChangedFilePaths(diff: string): string[] {
+  if (!diff) {
+    return [];
+  }
+
+  const sections = diff.split(/(?=^diff --git )/m);
+  const paths: string[] = [];
+
+  for (const section of sections) {
+    const headerMatch = section.match(
+      /^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/m
+    );
+    if (!headerMatch) continue;
+    const pathA = (headerMatch[1] ?? headerMatch[2])!;
+    const pathB = (headerMatch[3] ?? headerMatch[4])!;
+    const changed = pathA !== "dev/null" ? pathA : pathB;
+    if (changed !== "dev/null") {
+      paths.push(changed);
+    }
+  }
+
+  return paths;
+}
+
 export function filterDiff(diff: string, ignoredPatterns: string[]): string {
   if (!diff || !ignoredPatterns || ignoredPatterns.length === 0) {
     return diff;

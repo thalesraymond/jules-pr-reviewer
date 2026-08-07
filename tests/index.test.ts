@@ -34,6 +34,7 @@ describe("index.ts", () => {
 
   const mockJulesHelper = {
     runJulesReview: vi.fn(),
+    runAgenticReview: vi.fn(),
     wrapPermissionError: vi.fn(),
   };
 
@@ -76,7 +77,11 @@ describe("index.ts", () => {
         action: "opened",
         pull_request: {
           number: 1,
-          head: { sha: "headSHA", repo: { full_name: "owner/repo" } },
+          head: {
+            sha: "headSHA",
+            ref: "feature",
+            repo: { full_name: "owner/repo" },
+          },
           base: { sha: "baseSHA", ref: "main" },
           title: "PR Title",
           body: "PR Body",
@@ -277,6 +282,155 @@ index 789..abc 100644
       expect.anything(),
       expect.stringContaining("dist/index.js"),
       expect.anything(),
+      expect.anything()
+    );
+  });
+
+  it("fails if diff_mode is invalid", async () => {
+    mockGetInput.mockImplementation((name: string) => {
+      if (name === "diff_mode") return "bogus";
+      if (name === "fail_on") return "any";
+      if (name === "jules_api_key") return "k";
+      if (name === "github_token") return "t";
+      return "";
+    });
+    await loadIndex();
+    expect(mockSetFailed).toHaveBeenCalledWith(
+      expect.stringContaining('Invalid diff_mode: "bogus"')
+    );
+    expect(mockJulesHelper.runJulesReview).not.toHaveBeenCalled();
+    expect(mockJulesHelper.runAgenticReview).not.toHaveBeenCalled();
+  });
+
+  it("runs the prompt pipeline when diff_mode is prompt", async () => {
+    mockGetInput.mockImplementation((name: string) => {
+      if (name === "diff_mode") return "prompt";
+      if (name === "jules_api_key") return "k";
+      if (name === "github_token") return "t";
+      if (name === "fail_on") return "any";
+      return "";
+    });
+    await loadIndex();
+    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
+    expect(mockJulesHelper.runAgenticReview).not.toHaveBeenCalled();
+  });
+
+  it("runs the agentic pipeline when diff_mode is agentic", async () => {
+    mockGetInput.mockImplementation((name: string) => {
+      if (name === "diff_mode") return "agentic";
+      if (name === "jules_api_key") return "k";
+      if (name === "github_token") return "t";
+      if (name === "fail_on") return "any";
+      return "";
+    });
+    mockGithubHelper.fetchDiff
+      .mockResolvedValue(`diff --git a/src/index.ts b/src/index.ts
+index 123..456 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1 +1 @@
+-old
++new
+diff --git a/src/utils.ts b/src/utils.ts
+index 789..abc 100644
+--- a/src/utils.ts
++++ b/src/utils.ts
+@@ -1 +1 @@
+-old
++new`);
+    mockJulesHelper.runAgenticReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "approve",
+        summary: "ok",
+        newComments: [],
+        changedFiles: ["src/index.ts", "src/utils.ts"],
+      },
+      sessionId: "agentic-session",
+      fallback: false,
+    });
+
+    await loadIndex();
+
+    expect(mockJulesHelper.runAgenticReview).toHaveBeenCalledTimes(1);
+    expect(mockJulesHelper.runJulesReview).not.toHaveBeenCalled();
+    const agenticCall = mockJulesHelper.runAgenticReview.mock.calls[0];
+    expect(agenticCall[1]).toContain("git diff baseSHA...headSHA");
+    expect(agenticCall[2]).toEqual({
+      github: "owner/repo",
+      baseBranch: "feature",
+    });
+    expect(agenticCall[4]).toEqual({
+      reported: [],
+      actual: ["src/index.ts", "src/utils.ts"],
+    });
+    expect(mockSubmissionHelper.submitReview).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the full base SHA for the changed-file set in agentic mode on synchronize", async () => {
+    (github as any).context.payload.action = "synchronize";
+    (github as any).context.payload.before = "beforeSHA";
+    mockGetInput.mockImplementation((name: string) => {
+      if (name === "diff_mode") return "agentic";
+      if (name === "jules_api_key") return "k";
+      if (name === "github_token") return "t";
+      if (name === "fail_on") return "any";
+      return "";
+    });
+    mockJulesHelper.runAgenticReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "approve",
+        summary: "ok",
+        newComments: [],
+      },
+      sessionId: "s1",
+      fallback: false,
+    });
+    await loadIndex();
+    expect(mockGithubHelper.fetchDiff).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      expect.anything(),
+      "baseSHA",
+      "headSHA"
+    );
+  });
+
+  it("falls back to the prompt pipeline when agentic review falls back", async () => {
+    mockGetInput.mockImplementation((name: string) => {
+      if (name === "diff_mode") return "agentic";
+      if (name === "jules_api_key") return "k";
+      if (name === "github_token") return "t";
+      if (name === "fail_on") return "any";
+      return "";
+    });
+    mockJulesHelper.runAgenticReview.mockResolvedValue({
+      reviewResult: null,
+      sessionId: "abandoned-session",
+      fallback: true,
+      fallbackReason: "timeout",
+    });
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "comment",
+        summary: "prompt fallback ok",
+        newComments: [],
+      },
+      sessionId: "prompt-session",
+    });
+
+    await loadIndex();
+
+    expect(mockJulesHelper.runAgenticReview).toHaveBeenCalledTimes(1);
+    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
+    expect(mockSubmissionHelper.submitReview).toHaveBeenCalledTimes(1);
+    expect(mockSubmissionHelper.submitReview).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      expect.stringContaining("prompt-session"),
       expect.anything()
     );
   });

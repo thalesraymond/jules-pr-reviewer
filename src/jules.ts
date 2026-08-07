@@ -1,8 +1,9 @@
 import * as core from "@actions/core";
-import { jules } from "@google/jules-sdk";
+import { jules, type SessionClient } from "@google/jules-sdk";
 import { ReviewResult } from "./types.js";
 import { parseReviewResponse } from "./validation.js";
 import { getErrorMessage } from "./errors.js";
+import { logStructured } from "./logging.js";
 
 export async function runJulesReview(
   apiKey: string,
@@ -30,54 +31,65 @@ export async function runJulesReview(
       firstSessionId = session.id;
     }
 
-    await waitUntilSessionReady(session);
+    try {
+      await waitUntilSessionReady(session);
 
-    const reviewMessage = await pollForReview(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      session as any,
-      timeoutMinutes * 60 * 1000
-    );
-    core.info(`Collected review (${reviewMessage.length} chars)`);
+      const reviewMessage = await pollForReview(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        session as any,
+        timeoutMinutes * 60 * 1000
+      );
+      core.info(`Collected review (${reviewMessage.length} chars)`);
 
-    if (reviewMessage) {
-      let reviewResult: ReviewResult;
-      try {
-        reviewResult = parseJulesResponse(reviewMessage);
-      } catch (err) {
-        core.error(`Failed to parse Jules response: ${err}`);
-        return {
-          reviewResult: {
-            summary:
-              "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
-            verdict: "block",
-            resolvedCommentIds: [],
-            newComments: [],
-          },
-          sessionId: session.id,
-        };
+      if (reviewMessage) {
+        let reviewResult: ReviewResult;
+        try {
+          reviewResult = parseJulesResponse(reviewMessage);
+        } catch (err) {
+          core.error(`Failed to parse Jules response: ${err}`);
+          await archiveSession(session);
+          return {
+            reviewResult: {
+              summary:
+                "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
+              verdict: "block",
+              resolvedCommentIds: [],
+              newComments: [],
+            },
+            sessionId: session.id,
+          };
+        }
+        await archiveSession(session);
+        return { reviewResult, sessionId: session.id };
       }
-      return { reviewResult, sessionId: session.id };
-    }
 
-    // Timeout on this attempt
-    if (attempt === 1) {
-      core.info(
-        `Jules session ${session.id} timed out. Retrying with a fresh session…`
-      );
-      core.info(
-        JSON.stringify({
-          event: "jules_retry",
-          failedSessionId: session.id,
-          attempt: 1,
-        })
-      );
-      // Continue to attempt 2
-    } else {
-      // Both attempts timed out
-      core.error(
-        `Jules did not respond: session ${firstSessionId} and retry session ${session.id} both timed out within ${timeoutMinutes} minutes each.`
-      );
-      return { reviewResult: null, sessionId: session.id };
+      // Timeout on this attempt
+      if (attempt === 1) {
+        core.info(
+          `Jules session ${session.id} timed out. Retrying with a fresh session…`
+        );
+        core.info(
+          JSON.stringify({
+            event: "jules_retry",
+            failedSessionId: session.id,
+            attempt: 1,
+          })
+        );
+        await archiveSession(session);
+        // Continue to attempt 2
+      } else {
+        // Both attempts timed out
+        core.error(
+          `Jules did not respond: session ${firstSessionId} and retry session ${session.id} both timed out within ${timeoutMinutes} minutes each.`
+        );
+        await archiveSession(session);
+        return { reviewResult: null, sessionId: session.id };
+      }
+    } catch (err) {
+      const msg = getErrorMessage(err);
+      core.error(`Jules review failed: ${msg}`);
+      await archiveSession(session);
+      throw err;
     }
   }
 
@@ -176,4 +188,168 @@ export function wrapPermissionError(
     );
   }
   return err instanceof Error ? err : new Error(msg);
+}
+
+export async function archiveSession(session: {
+  id: string;
+  archive: () => Promise<void>;
+}): Promise<void> {
+  try {
+    await session.archive();
+    core.info(`Archived session ${session.id}.`);
+  } catch (err) {
+    core.warning(
+      `Failed to archive session ${session.id}: ${getErrorMessage(err)}`
+    );
+  }
+}
+
+export interface AgenticReviewResult {
+  reviewResult: ReviewResult | null;
+  sessionId: string;
+  fallback: boolean;
+  fallbackReason?: "session_creation_failed" | "timeout";
+}
+
+export interface ChangedFilesCheck {
+  reported: string[];
+  actual: string[];
+}
+
+function verifyChangedFiles(
+  check: ChangedFilesCheck
+): { ok: true } | { ok: false; reason: "empty" | "partial" } {
+  const { reported, actual } = check;
+
+  if (reported.length === 0) {
+    return { ok: false, reason: "empty" };
+  }
+
+  const reportedSet = new Set(reported);
+  const missingActual = actual.some((f) => !reportedSet.has(f));
+
+  if (missingActual) {
+    return { ok: false, reason: "partial" };
+  }
+
+  return { ok: true };
+}
+
+export async function runAgenticReview(
+  apiKey: string,
+  prompt: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  source: any,
+  timeoutMinutes: number,
+  changedFilesCheck?: ChangedFilesCheck
+): Promise<AgenticReviewResult> {
+  const customJules = jules.with({ apiKey });
+
+  let session: SessionClient;
+
+  try {
+    core.info("Creating agentic Jules session…");
+    session = await customJules.session({
+      prompt,
+      source,
+      requireApproval: false,
+      title: "Code Review (Agentic)",
+      autoPr: false,
+    });
+    core.info(`Jules session: ${session.id}`);
+  } catch (err) {
+    const msg = getErrorMessage(err);
+    core.warning(`Agentic session creation failed: ${msg}`);
+    logStructured("agentic_fallback", {
+      reason: "session_creation_failed",
+      error: msg,
+    });
+    return {
+      reviewResult: null,
+      sessionId: "",
+      fallback: true,
+      fallbackReason: "session_creation_failed",
+    };
+  }
+
+  try {
+    await waitUntilSessionReady(session);
+
+    const reviewMessage = await pollForReview(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      session as any,
+      timeoutMinutes * 60 * 1000
+    );
+
+    if (!reviewMessage) {
+      core.info(`Agentic session ${session.id} timed out.`);
+      logStructured("agentic_fallback", { reason: "timeout" });
+      await archiveSession(session);
+      return {
+        reviewResult: null,
+        sessionId: session.id,
+        fallback: true,
+        fallbackReason: "timeout",
+      };
+    }
+
+    let reviewResult: ReviewResult;
+    try {
+      reviewResult = parseJulesResponse(reviewMessage);
+    } catch (err) {
+      core.error(`Failed to parse agentic Jules response: ${err}`);
+      await archiveSession(session);
+      return {
+        reviewResult: {
+          summary:
+            "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
+          verdict: "block",
+          resolvedCommentIds: [],
+          newComments: [],
+        },
+        sessionId: session.id,
+        fallback: false,
+      };
+    }
+
+    // changedFiles verification — informational only. A mismatch between the
+    // files Jules reports and the actual changed files is logged and surfaced
+    // to the user, but never triggers a fallback or a retry.
+    if (changedFilesCheck) {
+      const reported = reviewResult.changedFiles ?? [];
+      const result = verifyChangedFiles({
+        reported,
+        actual: changedFilesCheck.actual,
+      });
+
+      if (!result.ok) {
+        core.warning(
+          `changedFiles mismatch: ${result.reason} (reported: ${reported.length}, actual: ${changedFilesCheck.actual.length})`
+        );
+        logStructured("verification_mismatch", {
+          tier: result.reason,
+          reportedCount: reported.length,
+          actualCount: changedFilesCheck.actual.length,
+        });
+      } else if (reported.length > changedFilesCheck.actual.length) {
+        logStructured("verification_mismatch", {
+          tier: "extra_only",
+          reportedCount: reported.length,
+          actualCount: changedFilesCheck.actual.length,
+        });
+      }
+    }
+
+    await archiveSession(session);
+    return { reviewResult, sessionId: session.id, fallback: false };
+  } catch (err) {
+    const msg = getErrorMessage(err);
+    core.error(`Agentic review failed: ${msg}`);
+    try {
+      await archiveSession(session);
+    } catch {
+      // archive already handled inside archiveSession
+    }
+    throw err;
+  }
 }

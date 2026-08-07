@@ -1,5 +1,6 @@
 export type FailOn = "never" | "blocking" | "any";
 export type Verdict = "approve" | "comment" | "block";
+export type DiffMode = "prompt" | "agentic";
 
 export interface OpenThread {
   index: number;
@@ -21,6 +22,20 @@ export interface PromptArgs {
   openThreads: OpenThread[];
 }
 
+export interface AgenticPromptArgs {
+  repoFullName: string;
+  prNumber: number;
+  prTitle: string;
+  prBody: string;
+  baseSha: string;
+  headSha: string;
+  ignoredPaths?: string;
+  extraInstructions?: string;
+  rulesFromFile?: string;
+  openThreads: OpenThread[];
+  fileCount: number;
+}
+
 export interface ReviewComment {
   file: string;
   line: number;
@@ -37,6 +52,7 @@ export interface ReviewResult {
   verdict: Verdict;
   resolvedCommentIds: number[];
   newComments: ReviewComment[];
+  changedFiles?: string[];
 }
 
 export type StructuredLogEvent =
@@ -44,7 +60,9 @@ export type StructuredLogEvent =
   | "review_completed"
   | "review_failed"
   | "jules_api_called"
-  | "review_submitted";
+  | "review_submitted"
+  | "agentic_fallback"
+  | "verification_mismatch";
 
 export interface StructuredLogEntry {
   event: StructuredLogEvent;

@@ -160,4 +160,45 @@ describe("parseReviewResponse", () => {
     expect(result.newComments[0].severity).toBe("Info");
     expect(result.newComments[0].confidence).toBe("Low");
   });
+
+  it("preserves changedFiles when present as string array", () => {
+    const payload = {
+      verdict: "approve",
+      summary: "ok",
+      resolvedCommentIds: [],
+      newComments: [],
+      changedFiles: ["src/foo.ts", "src/bar.ts"],
+    };
+    const result = parseReviewResponse(
+      `\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``
+    );
+    expect(result.changedFiles).toEqual(["src/foo.ts", "src/bar.ts"]);
+  });
+
+  it("sets changedFiles to undefined when absent", () => {
+    const payload = {
+      verdict: "approve",
+      summary: "ok",
+      resolvedCommentIds: [],
+      newComments: [],
+    };
+    const result = parseReviewResponse(
+      `\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``
+    );
+    expect(result.changedFiles).toBeUndefined();
+  });
+
+  it("ignores non-array changedFiles", () => {
+    const payload = {
+      verdict: "approve",
+      summary: "ok",
+      resolvedCommentIds: [],
+      newComments: [],
+      changedFiles: "not-an-array",
+    };
+    const result = parseReviewResponse(
+      `\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``
+    );
+    expect(result.changedFiles).toBeUndefined();
+  });
 });

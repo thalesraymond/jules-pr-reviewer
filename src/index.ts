@@ -1,6 +1,12 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import { FailOn, Verdict, ReviewComment } from "./types.js";
+import {
+  DiffMode,
+  FailOn,
+  Verdict,
+  ReviewComment,
+  ReviewResult,
+} from "./types.js";
 import {
   fetchDiff,
   loadRulesFromBase,
@@ -9,9 +15,17 @@ import {
   setStatus,
 } from "./github.js";
 import { submitReview } from "./submission.js";
-import { runJulesReview, wrapPermissionError } from "./jules.js";
-import { buildReviewPrompt } from "./prompt.js";
-import { parseIgnoredPaths, filterDiff } from "./filtering.js";
+import {
+  runJulesReview,
+  runAgenticReview,
+  wrapPermissionError,
+} from "./jules.js";
+import { buildReviewPrompt, buildAgenticPrompt } from "./prompt.js";
+import {
+  parseIgnoredPaths,
+  filterDiff,
+  extractChangedFilePaths,
+} from "./filtering.js";
 import { getErrorMessage } from "./errors.js";
 import { logStructured, setReviewOutputs } from "./logging.js";
 
@@ -37,6 +51,14 @@ async function run(): Promise<void> {
     return;
   }
   const failOn = failOnRaw as FailOn;
+  const diffModeRaw = core.getInput("diff_mode") || "prompt";
+  if (diffModeRaw !== "prompt" && diffModeRaw !== "agentic") {
+    core.setFailed(
+      `Invalid diff_mode: "${diffModeRaw}". Must be one of: prompt, agentic.`
+    );
+    return;
+  }
+  const diffMode = diffModeRaw as DiffMode;
   const skipDrafts = core.getBooleanInput("skip_drafts");
   const skipForks = core.getBooleanInput("skip_forks");
   const bypassLabel = core.getInput("bypass_label");
@@ -153,9 +175,13 @@ async function run(): Promise<void> {
       core.info(`Reviewing full PR diff from ${baseShaForDiff} to ${headSha}`);
     }
 
+    // In agentic mode Jules inspects the full base...head diff, so use baseSha
+    // for the changed-file set regardless of synchronize events.
+    const diffBaseForMode = diffMode === "agentic" ? baseSha : baseShaForDiff;
+
     // ⚡ Bolt: Execute independent GitHub API calls concurrently to reduce overall latency
     const [diff, rulesFromFile, openThreads] = await Promise.all([
-      fetchDiff(octokit, owner, repo, pr, baseShaForDiff, headSha),
+      fetchDiff(octokit, owner, repo, pr, diffBaseForMode, headSha),
       rulesFilePath
         ? loadRulesFromBase(octokit, owner, repo, rulesFilePath, baseSha)
         : Promise.resolve(undefined),
@@ -163,35 +189,78 @@ async function run(): Promise<void> {
     ]);
 
     const filteredDiff = filterDiff(diff, ignoredPaths);
-    const { text: diffText, truncatedNote } = truncateDiff(
-      filteredDiff,
-      80_000
-    );
+    const changedFiles = extractChangedFilePaths(filteredDiff);
 
-    const prompt = buildReviewPrompt({
-      repoFullName: `${owner}/${repo}`,
-      prNumber,
-      prTitle: pr.title || "",
-      prBody: pr.body || "",
-      diff: diffText,
-      diffTruncatedNote: truncatedNote,
-      extraInstructions: extraInstructions || undefined,
-      rulesFromFile,
-      openThreads,
-    });
+    let reviewResult: ReviewResult | null = null;
+    let sessionId = "";
 
-    const julesApiCallStart = Date.now();
-    const { reviewResult, sessionId } = await runJulesReview(
-      apiKey,
-      prompt,
-      { github: `${owner}/${repo}`, baseBranch: pr.base.ref },
-      timeoutMinutes
-    );
-    const julesApiDuration = Date.now() - julesApiCallStart;
-    logStructured("jules_api_called", {
-      success: true,
-      duration: julesApiDuration,
-    });
+    if (diffMode === "agentic") {
+      const agenticPrompt = buildAgenticPrompt({
+        repoFullName: `${owner}/${repo}`,
+        prNumber,
+        prTitle: pr.title || "",
+        prBody: pr.body || "",
+        baseSha,
+        headSha,
+        ignoredPaths: ignoredPathsRaw || undefined,
+        extraInstructions: extraInstructions || undefined,
+        rulesFromFile,
+        openThreads,
+        fileCount: changedFiles.length,
+      });
+
+      const agentic = await runAgenticReview(
+        apiKey,
+        agenticPrompt,
+        { github: `${owner}/${repo}`, baseBranch: pr.head.ref },
+        timeoutMinutes,
+        { reported: [], actual: changedFiles }
+      );
+      sessionId = agentic.sessionId;
+
+      if (!agentic.fallback) {
+        reviewResult = agentic.reviewResult;
+        if (reviewResult?.changedFiles) {
+          core.info(
+            `Jules reported reviewing ${reviewResult.changedFiles.length} files: ${JSON.stringify(reviewResult.changedFiles)}`
+          );
+        }
+      }
+    }
+
+    if (reviewResult === null) {
+      const { text: diffText, truncatedNote } = truncateDiff(
+        filteredDiff,
+        80_000
+      );
+
+      const prompt = buildReviewPrompt({
+        repoFullName: `${owner}/${repo}`,
+        prNumber,
+        prTitle: pr.title || "",
+        prBody: pr.body || "",
+        diff: diffText,
+        diffTruncatedNote: truncatedNote,
+        extraInstructions: extraInstructions || undefined,
+        rulesFromFile,
+        openThreads,
+      });
+
+      const julesApiCallStart = Date.now();
+      const promptResult = await runJulesReview(
+        apiKey,
+        prompt,
+        { github: `${owner}/${repo}`, baseBranch: pr.base.ref },
+        timeoutMinutes
+      );
+      const julesApiDuration = Date.now() - julesApiCallStart;
+      logStructured("jules_api_called", {
+        success: true,
+        duration: julesApiDuration,
+      });
+      reviewResult = promptResult.reviewResult;
+      sessionId = promptResult.sessionId;
+    }
 
     if (!reviewResult) {
       await setStatus(
