@@ -44,7 +44,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const promise = runJulesReview("api-key", "prompt", {}, 1);
+      const promise = runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
 
       // Fast-forward past both retry attempts (1 min each = 120s total)
       await vi.advanceTimersByTimeAsync(125 * 1000);
@@ -70,7 +75,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      const result = await runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       expect(result).toEqual({
         reviewResult: {
           summary: "test",
@@ -96,7 +106,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      const result = await runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       expect(result).toEqual({
         reviewResult: {
           summary: "from prose",
@@ -121,7 +136,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      const result = await runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       expect(result).toEqual({
         reviewResult: {
           summary: "test2",
@@ -146,7 +166,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      const result = await runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       expect(result).toEqual({
         reviewResult: {
           summary:
@@ -173,7 +198,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      const result = await runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       expect(result).toEqual({
         reviewResult: {
           summary:
@@ -200,7 +230,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      const result = await runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       expect(result).toEqual({
         reviewResult: {
           summary:
@@ -232,9 +267,14 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      await expect(runJulesReview("api-key", "prompt", {}, 1)).rejects.toThrow(
-        "Jules session.info() failed: 500 server error"
-      );
+      await expect(
+        runJulesReview(
+          "api-key",
+          "prompt",
+          { github: "owner/repo", baseBranch: "main" },
+          1
+        )
+      ).rejects.toThrow("Jules session.info() failed: 500 server error");
     });
 
     it("retries when session.info() fails with 404 string error", async () => {
@@ -256,7 +296,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const promise = runJulesReview("api-key", "prompt", {}, 1);
+      const promise = runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       await vi.advanceTimersByTimeAsync(2000);
 
       await promise;
@@ -274,7 +319,14 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      await expect(runJulesReview("api-key", "prompt", {}, 1)).rejects.toThrow(
+      await expect(
+        runJulesReview(
+          "api-key",
+          "prompt",
+          { github: "owner/repo", baseBranch: "main" },
+          1
+        )
+      ).rejects.toThrow(
         "Jules API rejected request (401 Unauthorized). Check JULES_API_KEY is valid."
       );
     });
@@ -289,7 +341,12 @@ describe("jules.ts", () => {
       (jules as any).with = mockJulesWith;
 
       const promise = expect(
-        runJulesReview("api-key", "prompt", {}, 1)
+        runJulesReview(
+          "api-key",
+          "prompt",
+          { github: "owner/repo", baseBranch: "main" },
+          1
+        )
       ).rejects.toThrow("Session did not become ready within timeout.");
 
       for (let i = 0; i < 20; i++) {
@@ -319,7 +376,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const promise = runJulesReview("api-key", "prompt", {}, 1);
+      const promise = runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       await vi.advanceTimersByTimeAsync(20000); // Poll delay
 
       const result = await promise;
@@ -338,7 +400,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const promise = runJulesReview("api-key", "prompt", {}, 1);
+      const promise = runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       await expect(promise).rejects.toThrow(
         "Jules API rejected request (403 Forbidden). Check JULES_API_KEY is valid."
       );
@@ -374,7 +441,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const promise = runJulesReview("api-key", "prompt", {}, 1);
+      const promise = runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       // First attempt times out after ~60s
       await vi.advanceTimersByTimeAsync(61 * 1000);
 
@@ -417,7 +489,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const promise = runJulesReview("api-key", "prompt", {}, 1);
+      const promise = runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       // Both attempts: 1 min each = 120s total
       await vi.advanceTimersByTimeAsync(125 * 1000);
 
@@ -452,9 +529,14 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      await expect(runJulesReview("api-key", "prompt", {}, 1)).rejects.toThrow(
-        "Jules API rejected request"
-      );
+      await expect(
+        runJulesReview(
+          "api-key",
+          "prompt",
+          { github: "owner/repo", baseBranch: "main" },
+          1
+        )
+      ).rejects.toThrow("Jules API rejected request");
       // Only one session created — no retry
       expect(sessionMock).toHaveBeenCalledTimes(1);
     });
@@ -478,9 +560,14 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      await expect(runJulesReview("api-key", "prompt", {}, 1)).rejects.toThrow(
-        "Jules API rejected request"
-      );
+      await expect(
+        runJulesReview(
+          "api-key",
+          "prompt",
+          { github: "owner/repo", baseBranch: "main" },
+          1
+        )
+      ).rejects.toThrow("Jules API rejected request");
       expect(sessionMock).toHaveBeenCalledTimes(1);
     });
 
@@ -500,7 +587,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      const result = await runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       expect(result.reviewResult).toEqual({
         summary:
           "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
@@ -533,7 +625,12 @@ describe("jules.ts", () => {
       (jules as any).with = mockJulesWith;
 
       const promise = expect(
-        runJulesReview("api-key", "prompt", {}, 1)
+        runJulesReview(
+          "api-key",
+          "prompt",
+          { github: "owner/repo", baseBranch: "main" },
+          1
+        )
       ).rejects.toThrow("Session did not become ready within timeout.");
 
       for (let i = 0; i < 20; i++) {
@@ -575,7 +672,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const promise = runJulesReview("api-key", "prompt", {}, 1);
+      const promise = runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       await vi.advanceTimersByTimeAsync(61 * 1000);
 
       const result = await promise;
@@ -614,7 +716,12 @@ describe("jules.ts", () => {
       });
       (jules as any).with = mockJulesWith;
 
-      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      const result = await runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       expect(result.reviewResult).toEqual({
         summary: "first try works",
         verdict: "comment",
@@ -634,7 +741,12 @@ describe("jules.ts", () => {
         session: vi.fn().mockResolvedValue(session),
       });
 
-      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      const result = await runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       expect(result.reviewResult?.verdict).toBe("approve");
       expect(session.archive).toHaveBeenCalledTimes(1);
     });
@@ -647,7 +759,12 @@ describe("jules.ts", () => {
         session: vi.fn().mockResolvedValue(session),
       });
 
-      const result = await runJulesReview("api-key", "prompt", {}, 1);
+      const result = await runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       expect(result.reviewResult?.verdict).toBe("block");
       expect(session.archive).toHaveBeenCalledTimes(1);
     });
@@ -681,7 +798,12 @@ describe("jules.ts", () => {
         session: sessionMock,
       });
 
-      const promise = runJulesReview("api-key", "prompt", {}, 1);
+      const promise = runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       await vi.advanceTimersByTimeAsync(61 * 1000);
 
       const result = await promise;
@@ -711,7 +833,12 @@ describe("jules.ts", () => {
         session: sessionMock,
       });
 
-      const promise = runJulesReview("api-key", "prompt", {}, 1);
+      const promise = runJulesReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1
+      );
       await vi.advanceTimersByTimeAsync(125 * 1000);
 
       const result = await promise;
@@ -730,9 +857,14 @@ describe("jules.ts", () => {
         session: vi.fn().mockResolvedValue(mockSession),
       });
 
-      await expect(runJulesReview("api-key", "prompt", {}, 1)).rejects.toThrow(
-        "Jules API rejected request"
-      );
+      await expect(
+        runJulesReview(
+          "api-key",
+          "prompt",
+          { github: "owner/repo", baseBranch: "main" },
+          1
+        )
+      ).rejects.toThrow("Jules API rejected request");
       expect(mockSession.archive).toHaveBeenCalledTimes(1);
     });
   });
@@ -830,7 +962,7 @@ describe("jules.ts", () => {
         "prompt",
         { github: "owner/repo", baseBranch: "main" },
         30,
-        { reported: ["src/a.ts"], actual: ["src/a.ts"] }
+        ["src/a.ts"]
       );
 
       expect(result.reviewResult?.verdict).toBe("approve");
@@ -849,7 +981,7 @@ describe("jules.ts", () => {
         "prompt",
         { github: "owner/repo", baseBranch: "deleted-branch" },
         30,
-        { reported: ["src/a.ts"], actual: ["src/a.ts"] }
+        ["src/a.ts"]
       );
 
       expect(result.fallback).toBe(true);
@@ -875,7 +1007,7 @@ describe("jules.ts", () => {
         "prompt",
         { github: "owner/repo", baseBranch: "main" },
         1,
-        { reported: ["src/a.ts"], actual: ["src/a.ts"] }
+        ["src/a.ts"]
       );
 
       await vi.advanceTimersByTimeAsync(65 * 1000);
@@ -906,7 +1038,7 @@ describe("jules.ts", () => {
         "prompt",
         { github: "owner/repo", baseBranch: "main" },
         30,
-        { reported: [], actual: ["src/a.ts"] }
+        ["src/a.ts"]
       );
 
       expect(result.fallback).toBe(false);
@@ -940,7 +1072,7 @@ describe("jules.ts", () => {
         "prompt",
         { github: "owner/repo", baseBranch: "main" },
         30,
-        { reported: ["src/a.ts"], actual: ["src/a.ts", "src/b.ts"] }
+        ["src/a.ts", "src/b.ts"]
       );
 
       expect(result.fallback).toBe(false);
@@ -973,7 +1105,7 @@ describe("jules.ts", () => {
         "prompt",
         { github: "owner/repo", baseBranch: "main" },
         30,
-        { reported: [], actual: ["src/a.ts"] }
+        ["src/a.ts"]
       );
 
       expect(result.fallback).toBe(false);
@@ -1001,10 +1133,7 @@ describe("jules.ts", () => {
         "prompt",
         { github: "owner/repo", baseBranch: "main" },
         30,
-        {
-          reported: ["src/a.ts", "src/b.ts", "src/c.ts"],
-          actual: ["src/a.ts", "src/b.ts"],
-        }
+        ["src/a.ts", "src/b.ts"]
       );
 
       expect(result.fallback).toBe(false);
@@ -1032,7 +1161,7 @@ describe("jules.ts", () => {
         "prompt",
         { github: "owner/repo", baseBranch: "main" },
         30,
-        { reported: ["src/a.ts"], actual: ["src/a.ts"] }
+        ["src/a.ts"]
       );
 
       expect(archiveMock).toHaveBeenCalledTimes(1);
@@ -1062,7 +1191,7 @@ describe("jules.ts", () => {
         "prompt",
         { github: "owner/repo", baseBranch: "main" },
         30,
-        { reported: ["src/a.ts"], actual: ["src/a.ts"] }
+        ["src/a.ts"]
       );
 
       expect(result.reviewResult?.verdict).toBe("approve");
@@ -1089,7 +1218,7 @@ describe("jules.ts", () => {
         "prompt",
         { github: "owner/repo", baseBranch: "main" },
         1,
-        { reported: ["src/a.ts"], actual: ["src/a.ts"] }
+        ["src/a.ts"]
       );
 
       await vi.advanceTimersByTimeAsync(65 * 1000);

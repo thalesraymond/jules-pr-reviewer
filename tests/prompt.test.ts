@@ -252,6 +252,21 @@ describe("buildAgenticPrompt", () => {
     expect(prompt).not.toContain("prioritize high-impact");
   });
 
+  it("labels diff instructions as UNTRUSTED", () => {
+    const prompt = buildAgenticPrompt({
+      repoFullName: "owner/repo",
+      prNumber: 1,
+      prTitle: "feat: add",
+      prBody: "desc",
+      baseSha: "aaa111",
+      headSha: "bbb222",
+      openThreads: [],
+      fileCount: 5,
+    });
+
+    expect(prompt).toContain("# UNTRUSTED: How to obtain the diff");
+  });
+
   it("labels PR title and description as UNTRUSTED", () => {
     const prompt = buildAgenticPrompt({
       repoFullName: "owner/repo",

@@ -41177,9 +41177,7 @@ function setReviewOutputs(outputs) {
 
 
 
-async function runJulesReview(apiKey, prompt, 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-source, timeoutMinutes) {
+async function runJulesReview(apiKey, prompt, source, timeoutMinutes) {
     const customJules = jules.with({ apiKey });
     let firstSessionId = "";
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -41197,9 +41195,7 @@ source, timeoutMinutes) {
         }
         try {
             await waitUntilSessionReady(session);
-            const reviewMessage = await pollForReview(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            session, timeoutMinutes * 60 * 1000);
+            const reviewMessage = await pollForReview(session, timeoutMinutes * 60 * 1000);
             info(`Collected review (${reviewMessage.length} chars)`);
             if (reviewMessage) {
                 let reviewResult;
@@ -41327,8 +41323,7 @@ async function archiveSession(session) {
         warning(`Failed to archive session ${session.id}: ${getErrorMessage(err)}`);
     }
 }
-function verifyChangedFiles(check) {
-    const { reported, actual } = check;
+function verifyChangedFiles(reported, actual) {
     if (reported.length === 0) {
         return { ok: false, reason: "empty" };
     }
@@ -41339,9 +41334,7 @@ function verifyChangedFiles(check) {
     }
     return { ok: true };
 }
-async function runAgenticReview(apiKey, prompt, 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-source, timeoutMinutes, changedFilesCheck) {
+async function runAgenticReview(apiKey, prompt, source, timeoutMinutes, actualChangedFiles) {
     const customJules = jules.with({ apiKey });
     let session;
     try {
@@ -41371,9 +41364,7 @@ source, timeoutMinutes, changedFilesCheck) {
     }
     try {
         await waitUntilSessionReady(session);
-        const reviewMessage = await pollForReview(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        session, timeoutMinutes * 60 * 1000);
+        const reviewMessage = await pollForReview(session, timeoutMinutes * 60 * 1000);
         if (!reviewMessage) {
             info(`Agentic session ${session.id} timed out.`);
             logStructured("agentic_fallback", { reason: "timeout" });
@@ -41406,25 +41397,22 @@ source, timeoutMinutes, changedFilesCheck) {
         // changedFiles verification — informational only. A mismatch between the
         // files Jules reports and the actual changed files is logged and surfaced
         // to the user, but never triggers a fallback or a retry.
-        if (changedFilesCheck) {
+        if (actualChangedFiles) {
             const reported = reviewResult.changedFiles ?? [];
-            const result = verifyChangedFiles({
-                reported,
-                actual: changedFilesCheck.actual,
-            });
+            const result = verifyChangedFiles(reported, actualChangedFiles);
             if (!result.ok) {
-                warning(`changedFiles mismatch: ${result.reason} (reported: ${reported.length}, actual: ${changedFilesCheck.actual.length})`);
+                warning(`changedFiles mismatch: ${result.reason} (reported: ${reported.length}, actual: ${actualChangedFiles.length})`);
                 logStructured("verification_mismatch", {
                     tier: result.reason,
                     reportedCount: reported.length,
-                    actualCount: changedFilesCheck.actual.length,
+                    actualCount: actualChangedFiles.length,
                 });
             }
-            else if (reported.length > changedFilesCheck.actual.length) {
+            else if (reported.length > actualChangedFiles.length) {
                 logStructured("verification_mismatch", {
                     tier: "extra_only",
                     reportedCount: reported.length,
-                    actualCount: changedFilesCheck.actual.length,
+                    actualCount: actualChangedFiles.length,
                 });
             }
         }
@@ -41434,12 +41422,7 @@ source, timeoutMinutes, changedFilesCheck) {
     catch (err) {
         const msg = getErrorMessage(err);
         error(`Agentic review failed: ${msg}`);
-        try {
-            await archiveSession(session);
-        }
-        catch {
-            // archive already handled inside archiveSession
-        }
+        await archiveSession(session);
         throw err;
     }
 }
@@ -41573,7 +41556,7 @@ ${prTitle}
 # UNTRUSTED: PR description
 ${prBody || "(no description)"}
 
-# How to obtain the diff
+# UNTRUSTED: How to obtain the diff
 Run the following command to see the changes in this PR:
 
 \`\`\`bash
@@ -44416,7 +44399,7 @@ async function run() {
                 openThreads,
                 fileCount: changedFiles.length,
             });
-            const agentic = await runAgenticReview(apiKey, agenticPrompt, { github: `${owner}/${repo}`, baseBranch: pr.head.ref }, timeoutMinutes, { reported: [], actual: changedFiles });
+            const agentic = await runAgenticReview(apiKey, agenticPrompt, { github: `${owner}/${repo}`, baseBranch: pr.head.ref }, timeoutMinutes, changedFiles);
             sessionId = agentic.sessionId;
             if (!agentic.fallback) {
                 reviewResult = agentic.reviewResult;
