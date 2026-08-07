@@ -55,7 +55,7 @@ exports.isHttps = isHttps;
 const http = __importStar(__nccwpck_require__(8611));
 const https = __importStar(__nccwpck_require__(5692));
 const pm = __importStar(__nccwpck_require__(5836));
-const tunnel = __importStar(__nccwpck_require__(2345));
+const tunnel = __importStar(__nccwpck_require__(4726));
 const undici_1 = __nccwpck_require__(115);
 var HttpCodes;
 (function (HttpCodes) {
@@ -844,7 +844,7 @@ class DecodedURL extends URL {
 
 /***/ }),
 
-/***/ 2345:
+/***/ 4726:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 module.exports = __nccwpck_require__(6979);
@@ -29329,7 +29329,7 @@ class DecodedURL extends URL {
 }
 //# sourceMappingURL=proxy.js.map
 // EXTERNAL MODULE: ./node_modules/.pnpm/tunnel@0.0.6/node_modules/tunnel/index.js
-var node_modules_tunnel = __nccwpck_require__(2345);
+var node_modules_tunnel = __nccwpck_require__(4726);
 // EXTERNAL MODULE: ./node_modules/.pnpm/undici@6.26.0/node_modules/undici/index.js
 var undici = __nccwpck_require__(115);
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/@actions+http-client@4.0.1/node_modules/@actions/http-client/lib/index.js
@@ -41086,6 +41086,129 @@ function strictValidateReviewResult(parsed) {
     };
 }
 
+;// CONCATENATED MODULE: ./src/session.ts
+
+
+
+
+const PARSE_FAILURE_REVIEW = {
+    summary: "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
+    verdict: "block",
+    resolvedCommentIds: [],
+    newComments: [],
+};
+async function runSession(options) {
+    const customJules = jules.with({ apiKey: options.apiKey });
+    info("Creating Jules session…");
+    let session;
+    try {
+        session = await customJules.session({
+            prompt: options.prompt,
+            source: options.source,
+            requireApproval: false,
+            title: options.title,
+            autoPr: false,
+        });
+    }
+    catch (err) {
+        return { kind: "creation_failed", sessionId: "", error: err };
+    }
+    info(`Jules session: ${session.id}`);
+    try {
+        await waitUntilSessionReady(session);
+        const reviewMessage = await pollForReview(session, options.timeoutMinutes * 60 * 1000);
+        info(`Collected review (${reviewMessage.length} chars)`);
+        if (!reviewMessage) {
+            await archiveSession(session);
+            return { kind: "timeout", sessionId: session.id };
+        }
+        let reviewResult;
+        try {
+            reviewResult = parseReviewResponse(reviewMessage);
+        }
+        catch (err) {
+            error(`Failed to parse Jules response: ${err}`);
+            await archiveSession(session);
+            return {
+                kind: "review",
+                reviewResult: PARSE_FAILURE_REVIEW,
+                sessionId: session.id,
+            };
+        }
+        await archiveSession(session);
+        return { kind: "review", reviewResult, sessionId: session.id };
+    }
+    catch (err) {
+        await archiveSession(session);
+        throw err;
+    }
+}
+async function waitUntilSessionReady(session) {
+    const maxAttempts = 20;
+    let delay = 2000;
+    for (let i = 0; i < maxAttempts; i++) {
+        try {
+            await session.info();
+            info(`Session ${session.id} is ready after ${i + 1} attempt(s).`);
+            return;
+        }
+        catch (err) {
+            const msg = getErrorMessage(err);
+            if (isAuthError(msg)) {
+                throw new Error(`Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`, { cause: err });
+            }
+            if (!msg.includes("404")) {
+                throw new Error(`Jules session.info() failed: ${msg}`, { cause: err });
+            }
+            info(`Session not yet ready (attempt ${i + 1}/${maxAttempts})…`);
+            await new Promise((r) => setTimeout(r, delay));
+            delay = Math.min(delay * 1.5, 15000);
+        }
+    }
+    throw new Error("Session did not become ready within timeout.");
+}
+async function pollForReview(session, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    let attempt = 0;
+    while (Date.now() < deadline) {
+        attempt++;
+        try {
+            await session.hydrate();
+            let last = "";
+            for await (const a of session.history()) {
+                if (a.type === "agentMessaged")
+                    last = a.message;
+            }
+            if (last) {
+                info(`Got agentMessaged on attempt ${attempt}.`);
+                return last;
+            }
+            info(`No agentMessaged yet (attempt ${attempt})…`);
+        }
+        catch (err) {
+            const msg = getErrorMessage(err);
+            if (isAuthError(msg)) {
+                throw new Error(`Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`, { cause: err });
+            }
+            info(`hydrate/history error (attempt ${attempt}): ${msg}`);
+        }
+        await new Promise((r) => setTimeout(r, 20_000));
+    }
+    return "";
+}
+function isAuthError(msg) {
+    return /\b(?:401|403)\b/.test(msg);
+}
+async function archiveSession(session) {
+    try {
+        await session.archive();
+        info(`Archived session ${session.id}.`);
+    }
+    catch (err) {
+        warning(`Failed to archive session ${session.id}: ${getErrorMessage(err)}`);
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/logging.ts
 
 /**
@@ -41176,180 +41299,53 @@ function setReviewOutputs(outputs) {
 
 
 
-
 async function runJulesReview(apiKey, prompt, source, timeoutMinutes) {
-    const customJules = jules.with({ apiKey });
     let firstSessionId = "";
     for (let attempt = 1; attempt <= 2; attempt++) {
-        info(`Creating Jules review session (attempt ${attempt}/2)…`);
-        const session = await customJules.session({
+        const outcome = await runSession({
+            apiKey,
             prompt,
             source,
-            requireApproval: false,
             title: "Code Review",
-            autoPr: false,
+            timeoutMinutes,
         });
-        info(`Jules session: ${session.id}`);
+        if (outcome.kind === "creation_failed") {
+            throw outcome.error;
+        }
+        if (outcome.kind === "review") {
+            return {
+                reviewResult: outcome.reviewResult,
+                sessionId: outcome.sessionId,
+            };
+        }
+        // Timeout on this attempt
         if (attempt === 1) {
-            firstSessionId = session.id;
+            info(`Jules session ${outcome.sessionId} timed out. Retrying with a fresh session…`);
+            info(JSON.stringify({
+                event: "jules_retry",
+                failedSessionId: outcome.sessionId,
+                attempt: 1,
+            }));
+            firstSessionId = outcome.sessionId;
         }
-        try {
-            await waitUntilSessionReady(session);
-            const reviewMessage = await pollForReview(session, timeoutMinutes * 60 * 1000);
-            info(`Collected review (${reviewMessage.length} chars)`);
-            if (reviewMessage) {
-                let reviewResult;
-                try {
-                    reviewResult = parseJulesResponse(reviewMessage);
-                }
-                catch (err) {
-                    error(`Failed to parse Jules response: ${err}`);
-                    await archiveSession(session);
-                    return {
-                        reviewResult: {
-                            summary: "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
-                            verdict: "block",
-                            resolvedCommentIds: [],
-                            newComments: [],
-                        },
-                        sessionId: session.id,
-                    };
-                }
-                await archiveSession(session);
-                return { reviewResult, sessionId: session.id };
-            }
-            // Timeout on this attempt
-            if (attempt === 1) {
-                info(`Jules session ${session.id} timed out. Retrying with a fresh session…`);
-                info(JSON.stringify({
-                    event: "jules_retry",
-                    failedSessionId: session.id,
-                    attempt: 1,
-                }));
-                await archiveSession(session);
-                // Continue to attempt 2
-            }
-            else {
-                // Both attempts timed out
-                error(`Jules did not respond: session ${firstSessionId} and retry session ${session.id} both timed out within ${timeoutMinutes} minutes each.`);
-                await archiveSession(session);
-                return { reviewResult: null, sessionId: session.id };
-            }
-        }
-        catch (err) {
-            const msg = getErrorMessage(err);
-            error(`Jules review failed: ${msg}`);
-            await archiveSession(session);
-            throw err;
+        else {
+            error(`Jules did not respond: session ${firstSessionId} and retry session ${outcome.sessionId} both timed out within ${timeoutMinutes} minutes each.`);
+            return { reviewResult: null, sessionId: outcome.sessionId };
         }
     }
     // Unreachable — loop always returns or throws, but TypeScript needs it
     throw new Error("Unexpected: retry loop exhausted without returning");
 }
-function parseJulesResponse(message) {
-    return parseReviewResponse(message);
-}
-async function waitUntilSessionReady(session) {
-    const maxAttempts = 20;
-    let delay = 2000;
-    for (let i = 0; i < maxAttempts; i++) {
-        try {
-            await session.info();
-            info(`Session ${session.id} is ready after ${i + 1} attempt(s).`);
-            return;
-        }
-        catch (err) {
-            const msg = getErrorMessage(err);
-            if (isAuthError(msg)) {
-                throw new Error(`Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`, { cause: err });
-            }
-            if (!msg.includes("404")) {
-                throw new Error(`Jules session.info() failed: ${msg}`, { cause: err });
-            }
-            info(`Session not yet ready (attempt ${i + 1}/${maxAttempts})…`);
-            await new Promise((r) => setTimeout(r, delay));
-            delay = Math.min(delay * 1.5, 15000);
-        }
-    }
-    throw new Error("Session did not become ready within timeout.");
-}
-async function pollForReview(session, timeoutMs) {
-    const deadline = Date.now() + timeoutMs;
-    let attempt = 0;
-    while (Date.now() < deadline) {
-        attempt++;
-        try {
-            await session.hydrate();
-            let last = "";
-            for await (const a of session.history()) {
-                if (a.type === "agentMessaged")
-                    last = a.message;
-            }
-            if (last) {
-                info(`Got agentMessaged on attempt ${attempt}.`);
-                return last;
-            }
-            info(`No agentMessaged yet (attempt ${attempt})…`);
-        }
-        catch (err) {
-            const msg = getErrorMessage(err);
-            if (isAuthError(msg)) {
-                throw new Error(`Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`, { cause: err });
-            }
-            info(`hydrate/history error (attempt ${attempt}): ${msg}`);
-        }
-        await new Promise((r) => setTimeout(r, 20_000));
-    }
-    return "";
-}
-function isAuthError(msg) {
-    return /\b(?:401|403)\b/.test(msg);
-}
-function wrapPermissionError(err, needed, op) {
-    const msg = getErrorMessage(err);
-    if (isAuthError(msg) || msg.includes("Resource not accessible")) {
-        return new Error(`${op} failed with 403. The github_token likely lacks ${needed}. Add to your workflow:\n` +
-            "    permissions:\n      pull-requests: write\n      contents: read\n      statuses: write\n" +
-            `(original: ${msg})`);
-    }
-    return err instanceof Error ? err : new Error(msg);
-}
-async function archiveSession(session) {
-    try {
-        await session.archive();
-        info(`Archived session ${session.id}.`);
-    }
-    catch (err) {
-        warning(`Failed to archive session ${session.id}: ${getErrorMessage(err)}`);
-    }
-}
-function verifyChangedFiles(reported, actual) {
-    if (reported.length === 0) {
-        return { ok: false, reason: "empty" };
-    }
-    const reportedSet = new Set(reported);
-    const missingActual = actual.some((f) => !reportedSet.has(f));
-    if (missingActual) {
-        return { ok: false, reason: "partial" };
-    }
-    return { ok: true };
-}
 async function runAgenticReview(apiKey, prompt, source, timeoutMinutes, actualChangedFiles) {
-    const customJules = jules.with({ apiKey });
-    let session;
-    try {
-        info("Creating agentic Jules session…");
-        session = await customJules.session({
-            prompt,
-            source,
-            requireApproval: false,
-            title: "Code Review (Agentic)",
-            autoPr: false,
-        });
-        info(`Jules session: ${session.id}`);
-    }
-    catch (err) {
-        const msg = getErrorMessage(err);
+    const outcome = await runSession({
+        apiKey,
+        prompt,
+        source,
+        title: "Code Review (Agentic)",
+        timeoutMinutes,
+    });
+    if (outcome.kind === "creation_failed") {
+        const msg = getErrorMessage(outcome.error);
         warning(`Agentic session creation failed: ${msg}`);
         logStructured("agentic_fallback", {
             reason: "session_creation_failed",
@@ -41362,69 +41358,63 @@ async function runAgenticReview(apiKey, prompt, source, timeoutMinutes, actualCh
             fallbackReason: "session_creation_failed",
         };
     }
-    try {
-        await waitUntilSessionReady(session);
-        const reviewMessage = await pollForReview(session, timeoutMinutes * 60 * 1000);
-        if (!reviewMessage) {
-            info(`Agentic session ${session.id} timed out.`);
-            logStructured("agentic_fallback", { reason: "timeout" });
-            await archiveSession(session);
-            return {
-                reviewResult: null,
-                sessionId: session.id,
-                fallback: true,
-                fallbackReason: "timeout",
-            };
-        }
-        let reviewResult;
-        try {
-            reviewResult = parseJulesResponse(reviewMessage);
-        }
-        catch (err) {
-            error(`Failed to parse agentic Jules response: ${err}`);
-            await archiveSession(session);
-            return {
-                reviewResult: {
-                    summary: "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
-                    verdict: "block",
-                    resolvedCommentIds: [],
-                    newComments: [],
-                },
-                sessionId: session.id,
-                fallback: false,
-            };
-        }
-        // changedFiles verification — informational only. A mismatch between the
-        // files Jules reports and the actual changed files is logged and surfaced
-        // to the user, but never triggers a fallback or a retry.
-        if (actualChangedFiles) {
-            const reported = reviewResult.changedFiles ?? [];
-            const result = verifyChangedFiles(reported, actualChangedFiles);
-            if (!result.ok) {
-                warning(`changedFiles mismatch: ${result.reason} (reported: ${reported.length}, actual: ${actualChangedFiles.length})`);
-                logStructured("verification_mismatch", {
-                    tier: result.reason,
-                    reportedCount: reported.length,
-                    actualCount: actualChangedFiles.length,
-                });
-            }
-            else if (reported.length > actualChangedFiles.length) {
-                logStructured("verification_mismatch", {
-                    tier: "extra_only",
-                    reportedCount: reported.length,
-                    actualCount: actualChangedFiles.length,
-                });
-            }
-        }
-        await archiveSession(session);
-        return { reviewResult, sessionId: session.id, fallback: false };
+    if (outcome.kind === "timeout") {
+        info(`Agentic session ${outcome.sessionId} timed out.`);
+        logStructured("agentic_fallback", { reason: "timeout" });
+        return {
+            reviewResult: null,
+            sessionId: outcome.sessionId,
+            fallback: true,
+            fallbackReason: "timeout",
+        };
     }
-    catch (err) {
-        const msg = getErrorMessage(err);
-        error(`Agentic review failed: ${msg}`);
-        await archiveSession(session);
-        throw err;
+    // changedFiles verification — informational only. A mismatch between the
+    // files Jules reports and the actual changed files is logged and surfaced
+    // to the user, but never triggers a fallback or a retry.
+    if (actualChangedFiles) {
+        const reported = outcome.reviewResult.changedFiles ?? [];
+        const result = verifyChangedFiles(reported, actualChangedFiles);
+        if (!result.ok) {
+            warning(`changedFiles mismatch: ${result.reason} (reported: ${reported.length}, actual: ${actualChangedFiles.length})`);
+            logStructured("verification_mismatch", {
+                tier: result.reason,
+                reportedCount: reported.length,
+                actualCount: actualChangedFiles.length,
+            });
+        }
+        else if (reported.length > actualChangedFiles.length) {
+            logStructured("verification_mismatch", {
+                tier: "extra_only",
+                reportedCount: reported.length,
+                actualCount: actualChangedFiles.length,
+            });
+        }
     }
+    return {
+        reviewResult: outcome.reviewResult,
+        sessionId: outcome.sessionId,
+        fallback: false,
+    };
+}
+function verifyChangedFiles(reported, actual) {
+    if (reported.length === 0) {
+        return { ok: false, reason: "empty" };
+    }
+    const reportedSet = new Set(reported);
+    const missingActual = actual.some((f) => !reportedSet.has(f));
+    if (missingActual) {
+        return { ok: false, reason: "partial" };
+    }
+    return { ok: true };
+}
+function wrapPermissionError(err, needed, op) {
+    const msg = getErrorMessage(err);
+    if (isAuthError(msg) || msg.includes("Resource not accessible")) {
+        return new Error(`${op} failed with 403. The github_token likely lacks ${needed}. Add to your workflow:\n` +
+            "    permissions:\n      pull-requests: write\n      contents: read\n      statuses: write\n" +
+            `(original: ${msg})`);
+    }
+    return err instanceof Error ? err : new Error(msg);
 }
 
 ;// CONCATENATED MODULE: ./src/prompt.ts
