@@ -36369,72 +36369,6 @@ function getErrorMessage(error) {
 
 
 
-const SUGGESTION_ATTRIBUTION = "> ⚠️ Jules suggested this fix — review carefully before applying.";
-function sanitizeSuggestion(comment) {
-    const sanitized = { ...comment };
-    if (sanitized.startLine !== undefined &&
-        sanitized.startLine > sanitized.line) {
-        delete sanitized.startLine;
-    }
-    if (sanitized.suggestion !== undefined) {
-        sanitized.suggestion = sanitized.suggestion.replace(/```/g, "'''");
-    }
-    return sanitized;
-}
-function formatCommentBody(comment, includeSuggestion) {
-    const severityEmoji = comment.severity === "High"
-        ? "🚨"
-        : comment.severity === "Warning"
-            ? "⚠️"
-            : "ℹ️";
-    const confidenceEmoji = comment.confidence === "High"
-        ? "🟢"
-        : comment.confidence === "Medium"
-            ? "🟡"
-            : "🔴";
-    let body = `<!-- jules-inline-comment -->
-**Severity:** ${severityEmoji} ${comment.severity} | **Confidence:** ${confidenceEmoji} ${comment.confidence}
-
-${comment.message}`;
-    if (includeSuggestion && comment.suggestion) {
-        body += `
-
-${SUGGESTION_ATTRIBUTION}
-
-\`\`\`suggestion
-${comment.suggestion}
-\`\`\``;
-    }
-    if (comment.promptForAgents) {
-        // Sanitize user input to prevent XSS and breaking out of details tag
-        const sanitizedPrompt = comment.promptForAgents.replace(/<\/details\s*>/gi, "&lt;/details&gt;");
-        body += `
-
-<details>
-<summary>🤖 Prompt for Agents</summary>
-
-${sanitizedPrompt}
-</details>`;
-    }
-    return body;
-}
-function buildApiComment(comment, includeSuggestion) {
-    const sanitized = sanitizeSuggestion(comment);
-    const apiComment = {
-        path: sanitized.file,
-        line: sanitized.line,
-        side: "RIGHT",
-        body: formatCommentBody(includeSuggestion ? sanitized : { ...sanitized, suggestion: undefined }, includeSuggestion),
-    };
-    if (includeSuggestion && sanitized.startLine !== undefined) {
-        apiComment.start_line = sanitized.startLine;
-    }
-    return apiComment;
-}
-function isUnprocessableEntity(error) {
-    return (error?.status === 422 ||
-        getErrorMessage(error).includes("Unprocessable Entity"));
-}
 async function fetchDiff(octokit, owner, repo, pr, baseShaForDiff, headSha) {
     try {
         const compare = await octokit.rest.repos.compareCommitsWithBasehead({
@@ -36551,6 +36485,87 @@ async function resolveThreads(octokit, threadIds) {
         }
     }
 }
+async function setStatus(octokit, owner, repo, sha, context, state, description) {
+    await withRetry(() => octokit.rest.repos.createCommitStatus({
+        owner,
+        repo,
+        sha,
+        state,
+        context,
+        description,
+    }), { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 });
+}
+
+;// CONCATENATED MODULE: ./src/submission.ts
+
+
+
+const SUGGESTION_ATTRIBUTION = "> ⚠️ Jules suggested this fix — review carefully before applying.";
+function sanitizeSuggestion(comment) {
+    const sanitized = { ...comment };
+    if (sanitized.startLine !== undefined &&
+        sanitized.startLine > sanitized.line) {
+        delete sanitized.startLine;
+    }
+    if (sanitized.suggestion !== undefined) {
+        sanitized.suggestion = sanitized.suggestion.replace(/```/g, "'''");
+    }
+    return sanitized;
+}
+function formatCommentBody(comment, includeSuggestion) {
+    const severityEmoji = comment.severity === "High"
+        ? "🚨"
+        : comment.severity === "Warning"
+            ? "⚠️"
+            : "ℹ️";
+    const confidenceEmoji = comment.confidence === "High"
+        ? "🟢"
+        : comment.confidence === "Medium"
+            ? "🟡"
+            : "🔴";
+    let body = `<!-- jules-inline-comment -->
+**Severity:** ${severityEmoji} ${comment.severity} | **Confidence:** ${confidenceEmoji} ${comment.confidence}
+
+${comment.message}`;
+    if (includeSuggestion && comment.suggestion) {
+        body += `
+
+${SUGGESTION_ATTRIBUTION}
+
+\`\`\`suggestion
+${comment.suggestion}
+\`\`\``;
+    }
+    if (comment.promptForAgents) {
+        // Sanitize user input to prevent XSS and breaking out of details tag
+        const sanitizedPrompt = comment.promptForAgents.replace(/<\/details\s*>/gi, "&lt;/details&gt;");
+        body += `
+
+<details>
+<summary>🤖 Prompt for Agents</summary>
+
+${sanitizedPrompt}
+</details>`;
+    }
+    return body;
+}
+function buildApiComment(comment, includeSuggestion) {
+    const sanitized = sanitizeSuggestion(comment);
+    const apiComment = {
+        path: sanitized.file,
+        line: sanitized.line,
+        side: "RIGHT",
+        body: formatCommentBody(includeSuggestion ? sanitized : { ...sanitized, suggestion: undefined }, includeSuggestion),
+    };
+    if (includeSuggestion && sanitized.startLine !== undefined) {
+        apiComment.start_line = sanitized.startLine;
+    }
+    return apiComment;
+}
+function isUnprocessableEntity(error) {
+    return (error?.status === 422 ||
+        getErrorMessage(error).includes("Unprocessable Entity"));
+}
 async function submitReview(octokit, owner, repo, prNumber, headSha, summary, comments) {
     const submitWithComments = (includeSuggestions) => async () => {
         await octokit.rest.pulls.createReview({
@@ -36585,16 +36600,6 @@ async function submitReview(octokit, owner, repo, prNumber, headSha, summary, co
     else {
         await withFallback(submitWithComments(true), fallbackToSummaryOnly, isUnprocessableEntity);
     }
-}
-async function setStatus(octokit, owner, repo, sha, context, state, description) {
-    await withRetry(() => octokit.rest.repos.createCommitStatus({
-        owner,
-        repo,
-        sha,
-        state,
-        context,
-        description,
-    }), { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 });
 }
 
 ;// CONCATENATED MODULE: external "node:path"
@@ -41363,7 +41368,7 @@ const range = (a, b, str) => {
     return result;
 };
 //# sourceMappingURL=index.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/brace-expansion@5.0.7/node_modules/brace-expansion/dist/esm/index.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/brace-expansion@5.0.9/node_modules/brace-expansion/dist/esm/index.js
 
 const escSlash = '\0SLASH' + Math.random() + '\0';
 const escOpen = '\0OPEN' + Math.random() + '\0';
@@ -41381,6 +41386,17 @@ const closePattern = /\\}/g;
 const commaPattern = /\\,/g;
 const periodPattern = /\\\./g;
 const EXPANSION_MAX = 100_000;
+// `EXPANSION_MAX` caps the *number* of expansions, but not their length. An
+// input like `'{a,b}'.repeat(1500)` stays under that count - its output is
+// truncated to 100k results - while making every result ~1500 characters
+// long. The result set, and the intermediate arrays built while combining
+// brace sets, then grow large enough to exhaust memory and crash the process
+// (CVE-2026-14257). `EXPANSION_MAX_LENGTH` bounds the total number of
+// characters the accumulator may hold at any point, so memory stays flat no
+// matter how many brace groups are chained. The limit sits well above any
+// realistic expansion (100k results hitting `EXPANSION_MAX` measure ~1M
+// characters) so legitimate input is unaffected.
+const EXPANSION_MAX_LENGTH = 4_000_000;
 function numeric(str) {
     return !isNaN(str) ? parseInt(str, 10) : str.charCodeAt(0);
 }
@@ -41430,7 +41446,7 @@ function esm_expand(str, options = {}) {
     if (!str) {
         return [];
     }
-    const { max = EXPANSION_MAX } = options;
+    const { max = EXPANSION_MAX, maxLength = EXPANSION_MAX_LENGTH } = options;
     // I don't know why Bash 4.3 does this, but it does.
     // Anything starting with {} will have the first two bytes preserved
     // but *only* at the top level, so {},a}b will not expand to anything,
@@ -41440,7 +41456,7 @@ function esm_expand(str, options = {}) {
     if (str.slice(0, 2) === '{}') {
         str = '\\{\\}' + str.slice(2);
     }
-    return expand_(escapeBraces(str), max, true).map(unescapeBraces);
+    return expand_(escapeBraces(str), max, maxLength, true).map(unescapeBraces);
 }
 function embrace(str) {
     return '{' + str + '}';
@@ -41454,25 +41470,116 @@ function lte(i, y) {
 function gte(i, y) {
     return i >= y;
 }
-function expand_(str, max, isTop) {
-    /** @type {string[]} */
-    const expansions = [];
-    // The `{a},b}` rewrite below restarts expansion on a rewritten string with
-    // the same `max` and `isTop = true`. Loop instead of recursing so a long run
-    // of non-expanding `{}` groups can't exhaust the call stack.
+// Build `{ acc[a] + pre + values[v] }` for every combination, capping the
+// number of results at `max` and the total number of characters at `maxLength`.
+// This is the one place output grows, so bounding it here keeps the single
+// accumulator - and therefore memory - flat regardless of how many brace groups
+// are combined (CVE-2026-14257).
+function combine(acc, pre, values, max, maxLength, dropEmpties) {
+    const out = [];
+    let length = 0;
+    for (let a = 0; a < acc.length; a++) {
+        for (let v = 0; v < values.length; v++) {
+            if (out.length >= max)
+                return out;
+            const expansion = acc[a] + pre + values[v];
+            // Bash drops empty results at the top level. Skip them before they count
+            // against `max`, so `max` bounds the number of *kept* results.
+            if (dropEmpties && !expansion)
+                continue;
+            if (length + expansion.length > maxLength)
+                return out;
+            out.push(expansion);
+            length += expansion.length;
+        }
+    }
+    return out;
+}
+// The expansion values of a single numeric (`1..5`) or alphabetic (`a..e..2`)
+// sequence body.
+function expandSequence(body, isAlphaSequence, max, maxLength) {
+    const n = body.split(/\.\./);
+    const N = [];
+    // A sequence body always splits into two or three parts, but the compiler
+    // can't know that.
+    /* c8 ignore start */
+    if (n[0] === undefined || n[1] === undefined) {
+        return N;
+    }
+    /* c8 ignore stop */
+    const x = numeric(n[0]);
+    const y = numeric(n[1]);
+    const width = Math.max(n[0].length, n[1].length);
+    let incr = n.length === 3 && n[2] !== undefined ?
+        Math.max(Math.abs(numeric(n[2])), 1)
+        : 1;
+    let test = lte;
+    const reverse = y < x;
+    if (reverse) {
+        incr *= -1;
+        test = gte;
+    }
+    const pad = n.some(isPadded);
+    let length = 0;
+    for (let i = x; test(i, y) && N.length < max; i += incr) {
+        let c;
+        if (isAlphaSequence) {
+            c = String.fromCharCode(i);
+            if (c === '\\') {
+                c = '';
+            }
+        }
+        else {
+            c = String(i);
+            if (pad) {
+                const need = width - c.length;
+                if (need > 0) {
+                    const z = new Array(need + 1).join('0');
+                    if (i < 0) {
+                        c = '-' + z + c.slice(1);
+                    }
+                    else {
+                        c = z + c;
+                    }
+                }
+            }
+        }
+        if (length + c.length > maxLength)
+            break;
+        N.push(c);
+        length += c.length;
+    }
+    return N;
+}
+function expand_(str, max, maxLength, isTop) {
+    // Consume the string's top-level brace groups left to right, threading a
+    // running set of combined prefixes (`acc`). Expanding the tail iteratively -
+    // rather than recursing on `m.post` once per group - keeps the native stack
+    // depth constant, so deeply chained input (`'{a,b}'.repeat(3000)`) can no
+    // longer overflow the stack, and leaves a single accumulator whose size
+    // `maxLength` bounds directly (CVE-2026-14257).
+    let acc = [''];
+    // Bash drops empty results, but only when the *first* top-level group is a
+    // comma set - a sequence like `{a..\}` may legitimately yield ''. The drop
+    // is on the final strings, so it is applied to whichever `combine` produces
+    // them (the one with no brace set left in the tail).
+    let dropEmpties = false;
+    let firstGroup = true;
     for (;;) {
         const m = balanced('{', '}', str);
-        if (!m)
-            return [str];
+        // No brace set left: the rest of the string is literal.
+        if (!m) {
+            return combine(acc, str, [''], max, maxLength, dropEmpties);
+        }
         // no need to expand pre, since it is guaranteed to be free of brace-sets
         const pre = m.pre;
-        if (/\$$/.test(m.pre)) {
-            const post = m.post.length ? expand_(m.post, max, false) : [''];
-            for (let k = 0; k < post.length && k < max; k++) {
-                const expansion = pre + '{' + m.body + '}' + post[k];
-                expansions.push(expansion);
-            }
-            return expansions;
+        if (/\$$/.test(pre)) {
+            acc = combine(acc, pre + '{' + m.body + '}', [''], max, maxLength, dropEmpties && !m.post.length);
+            firstGroup = false;
+            if (!m.post.length)
+                break;
+            str = m.post;
+            continue;
         }
         const isNumericSequence = /^-?\d+\.\.-?\d+(?:\.\.-?\d+)?$/.test(m.body);
         const isAlphaSequence = /^[a-zA-Z]\.\.[a-zA-Z](?:\.\.-?\d+)?$/.test(m.body);
@@ -41485,93 +41592,69 @@ function expand_(str, max, isTop) {
                 isTop = true;
                 continue;
             }
-            return [str];
+            // Nothing here expands, so the whole remaining string is literal.
+            return combine(acc, pre + '{' + m.body + '}' + m.post, [''], max, maxLength, dropEmpties);
         }
-        // Only expand post once we know this brace set actually expands. Computing
-        // it before the early returns above expanded post a second time on every
-        // non-expanding `{}`, which is what made inputs like `a{},{},{}...` blow up
-        // exponentially.
-        const post = m.post.length ? expand_(m.post, max, false) : [''];
-        let n;
+        if (firstGroup) {
+            dropEmpties = isTop && !isSequence;
+            firstGroup = false;
+        }
+        let values;
         if (isSequence) {
-            n = m.body.split(/\.\./);
+            values = expandSequence(m.body, isAlphaSequence, max, maxLength);
         }
         else {
-            n = parseCommaParts(m.body);
+            let n = parseCommaParts(m.body);
             if (n.length === 1 && n[0] !== undefined) {
                 // x{{a,b}}y ==> x{a}y x{b}y
-                n = expand_(n[0], max, false).map(embrace);
+                n = expand_(n[0], max, maxLength, false).map(embrace);
                 //XXX is this necessary? Can't seem to hit it in tests.
                 /* c8 ignore start */
                 if (n.length === 1) {
-                    return post.map(p => m.pre + n[0] + p);
+                    acc = combine(acc, pre + n[0], [''], max, maxLength, dropEmpties && !m.post.length);
+                    if (!m.post.length)
+                        break;
+                    str = m.post;
+                    continue;
                 }
                 /* c8 ignore stop */
             }
-        }
-        // at this point, n is the parts, and we know it's not a comma set
-        // with a single entry.
-        let N;
-        if (isSequence && n[0] !== undefined && n[1] !== undefined) {
-            const x = numeric(n[0]);
-            const y = numeric(n[1]);
-            const width = Math.max(n[0].length, n[1].length);
-            let incr = n.length === 3 && n[2] !== undefined ?
-                Math.max(Math.abs(numeric(n[2])), 1)
-                : 1;
-            let test = lte;
-            const reverse = y < x;
-            if (reverse) {
-                incr *= -1;
-                test = gte;
+            // Values that `combine` is going to drop as empty produce no result, so
+            // they must not count against `max` - otherwise `{a,,b}` with `max: 2`
+            // would stop at `['a', '']` and yield one result instead of two. Skipping
+            // them outright keeps `values` bounded while leaving `max` a bound on
+            // *kept* results.
+            let dropsEmpties = dropEmpties && !m.post.length && !pre;
+            for (let d = 0; dropsEmpties && d < acc.length; d++) {
+                if (acc[d]) {
+                    dropsEmpties = false;
+                }
             }
-            const pad = n.some(isPadded);
-            N = [];
-            for (let i = x; test(i, y) && N.length < max; i += incr) {
-                let c;
-                if (isAlphaSequence) {
-                    c = String.fromCharCode(i);
-                    if (c === '\\') {
-                        c = '';
+            values = [];
+            let valuesLength = 0;
+            outer: for (let j = 0; j < n.length; j++) {
+                const expanded = expand_(n[j], max, maxLength, false);
+                for (let k = 0; k < expanded.length; k++) {
+                    const v = expanded[k];
+                    if (dropsEmpties && !v)
+                        continue;
+                    if (values.length >= max || valuesLength + v.length > maxLength) {
+                        break outer;
                     }
-                }
-                else {
-                    c = String(i);
-                    if (pad) {
-                        const need = width - c.length;
-                        if (need > 0) {
-                            const z = new Array(need + 1).join('0');
-                            if (i < 0) {
-                                c = '-' + z + c.slice(1);
-                            }
-                            else {
-                                c = z + c;
-                            }
-                        }
-                    }
-                }
-                N.push(c);
-            }
-        }
-        else {
-            N = [];
-            for (let j = 0; j < n.length; j++) {
-                N.push.apply(N, expand_(n[j], max, false));
-            }
-        }
-        for (let j = 0; j < N.length; j++) {
-            for (let k = 0; k < post.length && expansions.length < max; k++) {
-                const expansion = pre + N[j] + post[k];
-                if (!isTop || isSequence || expansion) {
-                    expansions.push(expansion);
+                    values.push(v);
+                    valuesLength += v.length;
                 }
             }
         }
-        return expansions;
+        acc = combine(acc, pre, values, max, maxLength, dropEmpties && !m.post.length);
+        if (!m.post.length)
+            break;
+        str = m.post;
     }
+    return acc;
 }
 //# sourceMappingURL=index.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/minimatch@10.2.5/node_modules/minimatch/dist/esm/assert-valid-pattern.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/minimatch@10.2.6/node_modules/minimatch/dist/esm/assert-valid-pattern.js
 const MAX_PATTERN_LENGTH = 1024 * 64;
 const assertValidPattern = (pattern) => {
     if (typeof pattern !== 'string') {
@@ -41582,7 +41665,7 @@ const assertValidPattern = (pattern) => {
     }
 };
 //# sourceMappingURL=assert-valid-pattern.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/minimatch@10.2.5/node_modules/minimatch/dist/esm/brace-expressions.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/minimatch@10.2.6/node_modules/minimatch/dist/esm/brace-expressions.js
 // translate the various posix character classes into unicode properties
 // this works across all unicode locales
 // { <posix class>: [<translation>, /u flag required, negated]
@@ -41729,7 +41812,7 @@ const parseClass = (glob, position) => {
     return [comb, uflag, endPos - pos, true];
 };
 //# sourceMappingURL=brace-expressions.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/minimatch@10.2.5/node_modules/minimatch/dist/esm/unescape.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/minimatch@10.2.6/node_modules/minimatch/dist/esm/unescape.js
 /**
  * Un-escape a string that has been escaped with {@link escape}.
  *
@@ -41764,7 +41847,7 @@ const unescape_unescape = (s, { windowsPathsNoEscape = false, magicalBraces = tr
             .replace(/\\([^/{}])/g, '$1');
 };
 //# sourceMappingURL=unescape.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/minimatch@10.2.5/node_modules/minimatch/dist/esm/ast.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/minimatch@10.2.6/node_modules/minimatch/dist/esm/ast.js
 // parse a single path portion
 var _a;
 
@@ -42606,7 +42689,7 @@ class AST {
 }
 _a = AST;
 //# sourceMappingURL=ast.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/minimatch@10.2.5/node_modules/minimatch/dist/esm/escape.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/minimatch@10.2.6/node_modules/minimatch/dist/esm/escape.js
 /**
  * Escape all magic characters in a glob pattern.
  *
@@ -42633,7 +42716,7 @@ const escape_escape = (s, { windowsPathsNoEscape = false, magicalBraces = false,
         : s.replace(/[?*()[\]\\]/g, '\\$&');
 };
 //# sourceMappingURL=escape.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/minimatch@10.2.5/node_modules/minimatch/dist/esm/index.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/minimatch@10.2.6/node_modules/minimatch/dist/esm/index.js
 
 
 
@@ -43911,6 +43994,7 @@ function setReviewOutputs(outputs) {
 }
 
 ;// CONCATENATED MODULE: ./src/index.ts
+
 
 
 
