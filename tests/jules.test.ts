@@ -2,6 +2,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   runJulesReview,
+  runAgenticReview,
+  archiveSession,
   isAuthError,
   wrapPermissionError,
 } from "../src/jules.js";
@@ -676,6 +678,273 @@ describe("jules.ts", () => {
       );
       expect(result).toBeInstanceOf(Error);
       expect(result.message).toBe("Just a string error");
+    });
+  });
+
+  describe("archiveSession", () => {
+    it("calls session.archive() on success", async () => {
+      const archiveMock = vi.fn().mockResolvedValue(undefined);
+      await archiveSession({ id: "s1", archive: archiveMock } as any);
+      expect(archiveMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not throw when archive fails", async () => {
+      const archiveMock = vi.fn().mockRejectedValue(new Error("archive fail"));
+      await archiveSession({ id: "s1", archive: archiveMock } as any);
+      expect(archiveMock).toHaveBeenCalledTimes(1);
+      expect(core.warning).toHaveBeenCalled();
+    });
+  });
+
+  describe("runAgenticReview", () => {
+    it("returns parsed review result on success", async () => {
+      const reviewText =
+        '{"summary":"agentic ok","verdict":"approve","changedFiles":["src/a.ts"]}';
+      const mockSession = {
+        id: "agentic-session-1",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        archive: vi.fn().mockResolvedValue(undefined),
+        history: async function* () {
+          yield { type: "agentMessaged", message: reviewText };
+        },
+      };
+
+      const sessionMock = vi.fn().mockResolvedValue(mockSession);
+      (jules as any).with = vi.fn().mockReturnValue({ session: sessionMock });
+
+      const result = await runAgenticReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        30,
+        { reported: ["src/a.ts"], actual: ["src/a.ts"] }
+      );
+
+      expect(result.reviewResult?.verdict).toBe("approve");
+      expect(result.reviewResult?.changedFiles).toEqual(["src/a.ts"]);
+      expect(mockSession.archive).toHaveBeenCalled();
+    });
+
+    it("falls back when session creation fails", async () => {
+      const sessionMock = vi
+        .fn()
+        .mockRejectedValue(new Error("branch not found"));
+      (jules as any).with = vi.fn().mockReturnValue({ session: sessionMock });
+
+      const result = await runAgenticReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "deleted-branch" },
+        30,
+        { reported: ["src/a.ts"], actual: ["src/a.ts"] }
+      );
+
+      expect(result.fallback).toBe(true);
+      expect(result.fallbackReason).toBe("session_creation_failed");
+    });
+
+    it("falls back on timeout", async () => {
+      const timeoutSession = {
+        id: "timeout-agentic",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        archive: vi.fn().mockResolvedValue(undefined),
+        history: async function* () {
+          /* no agentMessaged */
+        },
+      };
+
+      const sessionMock = vi.fn().mockResolvedValue(timeoutSession);
+      (jules as any).with = vi.fn().mockReturnValue({ session: sessionMock });
+
+      const promise = runAgenticReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1,
+        { reported: ["src/a.ts"], actual: ["src/a.ts"] }
+      );
+
+      await vi.advanceTimersByTimeAsync(65 * 1000);
+
+      const result = await promise;
+      expect(result.fallback).toBe(true);
+      expect(result.fallbackReason).toBe("timeout");
+    });
+
+    it("falls back when changedFiles is empty", async () => {
+      const reviewText =
+        '{"summary":"empty files","verdict":"approve","changedFiles":[]}';
+      const mockSession = {
+        id: "empty-files-session",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        archive: vi.fn().mockResolvedValue(undefined),
+        history: async function* () {
+          yield { type: "agentMessaged", message: reviewText };
+        },
+      };
+
+      const sessionMock = vi.fn().mockResolvedValue(mockSession);
+      (jules as any).with = vi.fn().mockReturnValue({ session: sessionMock });
+
+      const result = await runAgenticReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        30,
+        { reported: [], actual: ["src/a.ts"] }
+      );
+
+      expect(result.fallback).toBe(true);
+      expect(result.fallbackReason).toBe("verification_mismatch");
+    });
+
+    it("falls back when changedFiles is partial", async () => {
+      const reviewText =
+        '{"summary":"partial","verdict":"approve","changedFiles":["src/a.ts"]}';
+      const mockSession = {
+        id: "partial-session",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        archive: vi.fn().mockResolvedValue(undefined),
+        history: async function* () {
+          yield { type: "agentMessaged", message: reviewText };
+        },
+      };
+
+      const sessionMock = vi.fn().mockResolvedValue(mockSession);
+      (jules as any).with = vi.fn().mockReturnValue({ session: sessionMock });
+
+      const result = await runAgenticReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        30,
+        { reported: ["src/a.ts"], actual: ["src/a.ts", "src/b.ts"] }
+      );
+
+      expect(result.fallback).toBe(true);
+      expect(result.fallbackReason).toBe("verification_mismatch");
+    });
+
+    it("proceeds when changedFiles is extra-only (superset)", async () => {
+      const reviewText =
+        '{"summary":"extra ok","verdict":"approve","changedFiles":["src/a.ts","src/b.ts","src/c.ts"]}';
+      const mockSession = {
+        id: "extra-session",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        archive: vi.fn().mockResolvedValue(undefined),
+        history: async function* () {
+          yield { type: "agentMessaged", message: reviewText };
+        },
+      };
+
+      const sessionMock = vi.fn().mockResolvedValue(mockSession);
+      (jules as any).with = vi.fn().mockReturnValue({ session: sessionMock });
+
+      const result = await runAgenticReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        30,
+        {
+          reported: ["src/a.ts", "src/b.ts", "src/c.ts"],
+          actual: ["src/a.ts", "src/b.ts"],
+        }
+      );
+
+      expect(result.fallback).toBe(false);
+      expect(result.reviewResult?.verdict).toBe("approve");
+    });
+
+    it("archive is called on successful session", async () => {
+      const reviewText = '{"summary":"ok","verdict":"approve"}';
+      const archiveMock = vi.fn().mockResolvedValue(undefined);
+      const mockSession = {
+        id: "archive-test",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        archive: archiveMock,
+        history: async function* () {
+          yield { type: "agentMessaged", message: reviewText };
+        },
+      };
+
+      const sessionMock = vi.fn().mockResolvedValue(mockSession);
+      (jules as any).with = vi.fn().mockReturnValue({ session: sessionMock });
+
+      await runAgenticReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        30,
+        { reported: ["src/a.ts"], actual: ["src/a.ts"] }
+      );
+
+      expect(archiveMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("archive failure does not throw", async () => {
+      const reviewText =
+        '{"summary":"ok","verdict":"approve","changedFiles":["src/a.ts"]}';
+      const archiveMock = vi
+        .fn()
+        .mockRejectedValue(new Error("archive broken"));
+      const mockSession = {
+        id: "archive-fail-test",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        archive: archiveMock,
+        history: async function* () {
+          yield { type: "agentMessaged", message: reviewText };
+        },
+      };
+
+      const sessionMock = vi.fn().mockResolvedValue(mockSession);
+      (jules as any).with = vi.fn().mockReturnValue({ session: sessionMock });
+
+      const result = await runAgenticReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        30,
+        { reported: ["src/a.ts"], actual: ["src/a.ts"] }
+      );
+
+      expect(result.reviewResult?.verdict).toBe("approve");
+      expect(core.warning).toHaveBeenCalled();
+    });
+
+    it("archive is called on fallback session", async () => {
+      const archiveMock = vi.fn().mockResolvedValue(undefined);
+      const timeoutSession = {
+        id: "fallback-archive",
+        info: vi.fn().mockResolvedValue({}),
+        hydrate: vi.fn().mockResolvedValue(1),
+        archive: archiveMock,
+        history: async function* () {
+          /* no agentMessaged */
+        },
+      };
+
+      const sessionMock = vi.fn().mockResolvedValue(timeoutSession);
+      (jules as any).with = vi.fn().mockReturnValue({ session: sessionMock });
+
+      const promise = runAgenticReview(
+        "api-key",
+        "prompt",
+        { github: "owner/repo", baseBranch: "main" },
+        1,
+        { reported: ["src/a.ts"], actual: ["src/a.ts"] }
+      );
+
+      await vi.advanceTimersByTimeAsync(65 * 1000);
+
+      await promise;
+      expect(archiveMock).toHaveBeenCalled();
     });
   });
 });

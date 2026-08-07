@@ -53,6 +53,10 @@ inputs:
     description: "Enable GitHub-native one-click suggested changes in review comments. Default false."
     required: false
     default: "false"
+  diff_mode:
+    description: "Review pipeline: prompt (embed diff in prompt, default) or agentic (Jules inspects PR branch directly)."
+    required: false
+    default: "prompt"
 
 outputs:
   verdict:

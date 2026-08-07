@@ -158,5 +158,10 @@ function strictValidateReviewResult(parsed: unknown): ReviewResult {
     verdict: verdict as Verdict,
     resolvedCommentIds,
     newComments,
+    changedFiles: Array.isArray(raw.changedFiles)
+      ? (raw.changedFiles.filter(
+          (f): f is string => typeof f === "string"
+        ) as string[])
+      : undefined,
   };
 }

@@ -148,6 +148,7 @@ The workflow's `extra_instructions` is appended after the rules file content. Us
 | `ignored_paths`      | `[]`                            | JSON array **or** comma/newline-separated list of paths/globs to exclude from diff (e.g. `["dist/**", "*.lock"]` or `dist/**, *.lock`). |
 | `timeout_minutes`    | `30`                            | How long to wait for Jules to return a review.                    |
 | `enable_suggestions` | `false`                         | Enable GitHub-native one-click suggested changes in review comments. |
+| `diff_mode`          | `prompt`                        | Review pipeline: `prompt` (embed the diff in the prompt) or `agentic` (Jules inspects the PR branch directly). |
 
 ## Outputs
 
@@ -195,6 +196,26 @@ Opt-in to include GitHub-native one-click suggested changes in Jules' review com
 ```
 
 > Suggestions are emitted only for `High` or `Medium` confidence comments. If GitHub rejects a suggestion (for example, because it falls outside a diff hunk), the action automatically retries without suggestions and falls back to the existing summary-only review as a last resort.
+
+### Agentic diff mode
+
+By default the action embeds the PR diff in the prompt, which is truncated at 80 KB. Set `diff_mode: agentic` to let Jules inspect the PR head branch directly instead — it runs `git diff <base>...<head>` itself, which removes the diff-size ceiling and gives it full repository context:
+
+```yaml
+- uses: thalesraymond/jules-pr-reviewer@v1
+  with:
+    jules_api_key: ${{ secrets.JULES_API_KEY }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    diff_mode: agentic
+```
+
+In agentic mode:
+
+- Jules is instructed to fetch the diff with SHA-pinned `git diff` commands (with a branch-ref fallback) and is explicitly prohibited from modifying the repository.
+- Ignored paths are passed to Jules as a hint merged with the repo's `.gitignore`, while the action-side filter stays active as defence-in-depth.
+- Reviews of large PRs (>50 changed files) include a soft nudge to prioritize high-impact, high-confidence findings.
+- If the agentic session fails to start, times out, or returns a `changedFiles` list that is empty or misses real changed files, the action automatically falls back to the standard prompt-mode pipeline so the PR still gets exactly one review.
+- Every Jules session created by the action is archived (best-effort) once the review is done.
 
 ## Severity, Confidence, & Verdict
 

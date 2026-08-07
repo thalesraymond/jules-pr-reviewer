@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildReviewPrompt } from "../src/prompt.js";
+import { buildReviewPrompt, buildAgenticPrompt } from "../src/prompt.js";
 
 describe("buildReviewPrompt", () => {
   it("should build a prompt without open threads or rules or extra instructions", () => {
@@ -154,5 +154,173 @@ describe("buildReviewPrompt", () => {
     expect(prompt).toContain(
       "[Index 1] File: file.ts, Line: 10\nComment: Bad code"
     );
+  });
+});
+
+describe("buildAgenticPrompt", () => {
+  it("includes SHA-based diff instruction", () => {
+    const prompt = buildAgenticPrompt({
+      repoFullName: "owner/repo",
+      prNumber: 1,
+      prTitle: "feat: add",
+      prBody: "desc",
+      baseSha: "aaa111",
+      headSha: "bbb222",
+      openThreads: [],
+      fileCount: 5,
+    });
+
+    expect(prompt).toContain("git diff aaa111...bbb222");
+  });
+
+  it("includes branch-ref fallback instruction", () => {
+    const prompt = buildAgenticPrompt({
+      repoFullName: "owner/repo",
+      prNumber: 1,
+      prTitle: "feat: add",
+      prBody: "desc",
+      baseSha: "aaa111",
+      headSha: "bbb222",
+      openThreads: [],
+      fileCount: 5,
+    });
+
+    expect(prompt).toContain("fall back");
+    expect(prompt).toContain("inferring the base");
+  });
+
+  it("includes read-only prohibition in SECURITY section", () => {
+    const prompt = buildAgenticPrompt({
+      repoFullName: "owner/repo",
+      prNumber: 1,
+      prTitle: "feat: add",
+      prBody: "desc",
+      baseSha: "aaa111",
+      headSha: "bbb222",
+      openThreads: [],
+      fileCount: 5,
+    });
+
+    expect(prompt).toContain("MUST NOT modify, create, or delete");
+  });
+
+  it("renders ignored_paths with merge instruction", () => {
+    const prompt = buildAgenticPrompt({
+      repoFullName: "owner/repo",
+      prNumber: 1,
+      prTitle: "feat: add",
+      prBody: "desc",
+      baseSha: "aaa111",
+      headSha: "bbb222",
+      ignoredPaths: "dist/**, *.lock",
+      openThreads: [],
+      fileCount: 5,
+    });
+
+    expect(prompt).toContain("dist/**, *.lock");
+    expect(prompt).toContain(".gitignore");
+  });
+
+  it("includes large-PR nudge when fileCount > 50", () => {
+    const prompt = buildAgenticPrompt({
+      repoFullName: "owner/repo",
+      prNumber: 1,
+      prTitle: "feat: add",
+      prBody: "desc",
+      baseSha: "aaa111",
+      headSha: "bbb222",
+      openThreads: [],
+      fileCount: 55,
+    });
+
+    expect(prompt).toContain("Prioritize");
+    expect(prompt).toContain("high-impact");
+  });
+
+  it("does not include large-PR nudge when fileCount <= 50", () => {
+    const prompt = buildAgenticPrompt({
+      repoFullName: "owner/repo",
+      prNumber: 1,
+      prTitle: "feat: add",
+      prBody: "desc",
+      baseSha: "aaa111",
+      headSha: "bbb222",
+      openThreads: [],
+      fileCount: 50,
+    });
+
+    expect(prompt).not.toContain("prioritize high-impact");
+  });
+
+  it("labels PR title and description as UNTRUSTED", () => {
+    const prompt = buildAgenticPrompt({
+      repoFullName: "owner/repo",
+      prNumber: 1,
+      prTitle: "My PR",
+      prBody: "My body",
+      baseSha: "aaa111",
+      headSha: "bbb222",
+      openThreads: [],
+      fileCount: 5,
+    });
+
+    expect(prompt).toContain("# UNTRUSTED: PR title");
+    expect(prompt).toContain("# UNTRUSTED: PR description");
+  });
+
+  it("labels ignored_paths as UNTRUSTED", () => {
+    const prompt = buildAgenticPrompt({
+      repoFullName: "owner/repo",
+      prNumber: 1,
+      prTitle: "feat: add",
+      prBody: "desc",
+      baseSha: "aaa111",
+      headSha: "bbb222",
+      ignoredPaths: "dist/**",
+      openThreads: [],
+      fileCount: 5,
+    });
+
+    expect(prompt).toContain("# UNTRUSTED: Ignored paths");
+  });
+
+  it("includes changedFiles in output schema", () => {
+    const prompt = buildAgenticPrompt({
+      repoFullName: "owner/repo",
+      prNumber: 1,
+      prTitle: "feat: add",
+      prBody: "desc",
+      baseSha: "aaa111",
+      headSha: "bbb222",
+      openThreads: [],
+      fileCount: 5,
+    });
+
+    expect(prompt).toContain("changedFiles");
+    expect(prompt).toContain('"path/to/file.ts"');
+  });
+
+  it("includes open threads when present", () => {
+    const prompt = buildAgenticPrompt({
+      repoFullName: "owner/repo",
+      prNumber: 1,
+      prTitle: "feat: add",
+      prBody: "desc",
+      baseSha: "aaa111",
+      headSha: "bbb222",
+      openThreads: [
+        {
+          index: 0,
+          threadId: "t1",
+          path: "src/index.ts",
+          line: 10,
+          body: "Fix this",
+        },
+      ],
+      fileCount: 5,
+    });
+
+    expect(prompt).toContain("# Open Review Comments");
+    expect(prompt).toContain("[Index 0] File: src/index.ts, Line: 10");
   });
 });
