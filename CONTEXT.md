@@ -22,6 +22,6 @@
 
 **Jules session** — a single unit of work on the Jules side: a created session that receives the review prompt and produces a review message.
 
-**OpenThread** — a previously-posted review comment that is still unresolved. Tracked by index so the LLM can mark them as fixed.
+**OpenThread** — a previously-posted review comment that is still unresolved. Tracked by index so the LLM can mark them as fixed (`resolvedCommentIds`) and, when `dedupe` is enabled, told not to re-report them in `newComments`.
 
 **Incremental diff** — on synchronize events, the diff between the previous head and the new head, not the full PR diff.
