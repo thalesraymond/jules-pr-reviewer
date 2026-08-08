@@ -42142,8 +42142,8 @@ function wrapPermissionError(err, needed, op) {
 
 ;// CONCATENATED MODULE: ./src/prompt.ts
 function buildReviewPrompt(args) {
-    const { mode, repoFullName, prNumber, prTitle, prBody, extraInstructions, rulesFromFile, openThreads, } = args;
-    const threadsContext = buildThreadsContext(openThreads);
+    const { mode, repoFullName, prNumber, prTitle, prBody, extraInstructions, rulesFromFile, openThreads, dedupe = true, } = args;
+    const threadsContext = buildThreadsContext(openThreads, dedupe);
     const diffSection = buildDiffSection(args);
     const readOnlyBullet = mode === "agentic"
         ? "- You MUST NOT modify, create, or delete any files in the repository. You are a read-only reviewer.\n"
@@ -42210,7 +42210,7 @@ You MUST output your review as a JSON object, wrapped in a \`\`\`json block. Do 
 {
   "summary": "One short paragraph stating what the PR does and your overall take.",
   "verdict": "approve|comment|block",
-  "resolvedCommentIds": [/* Array of integers from 'Open Review Comments' that are now fixed */],
+  "resolvedCommentIds": [/* Array of integers from 'Trusted: Open Review Comments' that are now fixed */],
 ${changedFilesField}  "newComments": [
     {
       "file": "path/to/file.ext",
@@ -42266,16 +42266,24 @@ ${ignoredPaths}
 `
         : ""}`;
 }
-function buildThreadsContext(openThreads) {
+function buildThreadsContext(openThreads, dedupe) {
     if (openThreads.length === 0) {
         return "";
     }
-    return `# Open Review Comments
-Here are previous review comments made by you that are still unresolved.
-Evaluate if the current diff addresses them. If they are addressed and fixed, include their index in \`resolvedCommentIds\`.
+    const list = openThreads
+        .map((t) => `[Index ${t.index}] File: ${t.path}, Line: ${t.line}\nComment: ${t.body}`)
+        .join("\n\n");
+    const dedupeNote = dedupe
+        ? `
 
-${openThreads.map((t) => `[Index ${t.index}] File: ${t.path}, Line: ${t.line}\nComment: ${t.body}`).join("\n\n")}
-`;
+You MUST NOT re-report any of these findings in \`newComments\`:
+- If one is unchanged, do not repeat it.
+- Only emit a new comment when the current diff introduces a new or materially different instance of the problem.`
+        : "";
+    return `# Trusted: Open Review Comments
+Here are previous review comments made by you that are still unresolved. Evaluate if the current diff addresses them. If they are addressed and fixed, include their index in \`resolvedCommentIds\`.${dedupeNote}
+
+${list}`;
 }
 
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/balanced-match@4.0.4/node_modules/balanced-match/dist/esm/index.js
@@ -44938,10 +44946,12 @@ function loadConfig(io) {
     let skipDrafts;
     let skipForks;
     let enableSuggestions;
+    let dedupe;
     try {
         skipDrafts = io.getBooleanInput("skip_drafts");
         skipForks = io.getBooleanInput("skip_forks");
         enableSuggestions = io.getBooleanInput("enable_suggestions");
+        dedupe = io.getBooleanInput("dedupe");
     }
     catch (err) {
         return { ok: false, error: getErrorMessage(err) };
@@ -44963,6 +44973,7 @@ function loadConfig(io) {
             timeoutMinutes: Math.max(1, parseInt(io.getInput("timeout_minutes") || "30", 10) ||
                 DEFAULT_TIMEOUT_MINUTES),
             enableSuggestions,
+            dedupe,
         },
     };
 }
@@ -45097,6 +45108,7 @@ async function run() {
                 extraInstructions: config.extraInstructions,
                 rulesFromFile,
                 openThreads,
+                dedupe: config.dedupe,
                 fileCount: changedFiles.length,
             });
             const agentic = await runAgenticReview(config.apiKey, agenticPrompt, { github: `${owner}/${repo}`, baseBranch: pr.head.ref }, config.timeoutMinutes, changedFiles);
@@ -45121,6 +45133,7 @@ async function run() {
                 extraInstructions: config.extraInstructions,
                 rulesFromFile,
                 openThreads,
+                dedupe: config.dedupe,
             });
             const julesApiCallStart = Date.now();
             const promptResult = await runJulesReview(config.apiKey, prompt, { github: `${owner}/${repo}`, baseBranch: pr.base.ref }, config.timeoutMinutes);

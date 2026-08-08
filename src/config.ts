@@ -21,6 +21,7 @@ export interface Config {
   ignoredPaths?: string;
   timeoutMinutes: number;
   enableSuggestions: boolean;
+  dedupe: boolean;
 }
 
 export type ConfigResult =
@@ -77,10 +78,12 @@ export function loadConfig(io: InputReader): ConfigResult {
   let skipDrafts: boolean;
   let skipForks: boolean;
   let enableSuggestions: boolean;
+  let dedupe: boolean;
   try {
     skipDrafts = io.getBooleanInput("skip_drafts");
     skipForks = io.getBooleanInput("skip_forks");
     enableSuggestions = io.getBooleanInput("enable_suggestions");
+    dedupe = io.getBooleanInput("dedupe");
   } catch (err) {
     return { ok: false, error: getErrorMessage(err) };
   }
@@ -105,6 +108,7 @@ export function loadConfig(io: InputReader): ConfigResult {
           DEFAULT_TIMEOUT_MINUTES
       ),
       enableSuggestions,
+      dedupe,
     },
   };
 }

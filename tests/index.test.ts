@@ -62,6 +62,7 @@ describe("index.ts", () => {
     ignoredPaths: undefined,
     timeoutMinutes: 30,
     enableSuggestions: false,
+    dedupe: true,
   };
 
   beforeEach(async () => {
@@ -481,6 +482,60 @@ index 789..abc 100644
     expect(mockGithubHelper.resolveThreads).toHaveBeenCalledWith(
       expect.anything(),
       ["t2"]
+    );
+  });
+
+  it("includes the dedupe instruction in the prompt when dedupe is enabled and open threads exist", async () => {
+    mockGithubHelper.fetchOpenThreads.mockResolvedValue([
+      { index: 1, threadId: "t1", path: "a.ts", line: 10, body: "Fix me" },
+    ]);
+    await loadIndex();
+    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("MUST NOT re-report"),
+      expect.anything(),
+      expect.anything()
+    );
+  });
+
+  it("omits the dedupe instruction from the prompt when dedupe is disabled", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, dedupe: false },
+    });
+    mockGithubHelper.fetchOpenThreads.mockResolvedValue([
+      { index: 1, threadId: "t1", path: "a.ts", line: 10, body: "Fix me" },
+    ]);
+    await loadIndex();
+    const prompt = mockJulesHelper.runJulesReview.mock.calls[0][1];
+    expect(prompt).toContain("# Trusted: Open Review Comments");
+    expect(prompt).not.toContain("MUST NOT re-report");
+  });
+
+  it("forwards dedupe into the agentic prompt builder when open threads exist", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, diffMode: "agentic" },
+    });
+    mockGithubHelper.fetchOpenThreads.mockResolvedValue([
+      { index: 1, threadId: "t1", path: "a.ts", line: 10, body: "Fix me" },
+    ]);
+    mockJulesHelper.runAgenticReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "approve",
+        summary: "ok",
+        newComments: [],
+      },
+      sessionId: "s1",
+      fallback: false,
+    });
+    await loadIndex();
+    expect(mockJulesHelper.runAgenticReview).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("MUST NOT re-report"),
+      expect.anything(),
+      expect.anything(),
+      expect.anything()
     );
   });
 

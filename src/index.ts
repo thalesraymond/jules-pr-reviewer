@@ -184,6 +184,7 @@ async function run(): Promise<void> {
         extraInstructions: config.extraInstructions,
         rulesFromFile,
         openThreads,
+        dedupe: config.dedupe,
         fileCount: changedFiles.length,
       });
 
@@ -223,6 +224,7 @@ async function run(): Promise<void> {
         extraInstructions: config.extraInstructions,
         rulesFromFile,
         openThreads,
+        dedupe: config.dedupe,
       });
 
       const julesApiCallStart = Date.now();

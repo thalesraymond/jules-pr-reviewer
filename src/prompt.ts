@@ -15,9 +15,10 @@ export function buildReviewPrompt(args: ReviewPromptArgs): string {
     extraInstructions,
     rulesFromFile,
     openThreads,
+    dedupe = true,
   } = args;
 
-  const threadsContext = buildThreadsContext(openThreads);
+  const threadsContext = buildThreadsContext(openThreads, dedupe);
   const diffSection = buildDiffSection(args);
   const readOnlyBullet =
     mode === "agentic"
@@ -91,7 +92,7 @@ You MUST output your review as a JSON object, wrapped in a \`\`\`json block. Do 
 {
   "summary": "One short paragraph stating what the PR does and your overall take.",
   "verdict": "approve|comment|block",
-  "resolvedCommentIds": [/* Array of integers from 'Open Review Comments' that are now fixed */],
+  "resolvedCommentIds": [/* Array of integers from 'Trusted: Open Review Comments' that are now fixed */],
 ${changedFilesField}  "newComments": [
     {
       "file": "path/to/file.ext",
@@ -157,15 +158,31 @@ ${ignoredPaths}
 }`;
 }
 
-function buildThreadsContext(openThreads: OpenThread[]): string {
+function buildThreadsContext(
+  openThreads: OpenThread[],
+  dedupe: boolean
+): string {
   if (openThreads.length === 0) {
     return "";
   }
 
-  return `# Open Review Comments
-Here are previous review comments made by you that are still unresolved.
-Evaluate if the current diff addresses them. If they are addressed and fixed, include their index in \`resolvedCommentIds\`.
+  const list = openThreads
+    .map(
+      (t) =>
+        `[Index ${t.index}] File: ${t.path}, Line: ${t.line}\nComment: ${t.body}`
+    )
+    .join("\n\n");
 
-${openThreads.map((t) => `[Index ${t.index}] File: ${t.path}, Line: ${t.line}\nComment: ${t.body}`).join("\n\n")}
-`;
+  const dedupeNote = dedupe
+    ? `
+
+You MUST NOT re-report any of these findings in \`newComments\`:
+- If one is unchanged, do not repeat it.
+- Only emit a new comment when the current diff introduces a new or materially different instance of the problem.`
+    : "";
+
+  return `# Trusted: Open Review Comments
+Here are previous review comments made by you that are still unresolved. Evaluate if the current diff addresses them. If they are addressed and fixed, include their index in \`resolvedCommentIds\`.${dedupeNote}
+
+${list}`;
 }

@@ -18,6 +18,7 @@ export interface CommonPromptArgs {
   extraInstructions?: string;
   rulesFromFile?: string;
   openThreads: OpenThread[];
+  dedupe?: boolean;
 }
 
 export interface InlineDiffModeArgs extends CommonPromptArgs {
