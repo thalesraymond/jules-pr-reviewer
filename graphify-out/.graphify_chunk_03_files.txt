@@ -1,0 +1,13 @@
+/home/thales/projects/jules-pr-reviewer/openspec/changes/archive/2026-07-26-jules-retry-resilience/proposal.md
+/home/thales/projects/jules-pr-reviewer/openspec/changes/archive/2026-07-26-jules-retry-resilience/specs/jules-retry-resilience/spec.md
+/home/thales/projects/jules-pr-reviewer/openspec/changes/archive/2026-07-26-jules-retry-resilience/tasks.md
+/home/thales/projects/jules-pr-reviewer/openspec/changes/archive/2026-08-06-agentic-diff-mode/.openspec.yaml
+/home/thales/projects/jules-pr-reviewer/openspec/changes/archive/2026-08-06-agentic-diff-mode/design.md
+/home/thales/projects/jules-pr-reviewer/openspec/changes/archive/2026-08-06-agentic-diff-mode/proposal.md
+/home/thales/projects/jules-pr-reviewer/openspec/changes/archive/2026-08-06-agentic-diff-mode/specs/agentic-diff-mode/spec.md
+/home/thales/projects/jules-pr-reviewer/openspec/changes/archive/2026-08-06-agentic-diff-mode/tasks.md
+/home/thales/projects/jules-pr-reviewer/openspec/config.yaml
+/home/thales/projects/jules-pr-reviewer/openspec/specs/agentic-diff-mode/spec.md
+/home/thales/projects/jules-pr-reviewer/openspec/specs/jules-retry-resilience/spec.md
+/home/thales/projects/jules-pr-reviewer/openspec/specs/suggested-changes/spec.md
+/home/thales/projects/jules-pr-reviewer/pnpm-workspace.yaml
