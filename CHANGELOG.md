@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.5.0...v1.6.0) (2026-08-08)
+
+
+### Features
+
+* adopt GitHub Checks API for review status ([ae00f48](https://github.com/thalesraymond/jules-pr-reviewer/commit/ae00f48877ec8fc8e9a298db472c65ca6e575f9d)), closes [#113](https://github.com/thalesraymond/jules-pr-reviewer/issues/113)
+* ticket 113 ([d399580](https://github.com/thalesraymond/jules-pr-reviewer/commit/d399580712c2b99df1f8cb3d1b436b22a6acff6f))
+
 ## [1.5.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.4.0...v1.5.0) (2026-08-07)
 
 
