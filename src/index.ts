@@ -1,12 +1,6 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import {
-  DiffMode,
-  FailOn,
-  Verdict,
-  ReviewComment,
-  ReviewResult,
-} from "./types.js";
+import { FailOn, Verdict, ReviewComment, ReviewResult } from "./types.js";
 import {
   fetchDiff,
   loadRulesFromBase,
@@ -27,49 +21,20 @@ import {
   extractChangedFilePaths,
 } from "./filtering.js";
 import { getErrorMessage } from "./errors.js";
+import { loadConfig } from "./config.js";
 import { logStructured, setReviewOutputs } from "./logging.js";
 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
-const VALID_FAIL_ON: FailOn[] = ["never", "blocking", "any"];
 
 async function run(): Promise<void> {
   const reviewStartTime = Date.now();
 
-  const apiKey = core.getInput("jules_api_key", { required: true });
-  core.setSecret(apiKey);
-  process.env.JULES_API_KEY = apiKey;
-
-  const token = core.getInput("github_token", { required: true });
-  core.setSecret(token);
-  process.env.GITHUB_TOKEN = token;
-
-  const failOnRaw = core.getInput("fail_on");
-  if (!VALID_FAIL_ON.includes(failOnRaw as FailOn)) {
-    core.setFailed(
-      `Invalid fail_on: "${failOnRaw}". Must be one of: ${VALID_FAIL_ON.join(", ")}.`
-    );
+  const configResult = loadConfig(core);
+  if (!configResult.ok) {
+    core.setFailed(configResult.error);
     return;
   }
-  const failOn = failOnRaw as FailOn;
-  const diffModeRaw = core.getInput("diff_mode") || "prompt";
-  if (diffModeRaw !== "prompt" && diffModeRaw !== "agentic") {
-    core.setFailed(
-      `Invalid diff_mode: "${diffModeRaw}". Must be one of: prompt, agentic.`
-    );
-    return;
-  }
-  const diffMode = diffModeRaw as DiffMode;
-  const skipDrafts = core.getBooleanInput("skip_drafts");
-  const skipForks = core.getBooleanInput("skip_forks");
-  const bypassLabel = core.getInput("bypass_label");
-  const statusContext = core.getInput("status_context");
-  const extraInstructions = core.getInput("extra_instructions");
-  const rulesFilePath = core.getInput("rules_file");
-  const ignoredPathsRaw = core.getInput("ignored_paths");
-  const ignoredPaths = parseIgnoredPaths(ignoredPathsRaw);
-  const timeoutMinutesRaw = core.getInput("timeout_minutes") || "30";
-  const timeoutMinutes = Math.max(1, parseInt(timeoutMinutesRaw, 10) || 30);
-  const enableSuggestions = core.getBooleanInput("enable_suggestions");
+  const config = configResult.config;
 
   const ctx = github.context;
   if (ctx.eventName === "pull_request_target") {
@@ -109,10 +74,10 @@ async function run(): Promise<void> {
 
   // ⚡ Bolt: Optimize bypass label check to stop iterating early and prevent wasteful `.map` array allocation
   const hasBypassLabel = (pr.labels || []).some(
-    (l: { name: string }) => l.name === bypassLabel
+    (l: { name: string }) => l.name === config.bypassLabel
   );
 
-  if (isDraft && skipDrafts) {
+  if (isDraft && config.skipDrafts) {
     core.info("Skipping draft PR.");
     setReviewOutputs({
       verdict: "skipped",
@@ -123,7 +88,7 @@ async function run(): Promise<void> {
     });
     return;
   }
-  if (isFork && skipForks) {
+  if (isFork && config.skipForks) {
     core.info("Skipping fork PR (skip_forks=true).");
     setReviewOutputs({
       verdict: "skipped",
@@ -135,7 +100,9 @@ async function run(): Promise<void> {
     return;
   }
   if (hasBypassLabel) {
-    core.info(`Bypass label "${bypassLabel}" present — skipping review.`);
+    core.info(
+      `Bypass label "${config.bypassLabel}" present — skipping review.`
+    );
     setReviewOutputs({
       verdict: "skipped",
       issues_count: 0,
@@ -147,7 +114,7 @@ async function run(): Promise<void> {
   }
 
   // ⚡ Bolt: Delay instantiating the Octokit client until after early returns (draft/fork/bypass) to save memory
-  const octokit = github.getOctokit(token);
+  const octokit = github.getOctokit(config.token);
 
   try {
     try {
@@ -156,7 +123,7 @@ async function run(): Promise<void> {
         owner,
         repo,
         headSha,
-        statusContext,
+        config.statusContext,
         "pending",
         "Jules is reviewing this PR…"
       );
@@ -177,24 +144,28 @@ async function run(): Promise<void> {
 
     // In agentic mode Jules inspects the full base...head diff, so use baseSha
     // for the changed-file set regardless of synchronize events.
-    const diffBaseForMode = diffMode === "agentic" ? baseSha : baseShaForDiff;
+    const diffBaseForMode =
+      config.diffMode === "agentic" ? baseSha : baseShaForDiff;
 
     // ⚡ Bolt: Execute independent GitHub API calls concurrently to reduce overall latency
     const [diff, rulesFromFile, openThreads] = await Promise.all([
       fetchDiff(octokit, owner, repo, pr, diffBaseForMode, headSha),
-      rulesFilePath
-        ? loadRulesFromBase(octokit, owner, repo, rulesFilePath, baseSha)
+      config.rulesFilePath
+        ? loadRulesFromBase(octokit, owner, repo, config.rulesFilePath, baseSha)
         : Promise.resolve(undefined),
       fetchOpenThreads(octokit, owner, repo, prNumber),
     ]);
 
-    const filteredDiff = filterDiff(diff, ignoredPaths);
+    const filteredDiff = filterDiff(
+      diff,
+      parseIgnoredPaths(config.ignoredPaths)
+    );
     const changedFiles = extractChangedFilePaths(filteredDiff);
 
     let reviewResult: ReviewResult | null = null;
     let sessionId = "";
 
-    if (diffMode === "agentic") {
+    if (config.diffMode === "agentic") {
       const agenticPrompt = buildReviewPrompt({
         mode: "agentic",
         repoFullName: `${owner}/${repo}`,
@@ -203,18 +174,18 @@ async function run(): Promise<void> {
         prBody: pr.body || "",
         baseSha,
         headSha,
-        ignoredPaths: ignoredPathsRaw || undefined,
-        extraInstructions: extraInstructions || undefined,
+        ignoredPaths: config.ignoredPaths,
+        extraInstructions: config.extraInstructions,
         rulesFromFile,
         openThreads,
         fileCount: changedFiles.length,
       });
 
       const agentic = await runAgenticReview(
-        apiKey,
+        config.apiKey,
         agenticPrompt,
         { github: `${owner}/${repo}`, baseBranch: pr.head.ref },
-        timeoutMinutes,
+        config.timeoutMinutes,
         changedFiles
       );
       sessionId = agentic.sessionId;
@@ -243,17 +214,17 @@ async function run(): Promise<void> {
         prBody: pr.body || "",
         diff: diffText,
         diffTruncatedNote: truncatedNote,
-        extraInstructions: extraInstructions || undefined,
+        extraInstructions: config.extraInstructions,
         rulesFromFile,
         openThreads,
       });
 
       const julesApiCallStart = Date.now();
       const promptResult = await runJulesReview(
-        apiKey,
+        config.apiKey,
         prompt,
         { github: `${owner}/${repo}`, baseBranch: pr.base.ref },
-        timeoutMinutes
+        config.timeoutMinutes
       );
       const julesApiDuration = Date.now() - julesApiCallStart;
       logStructured("jules_api_called", {
@@ -270,7 +241,7 @@ async function run(): Promise<void> {
         owner,
         repo,
         headSha,
-        statusContext,
+        config.statusContext,
         "error",
         "Jules did not return a valid review in time"
       );
@@ -279,7 +250,7 @@ async function run(): Promise<void> {
         stage: "api_response",
       });
       core.setFailed(
-        `Jules returned no review message within ${timeoutMinutes} minutes.`
+        `Jules returned no review message within ${config.timeoutMinutes} minutes.`
       );
       return;
     }
@@ -302,7 +273,7 @@ async function run(): Promise<void> {
 
     const commentsForReview: ReviewComment[] = (newComments || []).map((c) => {
       const copy = { ...c };
-      if (!enableSuggestions) {
+      if (!config.enableSuggestions) {
         delete copy.suggestion;
         delete copy.startLine;
       }
@@ -325,13 +296,13 @@ async function run(): Promise<void> {
       commentCount: commentsForReview.length,
     });
 
-    const { state, description } = statusFromVerdict(verdict, failOn);
+    const { state, description } = statusFromVerdict(verdict, config.failOn);
     await setStatus(
       octokit,
       owner,
       repo,
       headSha,
-      statusContext,
+      config.statusContext,
       state,
       description
     );
@@ -390,7 +361,7 @@ async function run(): Promise<void> {
       owner,
       repo,
       headSha,
-      statusContext,
+      config.statusContext,
       "error",
       "Review failed. Check GitHub Actions log for details."
     ).catch(() => {});
