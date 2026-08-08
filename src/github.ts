@@ -1,6 +1,6 @@
 import * as github from "@actions/github";
 import * as core from "@actions/core";
-import { OpenThread } from "./types.js";
+import { CheckRunAnnotation, OpenThread } from "./types.js";
 import { withRetry } from "./resilience.js";
 import { getErrorMessage } from "./errors.js";
 
@@ -152,25 +152,69 @@ export async function resolveThreads(
   }
 }
 
-export async function setStatus(
+export async function createCheckRun(
   octokit: ReturnType<typeof github.getOctokit>,
   owner: string,
   repo: string,
-  sha: string,
-  context: string,
-  state: "pending" | "success" | "failure" | "error",
-  description: string
-): Promise<void> {
-  await withRetry(
+  name: string,
+  headSha: string
+): Promise<number> {
+  const result = await withRetry(
     () =>
-      octokit.rest.repos.createCommitStatus({
+      octokit.rest.checks.create({
         owner,
         repo,
-        sha,
-        state,
-        context,
-        description,
+        name,
+        head_sha: headSha,
+        status: "in_progress",
       }),
+    { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 }
+  );
+  return result.data.id;
+}
+
+export interface CheckRunOutput {
+  title: string;
+  summary: string;
+  annotations?: CheckRunAnnotation[];
+}
+
+export async function finalizeCheckRun(
+  octokit: ReturnType<typeof github.getOctokit>,
+  owner: string,
+  repo: string,
+  checkRunId: number,
+  conclusion: "success" | "failure" | "neutral",
+  output: CheckRunOutput
+): Promise<void> {
+  const params: Record<string, unknown> = {
+    owner,
+    repo,
+    check_run_id: checkRunId,
+    status: "completed",
+    conclusion,
+    output: {
+      title: output.title,
+      summary: output.summary,
+      ...(output.annotations && output.annotations.length > 0
+        ? {
+            annotations: output.annotations.map((a) => ({
+              path: a.path,
+              start_line: a.startLine,
+              end_line: a.endLine,
+              annotation_level: a.annotationLevel,
+              message: a.message,
+              ...(a.title ? { title: a.title } : {}),
+            })),
+          }
+        : {}),
+    },
+  };
+  await withRetry(
+    () =>
+      octokit.rest.checks.update(
+        params as Parameters<typeof octokit.rest.checks.update>[0]
+      ),
     { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 }
   );
 }

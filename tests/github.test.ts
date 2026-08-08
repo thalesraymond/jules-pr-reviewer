@@ -4,7 +4,8 @@ import {
   fetchDiff,
   loadRulesFromBase,
   resolveThreads,
-  setStatus,
+  createCheckRun,
+  finalizeCheckRun,
   fetchOpenThreads,
 } from "../src/github.js";
 
@@ -297,53 +298,149 @@ describe("github.ts", () => {
     vi.useRealTimers();
   });
 
-  it("setStatus sets commit status", async () => {
+  it("createCheckRun creates a check run and returns the ID", async () => {
     const octokit = {
-      rest: { repos: { createCommitStatus: vi.fn().mockResolvedValue({}) } },
+      rest: {
+        checks: {
+          create: vi.fn().mockResolvedValue({ data: { id: 42 } }),
+        },
+      },
     } as any;
-    await setStatus(
+    const id = await createCheckRun(
       octokit,
       "owner",
       "repo",
-      "sha",
-      "context",
-      "success",
-      "desc"
+      "jules/review",
+      "sha"
     );
-    expect(octokit.rest.repos.createCommitStatus).toHaveBeenCalledWith({
+    expect(id).toBe(42);
+    expect(octokit.rest.checks.create).toHaveBeenCalledWith({
       owner: "owner",
       repo: "repo",
-      sha: "sha",
-      state: "success",
-      context: "context",
-      description: "desc",
+      name: "jules/review",
+      head_sha: "sha",
+      status: "in_progress",
     });
   });
 
-  it("setStatus handles failures gracefully with retries", async () => {
+  it("createCheckRun handles failures gracefully with retries", async () => {
     vi.useFakeTimers();
     const octokit = {
       rest: {
-        repos: {
-          createCommitStatus: vi.fn().mockRejectedValue(new Error("fail")),
+        checks: {
+          create: vi.fn().mockRejectedValue(new Error("fail")),
         },
       },
     } as any;
 
-    const setStatusPromise = setStatus(
+    const createPromise = createCheckRun(
       octokit,
       "owner",
       "repo",
-      "sha",
-      "context",
-      "success",
-      "desc"
-    ).catch(() => {}); // Catch the thrown error after retries are exhausted
+      "jules/review",
+      "sha"
+    ).catch(() => {});
 
     await vi.runAllTimersAsync();
-    await setStatusPromise;
+    await createPromise;
 
-    expect(octokit.rest.repos.createCommitStatus).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
+    expect(octokit.rest.checks.create).toHaveBeenCalledTimes(4);
+    vi.useRealTimers();
+  });
+
+  it("finalizeCheckRun updates a check run with conclusion and output", async () => {
+    const octokit = {
+      rest: {
+        checks: {
+          update: vi.fn().mockResolvedValue({}),
+        },
+      },
+    } as any;
+    await finalizeCheckRun(octokit, "owner", "repo", 42, "success", {
+      title: "Jules Review",
+      summary: "All good",
+      annotations: [
+        {
+          path: "src/a.ts",
+          startLine: 10,
+          endLine: 10,
+          annotationLevel: "warning",
+          message: "Watch out",
+          title: "High severity",
+        },
+      ],
+    });
+    expect(octokit.rest.checks.update).toHaveBeenCalledWith({
+      owner: "owner",
+      repo: "repo",
+      check_run_id: 42,
+      status: "completed",
+      conclusion: "success",
+      output: {
+        title: "Jules Review",
+        summary: "All good",
+        annotations: [
+          {
+            path: "src/a.ts",
+            start_line: 10,
+            end_line: 10,
+            annotation_level: "warning",
+            message: "Watch out",
+            title: "High severity",
+          },
+        ],
+      },
+    });
+  });
+
+  it("finalizeCheckRun works without annotations", async () => {
+    const octokit = {
+      rest: {
+        checks: {
+          update: vi.fn().mockResolvedValue({}),
+        },
+      },
+    } as any;
+    await finalizeCheckRun(octokit, "owner", "repo", 42, "failure", {
+      title: "Jules Review",
+      summary: "Issues found",
+    });
+    expect(octokit.rest.checks.update).toHaveBeenCalledWith({
+      owner: "owner",
+      repo: "repo",
+      check_run_id: 42,
+      status: "completed",
+      conclusion: "failure",
+      output: {
+        title: "Jules Review",
+        summary: "Issues found",
+      },
+    });
+  });
+
+  it("finalizeCheckRun handles failures gracefully with retries", async () => {
+    vi.useFakeTimers();
+    const octokit = {
+      rest: {
+        checks: {
+          update: vi.fn().mockRejectedValue(new Error("fail")),
+        },
+      },
+    } as any;
+
+    const updatePromise = finalizeCheckRun(
+      octokit,
+      "owner",
+      "repo",
+      42,
+      "success",
+      { title: "T", summary: "S" }
+    ).catch(() => {});
+
+    await vi.runAllTimersAsync();
+    await updatePromise;
+
+    expect(octokit.rest.checks.update).toHaveBeenCalledTimes(4);
     vi.useRealTimers();
   });
 });

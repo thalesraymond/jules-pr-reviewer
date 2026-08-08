@@ -220,43 +220,29 @@ describe("runAgenticReview", () => {
 describe("wrapPermissionError", () => {
   it("wraps 403 error with helpful instructions", () => {
     const err = new Error("Request failed with status 403");
-    const result = wrapPermissionError(
-      err,
-      "statuses:write",
-      "createCommitStatus"
-    );
-    expect(result.message).toContain("createCommitStatus failed with 403");
+    const result = wrapPermissionError(err, "checks:write", "createCheckRun");
+    expect(result.message).toContain("createCheckRun failed with 403");
     expect(result.message).toContain("permissions:");
+    expect(result.message).toContain("checks: write");
   });
 
   it("wraps Resource not accessible error with helpful instructions", () => {
     const err = new Error("Resource not accessible by integration");
-    const result = wrapPermissionError(
-      err,
-      "statuses:write",
-      "createCommitStatus"
-    );
-    expect(result.message).toContain("createCommitStatus failed with 403");
+    const result = wrapPermissionError(err, "checks:write", "createCheckRun");
+    expect(result.message).toContain("createCheckRun failed with 403");
     expect(result.message).toContain("permissions:");
+    expect(result.message).toContain("checks: write");
   });
 
   it("passes through other Error instances unchanged", () => {
     const err = new Error("Some other error");
-    const result = wrapPermissionError(
-      err,
-      "statuses:write",
-      "createCommitStatus"
-    );
+    const result = wrapPermissionError(err, "checks:write", "createCheckRun");
     expect(result).toBe(err);
   });
 
   it("wraps non-Error objects into an Error", () => {
     const err = "Just a string error";
-    const result = wrapPermissionError(
-      err,
-      "statuses:write",
-      "createCommitStatus"
-    );
+    const result = wrapPermissionError(err, "checks:write", "createCheckRun");
     expect(result).toBeInstanceOf(Error);
     expect(result.message).toBe("Just a string error");
   });
