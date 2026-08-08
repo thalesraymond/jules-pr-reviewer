@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildReviewPrompt, buildAgenticPrompt } from "../src/prompt.js";
+import { buildReviewPrompt } from "../src/prompt.js";
 
-describe("buildReviewPrompt", () => {
+describe("buildReviewPrompt (prompt mode)", () => {
   it("should build a prompt without open threads or rules or extra instructions", () => {
     const prompt = buildReviewPrompt({
+      mode: "prompt",
       repoFullName: "owner/repo",
       prNumber: 123,
       prTitle: "My PR",
@@ -24,6 +25,7 @@ describe("buildReviewPrompt", () => {
 
   it("should include diff truncated note", () => {
     const prompt = buildReviewPrompt({
+      mode: "prompt",
       repoFullName: "owner/repo",
       prNumber: 123,
       prTitle: "My PR",
@@ -38,6 +40,7 @@ describe("buildReviewPrompt", () => {
 
   it("should fallback to (no description) when prBody is empty", () => {
     const prompt = buildReviewPrompt({
+      mode: "prompt",
       repoFullName: "owner/repo",
       prNumber: 123,
       prTitle: "My PR",
@@ -51,6 +54,7 @@ describe("buildReviewPrompt", () => {
 
   it("should include project specific rules", () => {
     const prompt = buildReviewPrompt({
+      mode: "prompt",
       repoFullName: "owner/repo",
       prNumber: 123,
       prTitle: "My PR",
@@ -67,6 +71,7 @@ describe("buildReviewPrompt", () => {
 
   it("should include extra instructions", () => {
     const prompt = buildReviewPrompt({
+      mode: "prompt",
       repoFullName: "owner/repo",
       prNumber: 123,
       prTitle: "My PR",
@@ -81,6 +86,7 @@ describe("buildReviewPrompt", () => {
 
   it("should include suggestion fields in the JSON output schema", () => {
     const prompt = buildReviewPrompt({
+      mode: "prompt",
       repoFullName: "owner/repo",
       prNumber: 123,
       prTitle: "My PR",
@@ -97,6 +103,7 @@ describe("buildReviewPrompt", () => {
 
   it("should include suggestion security guardrail text", () => {
     const prompt = buildReviewPrompt({
+      mode: "prompt",
       repoFullName: "owner/repo",
       prNumber: 123,
       prTitle: "My PR",
@@ -116,6 +123,7 @@ describe("buildReviewPrompt", () => {
 
   it("should constrain suggestions to High or Medium confidence", () => {
     const prompt = buildReviewPrompt({
+      mode: "prompt",
       repoFullName: "owner/repo",
       prNumber: 123,
       prTitle: "My PR",
@@ -134,6 +142,7 @@ describe("buildReviewPrompt", () => {
 
   it("should include open threads", () => {
     const prompt = buildReviewPrompt({
+      mode: "prompt",
       repoFullName: "owner/repo",
       prNumber: 123,
       prTitle: "My PR",
@@ -157,9 +166,10 @@ describe("buildReviewPrompt", () => {
   });
 });
 
-describe("buildAgenticPrompt", () => {
+describe("buildReviewPrompt (agentic mode)", () => {
   it("includes SHA-based diff instruction", () => {
-    const prompt = buildAgenticPrompt({
+    const prompt = buildReviewPrompt({
+      mode: "agentic",
       repoFullName: "owner/repo",
       prNumber: 1,
       prTitle: "feat: add",
@@ -174,7 +184,8 @@ describe("buildAgenticPrompt", () => {
   });
 
   it("includes branch-ref fallback instruction", () => {
-    const prompt = buildAgenticPrompt({
+    const prompt = buildReviewPrompt({
+      mode: "agentic",
       repoFullName: "owner/repo",
       prNumber: 1,
       prTitle: "feat: add",
@@ -190,7 +201,8 @@ describe("buildAgenticPrompt", () => {
   });
 
   it("includes read-only prohibition in SECURITY section", () => {
-    const prompt = buildAgenticPrompt({
+    const prompt = buildReviewPrompt({
+      mode: "agentic",
       repoFullName: "owner/repo",
       prNumber: 1,
       prTitle: "feat: add",
@@ -205,7 +217,8 @@ describe("buildAgenticPrompt", () => {
   });
 
   it("renders ignored_paths with merge instruction", () => {
-    const prompt = buildAgenticPrompt({
+    const prompt = buildReviewPrompt({
+      mode: "agentic",
       repoFullName: "owner/repo",
       prNumber: 1,
       prTitle: "feat: add",
@@ -222,7 +235,8 @@ describe("buildAgenticPrompt", () => {
   });
 
   it("includes large-PR nudge when fileCount > 50", () => {
-    const prompt = buildAgenticPrompt({
+    const prompt = buildReviewPrompt({
+      mode: "agentic",
       repoFullName: "owner/repo",
       prNumber: 1,
       prTitle: "feat: add",
@@ -238,7 +252,8 @@ describe("buildAgenticPrompt", () => {
   });
 
   it("does not include large-PR nudge when fileCount <= 50", () => {
-    const prompt = buildAgenticPrompt({
+    const prompt = buildReviewPrompt({
+      mode: "agentic",
       repoFullName: "owner/repo",
       prNumber: 1,
       prTitle: "feat: add",
@@ -253,7 +268,8 @@ describe("buildAgenticPrompt", () => {
   });
 
   it("labels diff instructions as UNTRUSTED", () => {
-    const prompt = buildAgenticPrompt({
+    const prompt = buildReviewPrompt({
+      mode: "agentic",
       repoFullName: "owner/repo",
       prNumber: 1,
       prTitle: "feat: add",
@@ -268,7 +284,8 @@ describe("buildAgenticPrompt", () => {
   });
 
   it("labels PR title and description as UNTRUSTED", () => {
-    const prompt = buildAgenticPrompt({
+    const prompt = buildReviewPrompt({
+      mode: "agentic",
       repoFullName: "owner/repo",
       prNumber: 1,
       prTitle: "My PR",
@@ -284,7 +301,8 @@ describe("buildAgenticPrompt", () => {
   });
 
   it("labels ignored_paths as UNTRUSTED", () => {
-    const prompt = buildAgenticPrompt({
+    const prompt = buildReviewPrompt({
+      mode: "agentic",
       repoFullName: "owner/repo",
       prNumber: 1,
       prTitle: "feat: add",
@@ -300,7 +318,8 @@ describe("buildAgenticPrompt", () => {
   });
 
   it("includes changedFiles in output schema", () => {
-    const prompt = buildAgenticPrompt({
+    const prompt = buildReviewPrompt({
+      mode: "agentic",
       repoFullName: "owner/repo",
       prNumber: 1,
       prTitle: "feat: add",
@@ -316,7 +335,8 @@ describe("buildAgenticPrompt", () => {
   });
 
   it("includes open threads when present", () => {
-    const prompt = buildAgenticPrompt({
+    const prompt = buildReviewPrompt({
+      mode: "agentic",
       repoFullName: "owner/repo",
       prNumber: 1,
       prTitle: "feat: add",

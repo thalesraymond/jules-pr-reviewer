@@ -20,7 +20,7 @@ import {
   runAgenticReview,
   wrapPermissionError,
 } from "./jules.js";
-import { buildReviewPrompt, buildAgenticPrompt } from "./prompt.js";
+import { buildReviewPrompt } from "./prompt.js";
 import {
   parseIgnoredPaths,
   filterDiff,
@@ -195,7 +195,8 @@ async function run(): Promise<void> {
     let sessionId = "";
 
     if (diffMode === "agentic") {
-      const agenticPrompt = buildAgenticPrompt({
+      const agenticPrompt = buildReviewPrompt({
+        mode: "agentic",
         repoFullName: `${owner}/${repo}`,
         prNumber,
         prTitle: pr.title || "",
@@ -235,6 +236,7 @@ async function run(): Promise<void> {
       );
 
       const prompt = buildReviewPrompt({
+        mode: "prompt",
         repoFullName: `${owner}/${repo}`,
         prNumber,
         prTitle: pr.title || "",

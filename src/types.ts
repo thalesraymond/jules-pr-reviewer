@@ -10,31 +10,31 @@ export interface OpenThread {
   body: string;
 }
 
-export interface PromptArgs {
+export interface CommonPromptArgs {
   repoFullName: string;
   prNumber: number;
   prTitle: string;
   prBody: string;
-  diff: string;
-  diffTruncatedNote?: string;
   extraInstructions?: string;
   rulesFromFile?: string;
   openThreads: OpenThread[];
 }
 
-export interface AgenticPromptArgs {
-  repoFullName: string;
-  prNumber: number;
-  prTitle: string;
-  prBody: string;
+export interface InlineDiffModeArgs extends CommonPromptArgs {
+  mode: "prompt";
+  diff: string;
+  diffTruncatedNote?: string;
+}
+
+export interface AgenticDiffModeArgs extends CommonPromptArgs {
+  mode: "agentic";
   baseSha: string;
   headSha: string;
   ignoredPaths?: string;
-  extraInstructions?: string;
-  rulesFromFile?: string;
-  openThreads: OpenThread[];
   fileCount: number;
 }
+
+export type ReviewPromptArgs = InlineDiffModeArgs | AgenticDiffModeArgs;
 
 export interface ReviewComment {
   file: string;
