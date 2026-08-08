@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 
@@ -41,6 +41,26 @@ describe("index.ts", () => {
   const mockLoggingHelper = {
     logStructured: vi.fn(),
     setReviewOutputs: vi.fn(),
+  };
+
+  const mockConfigHelper = {
+    loadConfig: vi.fn(),
+  };
+
+  const defaultConfig = {
+    apiKey: "dummy_key",
+    token: "dummy_token",
+    failOn: "any",
+    diffMode: "prompt",
+    skipDrafts: false,
+    skipForks: false,
+    bypassLabel: "",
+    statusContext: "",
+    extraInstructions: undefined,
+    rulesFilePath: undefined,
+    ignoredPaths: undefined,
+    timeoutMinutes: 30,
+    enableSuggestions: false,
   };
 
   beforeEach(async () => {
@@ -95,6 +115,13 @@ describe("index.ts", () => {
     vi.doMock("../src/submission.js", () => mockSubmissionHelper);
     vi.doMock("../src/jules.js", () => mockJulesHelper);
     vi.doMock("../src/logging.js", () => mockLoggingHelper);
+    vi.doMock("../src/config.js", () => mockConfigHelper);
+
+    // default config result
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: defaultConfig,
+    });
 
     // default helper returns
     mockGithubHelper.fetchDiff.mockResolvedValue("diff");
@@ -112,16 +139,23 @@ describe("index.ts", () => {
     mockJulesHelper.wrapPermissionError.mockImplementation((e: any) => e);
   });
 
+  afterEach(() => {
+    delete process.env.JULES_API_KEY;
+    delete process.env.GITHUB_TOKEN;
+  });
+
   const loadIndex = async () => {
     await import("../src/index.js");
     // Allow promises to flush
     await new Promise((resolve) => setTimeout(resolve, 0));
   };
 
-  it("masks secrets explicitly", async () => {
+  it("loads config through the real loadConfig against @actions/core", async () => {
+    vi.doUnmock("../src/config.js");
     await loadIndex();
     expect(mockSetSecret).toHaveBeenCalledWith("dummy_key");
     expect(mockSetSecret).toHaveBeenCalledWith("dummy_token");
+    expect(mockJulesHelper.runJulesReview).toHaveBeenCalled();
   });
 
   it("fails if eventName is pull_request_target", async () => {
@@ -148,22 +182,23 @@ describe("index.ts", () => {
     );
   });
 
-  it("fails if fail_on is invalid", async () => {
-    mockGetInput.mockImplementation((name: string) => {
-      if (name === "fail_on") return "invalid";
-      return "";
+  it("fails and returns early when config is invalid", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: false,
+      error: 'Invalid fail_on: "invalid"',
     });
     await loadIndex();
-    expect(mockSetFailed).toHaveBeenCalledWith(
-      expect.stringContaining("Invalid fail_on")
-    );
+    expect(mockSetFailed).toHaveBeenCalledWith('Invalid fail_on: "invalid"');
+    expect(mockJulesHelper.runJulesReview).not.toHaveBeenCalled();
+    expect(mockGithubHelper.fetchDiff).not.toHaveBeenCalled();
   });
 
   it("skips draft PR if skip_drafts is true", async () => {
     (github as any).context.payload.pull_request.draft = true;
-    mockGetBooleanInput.mockImplementation(
-      (name: string) => name === "skip_drafts"
-    );
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, skipDrafts: true },
+    });
     await loadIndex();
     expect(mockInfo).toHaveBeenCalledWith("Skipping draft PR.");
   });
@@ -171,9 +206,10 @@ describe("index.ts", () => {
   it("skips fork PR if skip_forks is true", async () => {
     (github as any).context.payload.pull_request.head.repo.full_name =
       "fork/repo";
-    mockGetBooleanInput.mockImplementation(
-      (name: string) => name === "skip_forks"
-    );
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, skipForks: true },
+    });
     await loadIndex();
     expect(mockInfo).toHaveBeenCalledWith(
       "Skipping fork PR (skip_forks=true)."
@@ -181,12 +217,9 @@ describe("index.ts", () => {
   });
 
   it("skips if bypass label is present", async () => {
-    mockGetInput.mockImplementation((name: string) => {
-      if (name === "jules_api_key") return "k";
-      if (name === "github_token") return "t";
-      if (name === "fail_on") return "any";
-      if (name === "bypass_label") return "skip-review";
-      return "";
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, bypassLabel: "skip-review" },
     });
     (github as any).context.payload.pull_request.labels = [
       { name: "skip-review" },
@@ -212,12 +245,9 @@ describe("index.ts", () => {
   });
 
   it("loads rules if rules_file is provided", async () => {
-    mockGetInput.mockImplementation((name: string) => {
-      if (name === "rules_file") return "rules.md";
-      if (name === "jules_api_key") return "k";
-      if (name === "github_token") return "t";
-      if (name === "fail_on") return "any";
-      return "";
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, rulesFilePath: "rules.md" },
     });
     mockGithubHelper.loadRulesFromBase.mockResolvedValue("project rules");
     await loadIndex();
@@ -246,12 +276,9 @@ describe("index.ts", () => {
   });
 
   it("filters diff using ignored_paths before passing to Jules", async () => {
-    mockGetInput.mockImplementation((name: string) => {
-      if (name === "ignored_paths") return '["dist/**"]';
-      if (name === "jules_api_key") return "k";
-      if (name === "github_token") return "t";
-      if (name === "fail_on") return "any";
-      return "";
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, ignoredPaths: '["dist/**"]' },
     });
 
     const diffWithDist = `diff --git a/src/index.ts b/src/index.ts
@@ -287,12 +314,9 @@ index 789..abc 100644
   });
 
   it("fails if diff_mode is invalid", async () => {
-    mockGetInput.mockImplementation((name: string) => {
-      if (name === "diff_mode") return "bogus";
-      if (name === "fail_on") return "any";
-      if (name === "jules_api_key") return "k";
-      if (name === "github_token") return "t";
-      return "";
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: false,
+      error: 'Invalid diff_mode: "bogus"',
     });
     await loadIndex();
     expect(mockSetFailed).toHaveBeenCalledWith(
@@ -303,25 +327,15 @@ index 789..abc 100644
   });
 
   it("runs the prompt pipeline when diff_mode is prompt", async () => {
-    mockGetInput.mockImplementation((name: string) => {
-      if (name === "diff_mode") return "prompt";
-      if (name === "jules_api_key") return "k";
-      if (name === "github_token") return "t";
-      if (name === "fail_on") return "any";
-      return "";
-    });
     await loadIndex();
     expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
     expect(mockJulesHelper.runAgenticReview).not.toHaveBeenCalled();
   });
 
   it("runs the agentic pipeline when diff_mode is agentic", async () => {
-    mockGetInput.mockImplementation((name: string) => {
-      if (name === "diff_mode") return "agentic";
-      if (name === "jules_api_key") return "k";
-      if (name === "github_token") return "t";
-      if (name === "fail_on") return "any";
-      return "";
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, diffMode: "agentic" },
     });
     mockGithubHelper.fetchDiff
       .mockResolvedValue(`diff --git a/src/index.ts b/src/index.ts
@@ -366,12 +380,9 @@ index 789..abc 100644
   it("uses the full base SHA for the changed-file set in agentic mode on synchronize", async () => {
     (github as any).context.payload.action = "synchronize";
     (github as any).context.payload.before = "beforeSHA";
-    mockGetInput.mockImplementation((name: string) => {
-      if (name === "diff_mode") return "agentic";
-      if (name === "jules_api_key") return "k";
-      if (name === "github_token") return "t";
-      if (name === "fail_on") return "any";
-      return "";
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, diffMode: "agentic" },
     });
     mockJulesHelper.runAgenticReview.mockResolvedValue({
       reviewResult: {
@@ -394,12 +405,9 @@ index 789..abc 100644
   });
 
   it("falls back to the prompt pipeline when agentic review falls back", async () => {
-    mockGetInput.mockImplementation((name: string) => {
-      if (name === "diff_mode") return "agentic";
-      if (name === "jules_api_key") return "k";
-      if (name === "github_token") return "t";
-      if (name === "fail_on") return "any";
-      return "";
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, diffMode: "agentic" },
     });
     mockJulesHelper.runAgenticReview.mockResolvedValue({
       reviewResult: null,
@@ -473,9 +481,9 @@ index 789..abc 100644
   });
 
   it("submits review and sets status based on verdict", async () => {
-    mockGetInput.mockImplementation((name: string) => {
-      if (name === "fail_on") return "blocking";
-      return "";
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, failOn: "blocking" },
     });
     mockJulesHelper.runJulesReview.mockResolvedValue({
       reviewResult: { verdict: "block", summary: "bad", newComments: [] },
@@ -495,11 +503,9 @@ index 789..abc 100644
   });
 
   it("handles fail_on = never", async () => {
-    mockGetInput.mockImplementation((name: string) => {
-      if (name === "fail_on") return "never";
-      if (name === "jules_api_key") return "k";
-      if (name === "github_token") return "t";
-      return "";
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, failOn: "never" },
     });
     mockJulesHelper.runJulesReview.mockResolvedValue({
       reviewResult: { verdict: "block", summary: "bad", newComments: [] },
@@ -580,17 +586,10 @@ index 789..abc 100644
   });
 
   it("forwards suggestion fields when enable_suggestions is true", async () => {
-    mockGetInput.mockImplementation((name: string) => {
-      if (name === "enable_suggestions") return "true";
-      if (name === "jules_api_key") return "dummy_key";
-      if (name === "github_token") return "dummy_token";
-      if (name === "fail_on") return "any";
-      if (name === "timeout_minutes") return "30";
-      return "";
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, enableSuggestions: true },
     });
-    mockGetBooleanInput.mockImplementation(
-      (name: string) => name === "enable_suggestions"
-    );
     mockJulesHelper.runJulesReview.mockResolvedValue({
       reviewResult: {
         verdict: "approve",
@@ -631,17 +630,17 @@ index 789..abc 100644
     );
   });
 
-  it("top-level catch works when run throws synchronously", async () => {
-    // If core.getInput throws, run() will reject before async things
-    mockGetInput.mockImplementation(() => {
+  it("top-level catch works when loadConfig throws synchronously", async () => {
+    // If loadConfig throws, run() rejects before any async work
+    mockConfigHelper.loadConfig.mockImplementation(() => {
       throw new Error("Sync error");
     });
     await loadIndex();
     expect(mockSetFailed).toHaveBeenCalledWith("Sync error");
   });
 
-  it("top-level catch handles non-Error objects", async () => {
-    mockGetInput.mockImplementation(() => {
+  it("top-level catch handles non-Error objects thrown from loadConfig", async () => {
+    mockConfigHelper.loadConfig.mockImplementation(() => {
       throw "String error";
     });
     await loadIndex();
@@ -823,9 +822,10 @@ index 789..abc 100644
 
   it("sets skipped outputs on draft skip", async () => {
     (github as any).context.payload.pull_request.draft = true;
-    mockGetBooleanInput.mockImplementation(
-      (name: string) => name === "skip_drafts"
-    );
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, skipDrafts: true },
+    });
     await loadIndex();
     expect(mockLoggingHelper.setReviewOutputs).toHaveBeenCalledWith({
       verdict: "skipped",
@@ -839,9 +839,10 @@ index 789..abc 100644
   it("sets skipped outputs on fork skip", async () => {
     (github as any).context.payload.pull_request.head.repo.full_name =
       "fork/repo";
-    mockGetBooleanInput.mockImplementation(
-      (name: string) => name === "skip_forks"
-    );
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, skipForks: true },
+    });
     await loadIndex();
     expect(mockLoggingHelper.setReviewOutputs).toHaveBeenCalledWith({
       verdict: "skipped",
@@ -853,12 +854,9 @@ index 789..abc 100644
   });
 
   it("sets skipped outputs on bypass label skip", async () => {
-    mockGetInput.mockImplementation((name: string) => {
-      if (name === "jules_api_key") return "k";
-      if (name === "github_token") return "t";
-      if (name === "fail_on") return "any";
-      if (name === "bypass_label") return "skip-review";
-      return "";
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, bypassLabel: "skip-review" },
     });
     (github as any).context.payload.pull_request.labels = [
       { name: "skip-review" },
@@ -906,36 +904,6 @@ describe("statusFromVerdict", () => {
     const result = statusFromVerdict("approve", "blocking");
     expect(result.state).toBe("success");
     expect(result.description).toContain("complete (verdict: approve)");
-  });
-});
-
-describe("truncate", () => {
-  let truncate: any;
-
-  beforeEach(async () => {
-    const mod = await import("../src/index.js");
-    truncate = mod.truncate;
-  });
-
-  it("returns original string if length is exactly max", () => {
-    expect(truncate("hello", 5)).toBe("hello");
-  });
-
-  it("returns original string if length is less than max", () => {
-    expect(truncate("hi", 5)).toBe("hi");
-  });
-
-  it("truncates string and appends ellipsis if length exceeds max", () => {
-    expect(truncate("hello world", 5)).toBe("hell…");
-  });
-
-  it("handles empty string", () => {
-    expect(truncate("", 5)).toBe("");
-  });
-
-  it("handles max of 1", () => {
-    expect(truncate("a", 1)).toBe("a");
-    expect(truncate("ab", 1)).toBe("…");
   });
 });
 

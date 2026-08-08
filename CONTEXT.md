@@ -2,6 +2,8 @@
 
 ## Domain modules
 
+**Config module** (`src/config.ts`) — loads and validates action inputs. Exports `loadConfig` which reads from an injected input-reader and returns a `ConfigResult` (`ok`/`error`), never throwing. Hides input reads, defaults (mirrored from `action.yml`), validation, empty-string normalization (`rules_file`, `extra_instructions`, `ignored_paths`), and the secret envelope (`setSecret` masking plus the `process.env` wiring that `logging.ts`'s scrubber redacts against).
+
 **Resilience module** (`src/resilience.ts`) — handles transient and permanent failures in external API calls. Exports `withRetry` (exponential backoff for transient errors) and `withFallback` (switch to alternative operation on permanent failure).
 
 **Validation module** (`src/validation.ts`) — parses and validates LLM responses. Exports `parseReviewResponse` which extracts JSON from markdown and validates the review structure in one call.

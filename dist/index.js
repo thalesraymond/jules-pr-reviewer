@@ -55,7 +55,7 @@ exports.isHttps = isHttps;
 const http = __importStar(__nccwpck_require__(8611));
 const https = __importStar(__nccwpck_require__(5692));
 const pm = __importStar(__nccwpck_require__(5836));
-const tunnel = __importStar(__nccwpck_require__(4726));
+const tunnel = __importStar(__nccwpck_require__(2345));
 const undici_1 = __nccwpck_require__(115);
 var HttpCodes;
 (function (HttpCodes) {
@@ -844,7 +844,7 @@ class DecodedURL extends URL {
 
 /***/ }),
 
-/***/ 4726:
+/***/ 2345:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 module.exports = __nccwpck_require__(6979);
@@ -29032,6 +29032,36 @@ function qstring(str) {
 /******/ }
 /******/ 
 /************************************************************************/
+/******/ /* webpack/runtime/create fake namespace object */
+/******/ (() => {
+/******/ 	var getProto = Object.getPrototypeOf ? (obj) => (Object.getPrototypeOf(obj)) : (obj) => (obj.__proto__);
+/******/ 	var leafPrototypes;
+/******/ 	// create a fake namespace object
+/******/ 	// mode & 1: value is a module id, require it
+/******/ 	// mode & 2: merge all properties of value into the ns
+/******/ 	// mode & 4: return value when already ns object
+/******/ 	// mode & 16: return value when it's Promise-like
+/******/ 	// mode & 8|1: behave like require
+/******/ 	__nccwpck_require__.t = function(value, mode) {
+/******/ 		if(mode & 1) value = this(value);
+/******/ 		if(mode & 8) return value;
+/******/ 		if(typeof value === 'object' && value) {
+/******/ 			if((mode & 4) && value.__esModule) return value;
+/******/ 			if((mode & 16) && typeof value.then === 'function') return value;
+/******/ 		}
+/******/ 		var ns = Object.create(null);
+/******/ 		__nccwpck_require__.r(ns);
+/******/ 		var def = {};
+/******/ 		leafPrototypes = leafPrototypes || [null, getProto({}), getProto([]), getProto(getProto)];
+/******/ 		for(var current = mode & 2 && value; typeof current == 'object' && !~leafPrototypes.indexOf(current); current = getProto(current)) {
+/******/ 			Object.getOwnPropertyNames(current).forEach((key) => (def[key] = () => (value[key])));
+/******/ 		}
+/******/ 		def['default'] = () => (value);
+/******/ 		__nccwpck_require__.d(ns, def);
+/******/ 		return ns;
+/******/ 	};
+/******/ })();
+/******/ 
 /******/ /* webpack/runtime/define property getters */
 /******/ (() => {
 /******/ 	// define getter functions for harmony exports
@@ -29049,6 +29079,17 @@ function qstring(str) {
 /******/ 	__nccwpck_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
 /******/ })();
 /******/ 
+/******/ /* webpack/runtime/make namespace object */
+/******/ (() => {
+/******/ 	// define __esModule on exports
+/******/ 	__nccwpck_require__.r = (exports) => {
+/******/ 		if(typeof Symbol !== 'undefined' && Symbol.toStringTag) {
+/******/ 			Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
+/******/ 		}
+/******/ 		Object.defineProperty(exports, '__esModule', { value: true });
+/******/ 	};
+/******/ })();
+/******/ 
 /******/ /* webpack/runtime/compat */
 /******/ 
 /******/ if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = new URL('.', import.meta.url).pathname.slice(import.meta.url.match(/^file:\/\/\/\w:/) ? 1 : 0, -1) + "/";
@@ -29062,6 +29103,52 @@ __nccwpck_require__.d(__webpack_exports__, {
   x: () => (/* binding */ truncate)
 });
 
+// NAMESPACE OBJECT: ./node_modules/.pnpm/@actions+core@3.0.1/node_modules/@actions/core/lib/platform.js
+var platform_namespaceObject = {};
+__nccwpck_require__.r(platform_namespaceObject);
+__nccwpck_require__.d(platform_namespaceObject, {
+  arch: () => (arch),
+  getDetails: () => (getDetails),
+  isLinux: () => (isLinux),
+  isMacOS: () => (isMacOS),
+  isWindows: () => (isWindows),
+  platform: () => (platform)
+});
+
+// NAMESPACE OBJECT: ./node_modules/.pnpm/@actions+core@3.0.1/node_modules/@actions/core/lib/core.js
+var core_namespaceObject = {};
+__nccwpck_require__.r(core_namespaceObject);
+__nccwpck_require__.d(core_namespaceObject, {
+  ExitCode: () => (ExitCode),
+  addPath: () => (addPath),
+  debug: () => (debug),
+  endGroup: () => (endGroup),
+  error: () => (error),
+  exportVariable: () => (exportVariable),
+  getBooleanInput: () => (getBooleanInput),
+  getIDToken: () => (getIDToken),
+  getInput: () => (getInput),
+  getMultilineInput: () => (getMultilineInput),
+  getState: () => (getState),
+  group: () => (group),
+  info: () => (info),
+  isDebug: () => (isDebug),
+  markdownSummary: () => (markdownSummary),
+  notice: () => (notice),
+  platform: () => (platform_namespaceObject),
+  saveState: () => (saveState),
+  setCommandEcho: () => (setCommandEcho),
+  setFailed: () => (setFailed),
+  setOutput: () => (setOutput),
+  setSecret: () => (setSecret),
+  startGroup: () => (startGroup),
+  summary: () => (summary),
+  toPlatformPath: () => (toPlatformPath),
+  toPosixPath: () => (toPosixPath),
+  toWin32Path: () => (toWin32Path),
+  warning: () => (warning)
+});
+
 ;// CONCATENATED MODULE: external "os"
 const external_os_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("os");
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/@actions+core@3.0.1/node_modules/@actions/core/lib/utils.js
@@ -29071,7 +29158,7 @@ const external_os_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta
  * Sanitizes an input into a string so it can be passed into issueCommand safely
  * @param input input to sanitize into a string
  */
-function utils_toCommandValue(input) {
+function toCommandValue(input) {
     if (input === null || input === undefined) {
         return '';
     }
@@ -29086,7 +29173,7 @@ function utils_toCommandValue(input) {
  * @returns The command properties to send with the actual annotation command
  * See IssueCommandProperties: https://github.com/actions/runner/blob/main/src/Runner.Worker/ActionCommandManager.cs#L646
  */
-function utils_toCommandProperties(annotationProperties) {
+function toCommandProperties(annotationProperties) {
     if (!Object.keys(annotationProperties).length) {
         return {};
     }
@@ -29136,12 +29223,12 @@ function utils_toCommandProperties(annotationProperties) {
  * This is an internal utility function that powers the public API functions
  * such as setSecret, warning, error, and exportVariable.
  */
-function command_issueCommand(command, properties, message) {
+function issueCommand(command, properties, message) {
     const cmd = new Command(command, properties, message);
     process.stdout.write(cmd.toString() + external_os_namespaceObject.EOL);
 }
-function command_issue(name, message = '') {
-    command_issueCommand(name, {}, message);
+function issue(name, message = '') {
+    issueCommand(name, {}, message);
 }
 const CMD_STRING = '::';
 class Command {
@@ -29178,13 +29265,13 @@ class Command {
     }
 }
 function escapeData(s) {
-    return utils_toCommandValue(s)
+    return toCommandValue(s)
         .replace(/%/g, '%25')
         .replace(/\r/g, '%0D')
         .replace(/\n/g, '%0A');
 }
 function escapeProperty(s) {
-    return utils_toCommandValue(s)
+    return toCommandValue(s)
         .replace(/%/g, '%25')
         .replace(/\r/g, '%0D')
         .replace(/\n/g, '%0A')
@@ -29204,7 +29291,7 @@ const external_fs_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta
 
 
 
-function file_command_issueFileCommand(command, message) {
+function issueFileCommand(command, message) {
     const filePath = process.env[`GITHUB_${command}`];
     if (!filePath) {
         throw new Error(`Unable to find environment variable for file command ${command}`);
@@ -29212,13 +29299,13 @@ function file_command_issueFileCommand(command, message) {
     if (!external_fs_namespaceObject.existsSync(filePath)) {
         throw new Error(`Missing file at path: ${filePath}`);
     }
-    external_fs_namespaceObject.appendFileSync(filePath, `${utils_toCommandValue(message)}${external_os_namespaceObject.EOL}`, {
+    external_fs_namespaceObject.appendFileSync(filePath, `${toCommandValue(message)}${external_os_namespaceObject.EOL}`, {
         encoding: 'utf8'
     });
 }
-function file_command_prepareKeyValueMessage(key, value) {
+function prepareKeyValueMessage(key, value) {
     const delimiter = `ghadelimiter_${external_crypto_namespaceObject.randomUUID()}`;
-    const convertedValue = utils_toCommandValue(value);
+    const convertedValue = toCommandValue(value);
     // These should realistically never happen, but just in case someone finds a
     // way to exploit uuid generation let's not allow keys or values that contain
     // the delimiter.
@@ -29235,8 +29322,10 @@ function file_command_prepareKeyValueMessage(key, value) {
 const external_path_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("path");
 // EXTERNAL MODULE: external "http"
 var external_http_ = __nccwpck_require__(8611);
+var external_http_namespaceObject = /*#__PURE__*/__nccwpck_require__.t(external_http_, 2);
 // EXTERNAL MODULE: external "https"
 var external_https_ = __nccwpck_require__(5692);
+var external_https_namespaceObject = /*#__PURE__*/__nccwpck_require__.t(external_https_, 2);
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/@actions+http-client@4.0.1/node_modules/@actions/http-client/lib/proxy.js
 function getProxyUrl(reqUrl) {
     const usingSsl = reqUrl.protocol === 'https:';
@@ -29329,7 +29418,7 @@ class DecodedURL extends URL {
 }
 //# sourceMappingURL=proxy.js.map
 // EXTERNAL MODULE: ./node_modules/.pnpm/tunnel@0.0.6/node_modules/tunnel/index.js
-var node_modules_tunnel = __nccwpck_require__(4726);
+var tunnel = __nccwpck_require__(2345);
 // EXTERNAL MODULE: ./node_modules/.pnpm/undici@6.26.0/node_modules/undici/index.js
 var undici = __nccwpck_require__(115);
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/@actions+http-client@4.0.1/node_modules/@actions/http-client/lib/index.js
@@ -29407,7 +29496,7 @@ const HttpResponseRetryCodes = [
     HttpCodes.ServiceUnavailable,
     HttpCodes.GatewayTimeout
 ];
-const RetryableHttpVerbs = (/* unused pure expression or super */ null && (['OPTIONS', 'GET', 'DELETE', 'HEAD']));
+const RetryableHttpVerbs = ['OPTIONS', 'GET', 'DELETE', 'HEAD'];
 const ExponentialBackoffCeiling = 10;
 const ExponentialBackoffTimeSlice = 5;
 class HttpClientError extends Error {
@@ -29453,7 +29542,7 @@ function isHttps(requestUrl) {
     const parsedUrl = new URL(requestUrl);
     return parsedUrl.protocol === 'https:';
 }
-class lib_HttpClient {
+class HttpClient {
     constructor(userAgent, handlers, requestOptions) {
         this._ignoreSslError = false;
         this._allowRedirects = true;
@@ -29756,7 +29845,7 @@ class lib_HttpClient {
     }
     getAgentDispatcher(serverUrl) {
         const parsedUrl = new URL(serverUrl);
-        const proxyUrl = pm.getProxyUrl(parsedUrl);
+        const proxyUrl = getProxyUrl(parsedUrl);
         const useProxy = proxyUrl && proxyUrl.hostname;
         if (!useProxy) {
             return;
@@ -29767,7 +29856,7 @@ class lib_HttpClient {
         const info = {};
         info.parsedUrl = requestUrl;
         const usingSsl = info.parsedUrl.protocol === 'https:';
-        info.httpModule = usingSsl ? https : http;
+        info.httpModule = usingSsl ? external_https_namespaceObject : external_http_namespaceObject;
         const defaultPort = usingSsl ? 443 : 80;
         info.options = {};
         info.options.host = info.parsedUrl.hostname;
@@ -29866,7 +29955,7 @@ class lib_HttpClient {
     }
     _getAgent(parsedUrl) {
         let agent;
-        const proxyUrl = pm.getProxyUrl(parsedUrl);
+        const proxyUrl = getProxyUrl(parsedUrl);
         const useProxy = proxyUrl && proxyUrl.hostname;
         if (this._keepAlive && useProxy) {
             agent = this._proxyAgent;
@@ -29881,7 +29970,7 @@ class lib_HttpClient {
         const usingSsl = parsedUrl.protocol === 'https:';
         let maxSockets = 100;
         if (this.requestOptions) {
-            maxSockets = this.requestOptions.maxSockets || http.globalAgent.maxSockets;
+            maxSockets = this.requestOptions.maxSockets || external_http_.globalAgent.maxSockets;
         }
         // This is `useProxy` again, but we need to check `proxyURl` directly for TypeScripts's flow analysis.
         if (proxyUrl && proxyUrl.hostname) {
@@ -29906,7 +29995,7 @@ class lib_HttpClient {
         // if tunneling agent isn't assigned create a new agent
         if (!agent) {
             const options = { keepAlive: this._keepAlive, maxSockets };
-            agent = usingSsl ? new https.Agent(options) : new http.Agent(options);
+            agent = usingSsl ? new external_https_.Agent(options) : new external_http_.Agent(options);
             this._agent = agent;
         }
         if (usingSsl && this._ignoreSslError) {
@@ -29929,7 +30018,7 @@ class lib_HttpClient {
             return proxyAgent;
         }
         const usingSsl = parsedUrl.protocol === 'https:';
-        proxyAgent = new ProxyAgent(Object.assign({ uri: proxyUrl.href, pipelining: !this._keepAlive ? 0 : 1 }, ((proxyUrl.username || proxyUrl.password) && {
+        proxyAgent = new undici.ProxyAgent(Object.assign({ uri: proxyUrl.href, pipelining: !this._keepAlive ? 0 : 1 }, ((proxyUrl.username || proxyUrl.password) && {
             token: `Basic ${Buffer.from(`${proxyUrl.username}:${proxyUrl.password}`).toString('base64')}`
         })));
         this._proxyAgentDispatcher = proxyAgent;
@@ -30060,7 +30149,7 @@ class BasicCredentialHandler {
         });
     }
 }
-class auth_BearerCredentialHandler {
+class BearerCredentialHandler {
     constructor(token) {
         this.token = token;
     }
@@ -30118,13 +30207,13 @@ var oidc_utils_awaiter = (undefined && undefined.__awaiter) || function (thisArg
 
 
 
-class oidc_utils_OidcClient {
+class OidcClient {
     static createHttpClient(allowRetry = true, maxRetry = 10) {
         const requestOptions = {
             allowRetries: allowRetry,
             maxRetries: maxRetry
         };
-        return new HttpClient('actions/oidc-client', [new BearerCredentialHandler(oidc_utils_OidcClient.getRequestToken())], requestOptions);
+        return new HttpClient('actions/oidc-client', [new BearerCredentialHandler(OidcClient.getRequestToken())], requestOptions);
     }
     static getRequestToken() {
         const token = process.env['ACTIONS_ID_TOKEN_REQUEST_TOKEN'];
@@ -30143,7 +30232,7 @@ class oidc_utils_OidcClient {
     static getCall(id_token_url) {
         return oidc_utils_awaiter(this, void 0, void 0, function* () {
             var _a;
-            const httpclient = oidc_utils_OidcClient.createHttpClient();
+            const httpclient = OidcClient.createHttpClient();
             const res = yield httpclient
                 .getJson(id_token_url)
                 .catch(error => {
@@ -30162,13 +30251,13 @@ class oidc_utils_OidcClient {
         return oidc_utils_awaiter(this, void 0, void 0, function* () {
             try {
                 // New ID Token is requested from action service
-                let id_token_url = oidc_utils_OidcClient.getIDTokenUrl();
+                let id_token_url = OidcClient.getIDTokenUrl();
                 if (audience) {
                     const encodedAudience = encodeURIComponent(audience);
                     id_token_url = `${id_token_url}&audience=${encodedAudience}`;
                 }
                 debug(`ID token url is ${id_token_url}`);
-                const id_token = yield oidc_utils_OidcClient.getCall(id_token_url);
+                const id_token = yield OidcClient.getCall(id_token_url);
                 setSecret(id_token);
                 return id_token;
             }
@@ -30457,8 +30546,8 @@ const _summary = new Summary();
 /**
  * @deprecated use `core.summary`
  */
-const markdownSummary = (/* unused pure expression or super */ null && (_summary));
-const summary = (/* unused pure expression or super */ null && (_summary));
+const markdownSummary = _summary;
+const summary = _summary;
 //# sourceMappingURL=summary.js.map
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/@actions+core@3.0.1/node_modules/@actions/core/lib/path-utils.js
 
@@ -30491,7 +30580,7 @@ function toWin32Path(pth) {
  * @return string The platform-specific path.
  */
 function toPlatformPath(pth) {
-    return pth.replace(/[/\\]/g, path.sep);
+    return pth.replace(/[/\\]/g, external_path_namespaceObject.sep);
 }
 //# sourceMappingURL=path-utils.js.map
 // EXTERNAL MODULE: external "string_decoder"
@@ -31566,16 +31655,16 @@ var exec_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arg
  * @param     options            optional exec options.  See ExecOptions
  * @returns   Promise<number>    exit code
  */
-function exec_exec(commandLine, args, options) {
+function exec(commandLine, args, options) {
     return exec_awaiter(this, void 0, void 0, function* () {
-        const commandArgs = tr.argStringToArray(commandLine);
+        const commandArgs = argStringToArray(commandLine);
         if (commandArgs.length === 0) {
             throw new Error(`Parameter 'commandLine' cannot be null or empty.`);
         }
         // Path to tool to execute should be first arg
         const toolPath = commandArgs[0];
         args = commandArgs.slice(1).concat(args || []);
-        const runner = new tr.ToolRunner(toolPath, args, options);
+        const runner = new ToolRunner(toolPath, args, options);
         return runner.exec();
     });
 }
@@ -31595,8 +31684,8 @@ function getExecOutput(commandLine, args, options) {
         let stdout = '';
         let stderr = '';
         //Using string decoder covers the case where a mult-byte character is split
-        const stdoutDecoder = new StringDecoder('utf8');
-        const stderrDecoder = new StringDecoder('utf8');
+        const stdoutDecoder = new external_string_decoder_.StringDecoder('utf8');
+        const stderrDecoder = new external_string_decoder_.StringDecoder('utf8');
         const originalStdoutListener = (_a = options === null || options === void 0 ? void 0 : options.listeners) === null || _a === void 0 ? void 0 : _a.stdout;
         const originalStdErrListener = (_b = options === null || options === void 0 ? void 0 : options.listeners) === null || _b === void 0 ? void 0 : _b.stderr;
         const stdErrListener = (data) => {
@@ -31612,7 +31701,7 @@ function getExecOutput(commandLine, args, options) {
             }
         };
         const listeners = Object.assign(Object.assign({}, options === null || options === void 0 ? void 0 : options.listeners), { stdout: stdOutListener, stderr: stdErrListener });
-        const exitCode = yield exec_exec(commandLine, args, Object.assign(Object.assign({}, options), { listeners }));
+        const exitCode = yield exec(commandLine, args, Object.assign(Object.assign({}, options), { listeners }));
         //flush any remaining characters
         stdout += stdoutDecoder.end();
         stderr += stderrDecoder.end();
@@ -31637,10 +31726,10 @@ var platform_awaiter = (undefined && undefined.__awaiter) || function (thisArg, 
 
 
 const getWindowsInfo = () => platform_awaiter(void 0, void 0, void 0, function* () {
-    const { stdout: version } = yield exec.getExecOutput('powershell -command "(Get-CimInstance -ClassName Win32_OperatingSystem).Version"', undefined, {
+    const { stdout: version } = yield getExecOutput('powershell -command "(Get-CimInstance -ClassName Win32_OperatingSystem).Version"', undefined, {
         silent: true
     });
-    const { stdout: name } = yield exec.getExecOutput('powershell -command "(Get-CimInstance -ClassName Win32_OperatingSystem).Caption"', undefined, {
+    const { stdout: name } = yield getExecOutput('powershell -command "(Get-CimInstance -ClassName Win32_OperatingSystem).Caption"', undefined, {
         silent: true
     });
     return {
@@ -31650,7 +31739,7 @@ const getWindowsInfo = () => platform_awaiter(void 0, void 0, void 0, function* 
 });
 const getMacOsInfo = () => platform_awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d;
-    const { stdout } = yield exec.getExecOutput('sw_vers', undefined, {
+    const { stdout } = yield getExecOutput('sw_vers', undefined, {
         silent: true
     });
     const version = (_b = (_a = stdout.match(/ProductVersion:\s*(.+)/)) === null || _a === void 0 ? void 0 : _a[1]) !== null && _b !== void 0 ? _b : '';
@@ -31661,7 +31750,7 @@ const getMacOsInfo = () => platform_awaiter(void 0, void 0, void 0, function* ()
     };
 });
 const getLinuxInfo = () => platform_awaiter(void 0, void 0, void 0, function* () {
-    const { stdout } = yield exec.getExecOutput('lsb_release', ['-i', '-r', '-s'], {
+    const { stdout } = yield getExecOutput('lsb_release', ['-i', '-r', '-s'], {
         silent: true
     });
     const [name, version] = stdout.trim().split('\n');
@@ -31766,8 +31855,8 @@ function exportVariable(name, val) {
  * console.log(`Using token: ${apiToken}`); // Outputs: "Using token: ***"
  * ```
  */
-function core_setSecret(secret) {
-    command_issueCommand('add-mask', {}, secret);
+function setSecret(secret) {
+    issueCommand('add-mask', {}, secret);
 }
 /**
  * Prepends inputPath to the PATH (for this action and future actions)
@@ -31781,7 +31870,7 @@ function addPath(inputPath) {
     else {
         issueCommand('add-path', {}, inputPath);
     }
-    process.env['PATH'] = `${inputPath}${path.delimiter}${process.env['PATH']}`;
+    process.env['PATH'] = `${inputPath}${external_path_namespaceObject.delimiter}${process.env['PATH']}`;
 }
 /**
  * Gets the value of an input.
@@ -31850,10 +31939,10 @@ function getBooleanInput(name, options) {
 function setOutput(name, value) {
     const filePath = process.env['GITHUB_OUTPUT'] || '';
     if (filePath) {
-        return file_command_issueFileCommand('OUTPUT', file_command_prepareKeyValueMessage(name, value));
+        return issueFileCommand('OUTPUT', prepareKeyValueMessage(name, value));
     }
     process.stdout.write(external_os_namespaceObject.EOL);
-    command_issueCommand('set-output', { name }, utils_toCommandValue(value));
+    issueCommand('set-output', { name }, toCommandValue(value));
 }
 /**
  * Enables or disables the echoing of commands into stdout for the rest of the step.
@@ -31888,7 +31977,7 @@ function isDebug() {
  * Writes debug message to user log
  * @param message debug message
  */
-function core_debug(message) {
+function debug(message) {
     issueCommand('debug', {}, message);
 }
 /**
@@ -31897,7 +31986,7 @@ function core_debug(message) {
  * @param properties optional properties to add to the annotation.
  */
 function error(message, properties = {}) {
-    command_issueCommand('error', utils_toCommandProperties(properties), message instanceof Error ? message.toString() : message);
+    issueCommand('error', toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
 /**
  * Adds a warning issue
@@ -31905,7 +31994,7 @@ function error(message, properties = {}) {
  * @param properties optional properties to add to the annotation.
  */
 function warning(message, properties = {}) {
-    command_issueCommand('warning', utils_toCommandProperties(properties), message instanceof Error ? message.toString() : message);
+    issueCommand('warning', toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
 /**
  * Adds a notice issue
@@ -44169,6 +44258,81 @@ function shouldIgnorePath(filePath, ignoredPatterns) {
     return false;
 }
 
+;// CONCATENATED MODULE: ./src/config.ts
+
+const VALID_FAIL_ON = ["never", "blocking", "any"];
+const VALID_DIFF_MODES = ["prompt", "agentic"];
+const DEFAULT_DIFF_MODE = "prompt";
+const DEFAULT_TIMEOUT_MINUTES = 30;
+function isFailOn(value) {
+    return VALID_FAIL_ON.some((v) => v === value);
+}
+function isDiffMode(value) {
+    return VALID_DIFF_MODES.some((v) => v === value);
+}
+function normalizeOptional(value) {
+    return value === "" ? undefined : value;
+}
+function loadConfig(io) {
+    let apiKey;
+    let token;
+    try {
+        apiKey = io.getInput("jules_api_key", { required: true });
+        token = io.getInput("github_token", { required: true });
+    }
+    catch (err) {
+        return { ok: false, error: getErrorMessage(err) };
+    }
+    io.setSecret(apiKey);
+    io.setSecret(token);
+    process.env.JULES_API_KEY = apiKey;
+    process.env.GITHUB_TOKEN = token;
+    const failOnRaw = io.getInput("fail_on");
+    if (!isFailOn(failOnRaw)) {
+        return {
+            ok: false,
+            error: `Invalid fail_on: "${failOnRaw}". Must be one of: ${VALID_FAIL_ON.join(", ")}.`,
+        };
+    }
+    const diffModeRaw = io.getInput("diff_mode") || DEFAULT_DIFF_MODE;
+    if (!isDiffMode(diffModeRaw)) {
+        return {
+            ok: false,
+            error: `Invalid diff_mode: "${diffModeRaw}". Must be one of: prompt, agentic.`,
+        };
+    }
+    let skipDrafts;
+    let skipForks;
+    let enableSuggestions;
+    try {
+        skipDrafts = io.getBooleanInput("skip_drafts");
+        skipForks = io.getBooleanInput("skip_forks");
+        enableSuggestions = io.getBooleanInput("enable_suggestions");
+    }
+    catch (err) {
+        return { ok: false, error: getErrorMessage(err) };
+    }
+    return {
+        ok: true,
+        config: {
+            apiKey,
+            token,
+            failOn: failOnRaw,
+            diffMode: diffModeRaw,
+            skipDrafts,
+            skipForks,
+            bypassLabel: io.getInput("bypass_label"),
+            statusContext: io.getInput("status_context"),
+            extraInstructions: normalizeOptional(io.getInput("extra_instructions")),
+            rulesFilePath: normalizeOptional(io.getInput("rules_file")),
+            ignoredPaths: normalizeOptional(io.getInput("ignored_paths")),
+            timeoutMinutes: Math.max(1, parseInt(io.getInput("timeout_minutes") || "30", 10) ||
+                DEFAULT_TIMEOUT_MINUTES),
+            enableSuggestions,
+        },
+    };
+}
+
 ;// CONCATENATED MODULE: ./src/index.ts
 
 
@@ -44179,39 +44343,16 @@ function shouldIgnorePath(filePath, ignoredPatterns) {
 
 
 
+
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
-const VALID_FAIL_ON = ["never", "blocking", "any"];
 async function run() {
     const reviewStartTime = Date.now();
-    const apiKey = getInput("jules_api_key", { required: true });
-    core_setSecret(apiKey);
-    process.env.JULES_API_KEY = apiKey;
-    const token = getInput("github_token", { required: true });
-    core_setSecret(token);
-    process.env.GITHUB_TOKEN = token;
-    const failOnRaw = getInput("fail_on");
-    if (!VALID_FAIL_ON.includes(failOnRaw)) {
-        setFailed(`Invalid fail_on: "${failOnRaw}". Must be one of: ${VALID_FAIL_ON.join(", ")}.`);
+    const configResult = loadConfig(core_namespaceObject);
+    if (!configResult.ok) {
+        setFailed(configResult.error);
         return;
     }
-    const failOn = failOnRaw;
-    const diffModeRaw = getInput("diff_mode") || "prompt";
-    if (diffModeRaw !== "prompt" && diffModeRaw !== "agentic") {
-        setFailed(`Invalid diff_mode: "${diffModeRaw}". Must be one of: prompt, agentic.`);
-        return;
-    }
-    const diffMode = diffModeRaw;
-    const skipDrafts = getBooleanInput("skip_drafts");
-    const skipForks = getBooleanInput("skip_forks");
-    const bypassLabel = getInput("bypass_label");
-    const statusContext = getInput("status_context");
-    const extraInstructions = getInput("extra_instructions");
-    const rulesFilePath = getInput("rules_file");
-    const ignoredPathsRaw = getInput("ignored_paths");
-    const ignoredPaths = parseIgnoredPaths(ignoredPathsRaw);
-    const timeoutMinutesRaw = getInput("timeout_minutes") || "30";
-    const timeoutMinutes = Math.max(1, parseInt(timeoutMinutesRaw, 10) || 30);
-    const enableSuggestions = getBooleanInput("enable_suggestions");
+    const config = configResult.config;
     const ctx = github_context;
     if (ctx.eventName === "pull_request_target") {
         setFailed("pull_request_target is not supported — it runs with base-repo write tokens and exposes the action to prompt-injection via attacker-controlled diffs. Use on: pull_request instead.");
@@ -44241,8 +44382,8 @@ async function run() {
         headSha,
     });
     // ⚡ Bolt: Optimize bypass label check to stop iterating early and prevent wasteful `.map` array allocation
-    const hasBypassLabel = (pr.labels || []).some((l) => l.name === bypassLabel);
-    if (isDraft && skipDrafts) {
+    const hasBypassLabel = (pr.labels || []).some((l) => l.name === config.bypassLabel);
+    if (isDraft && config.skipDrafts) {
         info("Skipping draft PR.");
         setReviewOutputs({
             verdict: "skipped",
@@ -44253,7 +44394,7 @@ async function run() {
         });
         return;
     }
-    if (isFork && skipForks) {
+    if (isFork && config.skipForks) {
         info("Skipping fork PR (skip_forks=true).");
         setReviewOutputs({
             verdict: "skipped",
@@ -44265,7 +44406,7 @@ async function run() {
         return;
     }
     if (hasBypassLabel) {
-        info(`Bypass label "${bypassLabel}" present — skipping review.`);
+        info(`Bypass label "${config.bypassLabel}" present — skipping review.`);
         setReviewOutputs({
             verdict: "skipped",
             issues_count: 0,
@@ -44276,10 +44417,10 @@ async function run() {
         return;
     }
     // ⚡ Bolt: Delay instantiating the Octokit client until after early returns (draft/fork/bypass) to save memory
-    const octokit = getOctokit(token);
+    const octokit = getOctokit(config.token);
     try {
         try {
-            await setStatus(octokit, owner, repo, headSha, statusContext, "pending", "Jules is reviewing this PR…");
+            await setStatus(octokit, owner, repo, headSha, config.statusContext, "pending", "Jules is reviewing this PR…");
         }
         catch (err) {
             throw wrapPermissionError(err, "statuses:write", "createCommitStatus");
@@ -44295,20 +44436,20 @@ async function run() {
         }
         // In agentic mode Jules inspects the full base...head diff, so use baseSha
         // for the changed-file set regardless of synchronize events.
-        const diffBaseForMode = diffMode === "agentic" ? baseSha : baseShaForDiff;
+        const diffBaseForMode = config.diffMode === "agentic" ? baseSha : baseShaForDiff;
         // ⚡ Bolt: Execute independent GitHub API calls concurrently to reduce overall latency
         const [diff, rulesFromFile, openThreads] = await Promise.all([
             fetchDiff(octokit, owner, repo, pr, diffBaseForMode, headSha),
-            rulesFilePath
-                ? loadRulesFromBase(octokit, owner, repo, rulesFilePath, baseSha)
+            config.rulesFilePath
+                ? loadRulesFromBase(octokit, owner, repo, config.rulesFilePath, baseSha)
                 : Promise.resolve(undefined),
             fetchOpenThreads(octokit, owner, repo, prNumber),
         ]);
-        const filteredDiff = filterDiff(diff, ignoredPaths);
+        const filteredDiff = filterDiff(diff, parseIgnoredPaths(config.ignoredPaths));
         const changedFiles = extractChangedFilePaths(filteredDiff);
         let reviewResult = null;
         let sessionId = "";
-        if (diffMode === "agentic") {
+        if (config.diffMode === "agentic") {
             const agenticPrompt = buildReviewPrompt({
                 mode: "agentic",
                 repoFullName: `${owner}/${repo}`,
@@ -44317,13 +44458,13 @@ async function run() {
                 prBody: pr.body || "",
                 baseSha,
                 headSha,
-                ignoredPaths: ignoredPathsRaw || undefined,
-                extraInstructions: extraInstructions || undefined,
+                ignoredPaths: config.ignoredPaths,
+                extraInstructions: config.extraInstructions,
                 rulesFromFile,
                 openThreads,
                 fileCount: changedFiles.length,
             });
-            const agentic = await runAgenticReview(apiKey, agenticPrompt, { github: `${owner}/${repo}`, baseBranch: pr.head.ref }, timeoutMinutes, changedFiles);
+            const agentic = await runAgenticReview(config.apiKey, agenticPrompt, { github: `${owner}/${repo}`, baseBranch: pr.head.ref }, config.timeoutMinutes, changedFiles);
             sessionId = agentic.sessionId;
             if (!agentic.fallback) {
                 reviewResult = agentic.reviewResult;
@@ -44342,12 +44483,12 @@ async function run() {
                 prBody: pr.body || "",
                 diff: diffText,
                 diffTruncatedNote: truncatedNote,
-                extraInstructions: extraInstructions || undefined,
+                extraInstructions: config.extraInstructions,
                 rulesFromFile,
                 openThreads,
             });
             const julesApiCallStart = Date.now();
-            const promptResult = await runJulesReview(apiKey, prompt, { github: `${owner}/${repo}`, baseBranch: pr.base.ref }, timeoutMinutes);
+            const promptResult = await runJulesReview(config.apiKey, prompt, { github: `${owner}/${repo}`, baseBranch: pr.base.ref }, config.timeoutMinutes);
             const julesApiDuration = Date.now() - julesApiCallStart;
             logStructured("jules_api_called", {
                 success: true,
@@ -44357,12 +44498,12 @@ async function run() {
             sessionId = promptResult.sessionId;
         }
         if (!reviewResult) {
-            await setStatus(octokit, owner, repo, headSha, statusContext, "error", "Jules did not return a valid review in time");
+            await setStatus(octokit, owner, repo, headSha, config.statusContext, "error", "Jules did not return a valid review in time");
             logStructured("review_failed", {
                 reason: "No valid review returned",
                 stage: "api_response",
             });
-            setFailed(`Jules returned no review message within ${timeoutMinutes} minutes.`);
+            setFailed(`Jules returned no review message within ${config.timeoutMinutes} minutes.`);
             return;
         }
         const { verdict, summary, resolvedCommentIds, newComments } = reviewResult;
@@ -44379,7 +44520,7 @@ async function run() {
         const finalBody = `${COMMENT_MARKER}\n## 🤖 Jules Review\n\n${summary}\n\n---\n_Session: \`${sessionId}\`_`;
         const commentsForReview = (newComments || []).map((c) => {
             const copy = { ...c };
-            if (!enableSuggestions) {
+            if (!config.enableSuggestions) {
                 delete copy.suggestion;
                 delete copy.startLine;
             }
@@ -44391,8 +44532,8 @@ async function run() {
             sessionId,
             commentCount: commentsForReview.length,
         });
-        const { state, description } = statusFromVerdict(verdict, failOn);
-        await setStatus(octokit, owner, repo, headSha, statusContext, state, description);
+        const { state, description } = statusFromVerdict(verdict, config.failOn);
+        await setStatus(octokit, owner, repo, headSha, config.statusContext, state, description);
         // Compute issue counts from newComments
         const highCount = (newComments || []).filter((c) => c.severity === "High").length;
         const warningCount = (newComments || []).filter((c) => c.severity === "Warning").length;
@@ -44431,7 +44572,7 @@ async function run() {
             warning_issues_count: 0,
             info_issues_count: 0,
         });
-        await setStatus(octokit, owner, repo, headSha, statusContext, "error", "Review failed. Check GitHub Actions log for details.").catch(() => { });
+        await setStatus(octokit, owner, repo, headSha, config.statusContext, "error", "Review failed. Check GitHub Actions log for details.").catch(() => { });
         setFailed(`Jules PR review failed: ${msg}`);
     }
 }
