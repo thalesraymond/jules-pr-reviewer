@@ -1,6 +1,6 @@
 # Jules PR Reviewer
 
-A GitHub Action that uses [Google Jules](https://jules.google) (Gemini-powered cloud coding agent) to review pull requests and post the review as a PR comment. Optionally gates merges via a commit status check.
+A GitHub Action that uses [Google Jules](https://jules.google) (Gemini-powered cloud coding agent) to review pull requests and post the review as a PR comment. Optionally gates merges via a check run.
 
 _Special thanks to [@sanjay3290](https://github.com/sanjay3290) for the original work in the base action_
 
@@ -62,7 +62,7 @@ jobs:
     permissions:
       pull-requests: write
       contents: read
-      statuses: write
+      checks: write
     steps:
       - uses: thalesraymond/jules-pr-reviewer@v1
         with:
@@ -74,9 +74,9 @@ The `concurrency` block cancels an older review run when a new commit lands, pre
 
 ### 3. (Optional) Gate merges on the review
 
-`Settings → Branches → Branch protection rules → Require status check → jules/review`.
+`Settings → Branches → Branch protection rules → Require check runs to pass → jules/review`.
 
-Without this, a blocking verdict shows as a red X but won't stop merge.
+Without this, a blocking verdict shows as a failed check run but won't stop merge.
 
 ## Customizing the review
 
@@ -138,11 +138,11 @@ The workflow's `extra_instructions` is appended after the rules file content. Us
 | -------------------- | ------------------------------- | ----------------------------------------------------------------- |
 | `jules_api_key`      | —                               | **Required.** Key from jules.google.com.                          |
 | `github_token`       | —                               | **Required.** `${{ secrets.GITHUB_TOKEN }}`.                      |
-| `fail_on`            | `blocking`                      | `never` \| `blocking` \| `any`. Controls commit-status state.     |
+| `fail_on`            | `blocking`                      | `never` \| `blocking` \| `any`. Controls check run conclusion.  |
 | `skip_drafts`        | `true`                          | Skip review on draft PRs.                                         |
 | `skip_forks`         | `true`                          | Skip PRs from forks (diff can contain prompt-injection payloads). |
 | `bypass_label`       | `jules-override`                | If the PR has this label, skip the review.                        |
-| `status_context`     | `jules/review`                  | Commit status context name.                                       |
+| `status_context`     | `jules/review`                  | Check run name.                                                   |
 | `extra_instructions` | `''`                            | Markdown appended to the prompt.                                  |
 | `rules_file`         | `.github/jules-review-rules.md` | Path in repo to load as extra rules. Set empty to disable.        |
 | `ignored_paths`      | `[]`                            | JSON array **or** comma/newline-separated list of paths/globs to exclude from diff (e.g. `["dist/**", "*.lock"]` or `dist/**, *.lock`). |
@@ -240,7 +240,7 @@ Jules also generates a summary and a final verdict line:
 | `comment` | Warnings or infos only.           |
 | `block`   | One or more high severity issues. |
 
-`fail_on` maps verdict → status:
+`fail_on` maps verdict → check run conclusion:
 
 | `fail_on`              | approve | comment     | block       |
 | ---------------------- | ------- | ----------- | ----------- |
@@ -248,7 +248,7 @@ Jules also generates a summary and a final verdict line:
 | `blocking` _(default)_ | success | success     | **failure** |
 | `any`                  | success | **failure** | **failure** |
 
-The **workflow job itself always passes** if the action ran successfully — the status check is what gates merge. Job failures indicate the action broke, not that the review found issues.
+The **workflow job itself always passes** if the action ran successfully — the check run is what gates merge. Job failures indicate the action broke, not that the review found issues.
 
 ## Inner Workings & Architecture
 
@@ -279,7 +279,7 @@ Then run: `JULES_API_KEY=... node list-sources.mjs`
 - **Fork PRs are skipped by default** (`skip_forks: true`). An untrusted fork's diff/PR description can contain prompt-injection payloads.
 - **`rules_file` is loaded from the base SHA**, not the PR head. An attacker cannot change the review rules by editing them in their PR.
 - **All untrusted content is fenced** in the prompt as "UNTRUSTED" with explicit instructions to Jules.
-- **Failure modes are resilient**: if Jules times out, the API errors, or the action crashes, the commit status is set to `error` and the PR comment is updated with a failure note — merge isn't silently blocked by a stale `pending` check.
+- **Failure modes are resilient**: if Jules times out, the API errors, or the action crashes, the check run is completed with a failure conclusion and the PR comment is updated with a failure note — merge isn't silently blocked by a stale in-progress check run.
 
 ## Notes
 

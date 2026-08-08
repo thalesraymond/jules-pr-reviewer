@@ -165,7 +165,7 @@ export function wrapPermissionError(
   if (isAuthError(msg) || msg.includes("Resource not accessible")) {
     return new Error(
       `${op} failed with 403. The github_token likely lacks ${needed}. Add to your workflow:\n` +
-        "    permissions:\n      pull-requests: write\n      contents: read\n      statuses: write\n" +
+        "    permissions:\n      pull-requests: write\n      contents: read\n      checks: write\n" +
         `(original: ${msg})`
     );
   }

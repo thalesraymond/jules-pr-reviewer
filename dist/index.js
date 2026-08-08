@@ -29314,8 +29314,9 @@ var __webpack_exports__ = {};
 
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
-  C: () => (/* binding */ statusFromVerdict),
-  x: () => (/* binding */ truncate)
+  P: () => (/* binding */ buildAnnotations),
+  tr: () => (/* binding */ conclusionFromVerdict),
+  xv: () => (/* binding */ truncate)
 });
 
 // NAMESPACE OBJECT: ./node_modules/.pnpm/@actions+core@3.0.1/node_modules/@actions/core/lib/platform.js
@@ -37181,15 +37182,41 @@ async function resolveThreads(octokit, threadIds) {
         }
     }
 }
-async function setStatus(octokit, owner, repo, sha, context, state, description) {
-    await withRetry(() => octokit.rest.repos.createCommitStatus({
+async function createCheckRun(octokit, owner, repo, name, headSha) {
+    const result = await withRetry(() => octokit.rest.checks.create({
         owner,
         repo,
-        sha,
-        state,
-        context,
-        description,
+        name,
+        head_sha: headSha,
+        status: "in_progress",
     }), { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 });
+    return result.data.id;
+}
+async function finalizeCheckRun(octokit, owner, repo, checkRunId, conclusion, output) {
+    const params = {
+        owner,
+        repo,
+        check_run_id: checkRunId,
+        status: "completed",
+        conclusion,
+        output: {
+            title: output.title,
+            summary: output.summary,
+            ...(output.annotations && output.annotations.length > 0
+                ? {
+                    annotations: output.annotations.map((a) => ({
+                        path: a.path,
+                        start_line: a.startLine,
+                        end_line: a.endLine,
+                        annotation_level: a.annotationLevel,
+                        message: a.message,
+                        ...(a.title ? { title: a.title } : {}),
+                    })),
+                }
+                : {}),
+        },
+    };
+    await withRetry(() => octokit.rest.checks.update(params), { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 });
 }
 
 ;// CONCATENATED MODULE: ./src/submission.ts
@@ -42107,7 +42134,7 @@ function wrapPermissionError(err, needed, op) {
     const msg = getErrorMessage(err);
     if (isAuthError(msg) || msg.includes("Resource not accessible")) {
         return new Error(`${op} failed with 403. The github_token likely lacks ${needed}. Add to your workflow:\n` +
-            "    permissions:\n      pull-requests: write\n      contents: read\n      statuses: write\n" +
+            "    permissions:\n      pull-requests: write\n      contents: read\n      checks: write\n" +
             `(original: ${msg})`);
     }
     return err instanceof Error ? err : new Error(msg);
@@ -45025,12 +45052,13 @@ async function run() {
     }
     // ⚡ Bolt: Delay instantiating the Octokit client until after early returns (draft/fork/bypass) to save memory
     const octokit = getOctokit(config.token);
+    let checkRunId;
     try {
         try {
-            await setStatus(octokit, owner, repo, headSha, config.statusContext, "pending", "Jules is reviewing this PR…");
+            checkRunId = await createCheckRun(octokit, owner, repo, config.statusContext, headSha);
         }
         catch (err) {
-            throw wrapPermissionError(err, "statuses:write", "createCommitStatus");
+            throw wrapPermissionError(err, "checks:write", "createCheckRun");
         }
         // Determine the base SHA for incremental diffing
         let baseShaForDiff = baseSha;
@@ -45105,7 +45133,10 @@ async function run() {
             sessionId = promptResult.sessionId;
         }
         if (!reviewResult) {
-            await setStatus(octokit, owner, repo, headSha, config.statusContext, "error", "Jules did not return a valid review in time");
+            await finalizeCheckRun(octokit, owner, repo, checkRunId, "failure", {
+                title: "Jules Review",
+                summary: "Jules did not return a valid review in time",
+            });
             logStructured("review_failed", {
                 reason: "No valid review returned",
                 stage: "api_response",
@@ -45139,8 +45170,13 @@ async function run() {
             sessionId,
             commentCount: commentsForReview.length,
         });
-        const { state, description } = statusFromVerdict(verdict, config.failOn);
-        await setStatus(octokit, owner, repo, headSha, config.statusContext, state, description);
+        const { conclusion, description } = conclusionFromVerdict(verdict, config.failOn);
+        const annotations = buildAnnotations(newComments || []);
+        await finalizeCheckRun(octokit, owner, repo, checkRunId, conclusion, {
+            title: "Jules Review",
+            summary: description,
+            ...(annotations.length > 0 ? { annotations } : {}),
+        });
         // Compute issue counts from newComments
         const highCount = (newComments || []).filter((c) => c.severity === "High").length;
         const warningCount = (newComments || []).filter((c) => c.severity === "Warning").length;
@@ -45163,7 +45199,7 @@ async function run() {
             sessionId,
             duration: reviewDuration,
         });
-        info(`Verdict: ${verdict}. Status check: ${state}.`);
+        info(`Verdict: ${verdict}. Check run conclusion: ${conclusion}.`);
     }
     catch (err) {
         const msg = getErrorMessage(err);
@@ -45179,7 +45215,12 @@ async function run() {
             warning_issues_count: 0,
             info_issues_count: 0,
         });
-        await setStatus(octokit, owner, repo, headSha, config.statusContext, "error", "Review failed. Check GitHub Actions log for details.").catch(() => { });
+        if (checkRunId !== undefined) {
+            await finalizeCheckRun(octokit, owner, repo, checkRunId, "failure", {
+                title: "Jules Review",
+                summary: "Review failed. Check GitHub Actions log for details.",
+            }).catch(() => { });
+        }
         setFailed(`Jules PR review failed: ${msg}`);
     }
 }
@@ -45195,37 +45236,58 @@ function truncateDiff(diff, maxChars) {
 function truncate(s, max) {
     return s.length <= max ? s : s.slice(0, max - 1) + "…";
 }
-function statusFromVerdict(verdict, failOn) {
+function conclusionFromVerdict(verdict, failOn) {
     if (!["approve", "comment", "block"].includes(verdict)) {
         return {
-            state: "failure",
+            conclusion: "failure",
             description: "Invalid review verdict",
         };
     }
     if (failOn === "never") {
         return {
-            state: "success",
+            conclusion: "success",
             description: `Review complete (verdict: ${verdict})`,
         };
     }
     if (failOn === "any") {
         return verdict === "approve"
-            ? { state: "success", description: "Approved" }
-            : { state: "failure", description: `Review verdict: ${verdict}` };
+            ? { conclusion: "success", description: "Approved" }
+            : { conclusion: "failure", description: `Review verdict: ${verdict}` };
     }
     return verdict === "block"
-        ? { state: "failure", description: "Blocking issues found" }
+        ? { conclusion: "failure", description: "Blocking issues found" }
         : {
-            state: "success",
+            conclusion: "success",
             description: `Review complete (verdict: ${verdict})`,
         };
+}
+const MAX_ANNOTATIONS = 50;
+function severityToAnnotationLevel(severity) {
+    switch (severity) {
+        case "High":
+            return "failure";
+        case "Warning":
+            return "warning";
+        case "Info":
+            return "notice";
+    }
+}
+function buildAnnotations(comments) {
+    return comments.slice(0, MAX_ANNOTATIONS).map((c) => ({
+        path: c.file,
+        startLine: c.startLine ?? c.line,
+        endLine: c.line,
+        annotationLevel: severityToAnnotationLevel(c.severity),
+        message: c.message,
+    }));
 }
 run().catch((err) => {
     setFailed(getErrorMessage(err));
 });
 
-var __webpack_exports__statusFromVerdict = __webpack_exports__.C;
-var __webpack_exports__truncate = __webpack_exports__.x;
-export { __webpack_exports__statusFromVerdict as statusFromVerdict, __webpack_exports__truncate as truncate };
+var __webpack_exports__buildAnnotations = __webpack_exports__.P;
+var __webpack_exports__conclusionFromVerdict = __webpack_exports__.tr;
+var __webpack_exports__truncate = __webpack_exports__.xv;
+export { __webpack_exports__buildAnnotations as buildAnnotations, __webpack_exports__conclusionFromVerdict as conclusionFromVerdict, __webpack_exports__truncate as truncate };
 
 //# sourceMappingURL=index.js.map

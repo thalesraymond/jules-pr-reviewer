@@ -25,7 +25,8 @@ describe("index.ts", () => {
     loadRulesFromBase: vi.fn(),
     fetchOpenThreads: vi.fn(),
     resolveThreads: vi.fn(),
-    setStatus: vi.fn(),
+    createCheckRun: vi.fn(),
+    finalizeCheckRun: vi.fn(),
   };
 
   const mockSubmissionHelper = {
@@ -126,7 +127,8 @@ describe("index.ts", () => {
     // default helper returns
     mockGithubHelper.fetchDiff.mockResolvedValue("diff");
     mockGithubHelper.fetchOpenThreads.mockResolvedValue([]);
-    mockGithubHelper.setStatus.mockResolvedValue(undefined);
+    mockGithubHelper.createCheckRun.mockResolvedValue(42);
+    mockGithubHelper.finalizeCheckRun.mockResolvedValue(undefined);
     mockSubmissionHelper.submitReview.mockResolvedValue(undefined);
     mockJulesHelper.runJulesReview.mockResolvedValue({
       reviewResult: {
@@ -446,14 +448,16 @@ index 789..abc 100644
       sessionId: "s1",
     });
     await loadIndex();
-    expect(mockGithubHelper.setStatus).toHaveBeenCalledWith(
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
       expect.anything(),
       "owner",
       "repo",
-      "headSHA",
-      expect.anything(),
-      "error",
-      "Jules did not return a valid review in time"
+      42,
+      "failure",
+      {
+        title: "Jules Review",
+        summary: "Jules did not return a valid review in time",
+      }
     );
     expect(mockSetFailed).toHaveBeenCalledWith(
       expect.stringContaining("Jules returned no review message")
@@ -480,7 +484,7 @@ index 789..abc 100644
     );
   });
 
-  it("submits review and sets status based on verdict", async () => {
+  it("submits review and sets check run conclusion based on verdict", async () => {
     mockConfigHelper.loadConfig.mockReturnValue({
       ok: true,
       config: { ...defaultConfig, failOn: "blocking" },
@@ -491,14 +495,16 @@ index 789..abc 100644
     });
     await loadIndex();
     expect(mockSubmissionHelper.submitReview).toHaveBeenCalled();
-    expect(mockGithubHelper.setStatus).toHaveBeenCalledWith(
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
       expect.anything(),
       "owner",
       "repo",
-      "headSHA",
-      expect.anything(),
+      42,
       "failure",
-      "Blocking issues found"
+      expect.objectContaining({
+        title: "Jules Review",
+        summary: "Blocking issues found",
+      })
     );
   });
 
@@ -512,14 +518,16 @@ index 789..abc 100644
       sessionId: "s1",
     });
     await loadIndex();
-    expect(mockGithubHelper.setStatus).toHaveBeenCalledWith(
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
       expect.anything(),
       "owner",
       "repo",
-      "headSHA",
-      expect.anything(),
+      42,
       "success",
-      "Review complete (verdict: block)"
+      expect.objectContaining({
+        title: "Jules Review",
+        summary: "Review complete (verdict: block)",
+      })
     );
   });
 
@@ -529,14 +537,16 @@ index 789..abc 100644
       sessionId: "s1",
     });
     await loadIndex();
-    expect(mockGithubHelper.setStatus).toHaveBeenCalledWith(
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
       expect.anything(),
       "owner",
       "repo",
-      "headSHA",
-      expect.anything(),
+      42,
       "success",
-      "Approved"
+      expect.objectContaining({
+        title: "Jules Review",
+        summary: "Approved",
+      })
     );
   });
 
@@ -616,17 +626,16 @@ index 789..abc 100644
     expect(submittedComments[0]).toHaveProperty("startLine", 8);
   });
 
-  it("fails immediately when initial setStatus throws permission error", async () => {
-    mockGithubHelper.setStatus.mockRejectedValueOnce(
-      new Error("Initial setStatus failed")
+  it("fails immediately when initial createCheckRun throws permission error", async () => {
+    mockGithubHelper.createCheckRun.mockRejectedValueOnce(
+      new Error("Initial createCheckRun failed")
     );
     mockJulesHelper.wrapPermissionError.mockReturnValueOnce(
-      new Error("Wrapped initial setStatus failed")
+      new Error("Wrapped initial createCheckRun failed")
     );
     await loadIndex();
-    // It should have caught the error, wrapped it, and then caught it in the top level catch.
     expect(mockSetFailed).toHaveBeenCalledWith(
-      "Jules PR review failed: Wrapped initial setStatus failed"
+      "Jules PR review failed: Wrapped initial createCheckRun failed"
     );
   });
 
@@ -655,14 +664,16 @@ index 789..abc 100644
     expect(mockSetFailed).toHaveBeenCalledWith(
       "Jules PR review failed: Fetch diff failed"
     );
-    expect(mockGithubHelper.setStatus).toHaveBeenCalledWith(
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
       expect.anything(),
       "owner",
       "repo",
-      "headSHA",
-      expect.anything(),
-      "error",
-      "Review failed. Check GitHub Actions log for details."
+      42,
+      "failure",
+      {
+        title: "Jules Review",
+        summary: "Review failed. Check GitHub Actions log for details.",
+      }
     );
   });
 
@@ -884,26 +895,106 @@ index 789..abc 100644
   });
 });
 
-describe("statusFromVerdict", () => {
-  let statusFromVerdict: any;
+describe("conclusionFromVerdict", () => {
+  let conclusionFromVerdict: any;
 
   beforeEach(async () => {
     const mod = await import("../src/index.js");
-    statusFromVerdict = mod.statusFromVerdict;
+    conclusionFromVerdict = mod.conclusionFromVerdict;
   });
 
-  it("returns failure state with Invalid review verdict when verdict is invalid", () => {
-    const result = statusFromVerdict("invalid-verdict", "blocking");
+  it("returns failure conclusion with Invalid review verdict when verdict is invalid", () => {
+    const result = conclusionFromVerdict("invalid-verdict", "blocking");
     expect(result).toEqual({
-      state: "failure",
+      conclusion: "failure",
       description: "Invalid review verdict",
     });
   });
 
   it("handles valid verdicts normally", () => {
-    const result = statusFromVerdict("approve", "blocking");
-    expect(result.state).toBe("success");
+    const result = conclusionFromVerdict("approve", "blocking");
+    expect(result.conclusion).toBe("success");
     expect(result.description).toContain("complete (verdict: approve)");
+  });
+});
+
+describe("buildAnnotations", () => {
+  let buildAnnotations: any;
+
+  beforeEach(async () => {
+    const mod = await import("../src/index.js");
+    buildAnnotations = mod.buildAnnotations;
+  });
+
+  it("maps review comments to annotations", () => {
+    const comments = [
+      {
+        file: "src/a.ts",
+        line: 10,
+        severity: "High" as const,
+        confidence: "High" as const,
+        message: "Bug here",
+        promptForAgents: "",
+      },
+      {
+        file: "src/b.ts",
+        line: 20,
+        startLine: 15,
+        severity: "Warning" as const,
+        confidence: "Medium" as const,
+        message: "Consider refactoring",
+        promptForAgents: "",
+      },
+      {
+        file: "src/c.ts",
+        line: 30,
+        severity: "Info" as const,
+        confidence: "Low" as const,
+        message: "Nit",
+        promptForAgents: "",
+      },
+    ];
+    const annotations = buildAnnotations(comments);
+    expect(annotations).toEqual([
+      {
+        path: "src/a.ts",
+        startLine: 10,
+        endLine: 10,
+        annotationLevel: "failure",
+        message: "Bug here",
+      },
+      {
+        path: "src/b.ts",
+        startLine: 15,
+        endLine: 20,
+        annotationLevel: "warning",
+        message: "Consider refactoring",
+      },
+      {
+        path: "src/c.ts",
+        startLine: 30,
+        endLine: 30,
+        annotationLevel: "notice",
+        message: "Nit",
+      },
+    ]);
+  });
+
+  it("limits annotations to 50", () => {
+    const comments = Array.from({ length: 60 }, (_, i) => ({
+      file: `src/f${i}.ts`,
+      line: i + 1,
+      severity: "Info" as const,
+      confidence: "High" as const,
+      message: `Note ${i}`,
+      promptForAgents: "",
+    }));
+    const annotations = buildAnnotations(comments);
+    expect(annotations).toHaveLength(50);
+  });
+
+  it("returns empty array for empty comments", () => {
+    expect(buildAnnotations([])).toEqual([]);
   });
 });
 

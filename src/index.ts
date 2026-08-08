@@ -1,12 +1,19 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import { FailOn, Verdict, ReviewComment, ReviewResult } from "./types.js";
+import {
+  FailOn,
+  Verdict,
+  ReviewComment,
+  ReviewResult,
+  CheckRunAnnotation,
+} from "./types.js";
 import {
   fetchDiff,
   loadRulesFromBase,
   fetchOpenThreads,
   resolveThreads,
-  setStatus,
+  createCheckRun,
+  finalizeCheckRun,
 } from "./github.js";
 import { submitReview } from "./submission.js";
 import {
@@ -116,19 +123,18 @@ async function run(): Promise<void> {
   // ⚡ Bolt: Delay instantiating the Octokit client until after early returns (draft/fork/bypass) to save memory
   const octokit = github.getOctokit(config.token);
 
+  let checkRunId: number | undefined;
   try {
     try {
-      await setStatus(
+      checkRunId = await createCheckRun(
         octokit,
         owner,
         repo,
-        headSha,
         config.statusContext,
-        "pending",
-        "Jules is reviewing this PR…"
+        headSha
       );
     } catch (err) {
-      throw wrapPermissionError(err, "statuses:write", "createCommitStatus");
+      throw wrapPermissionError(err, "checks:write", "createCheckRun");
     }
 
     // Determine the base SHA for incremental diffing
@@ -236,15 +242,10 @@ async function run(): Promise<void> {
     }
 
     if (!reviewResult) {
-      await setStatus(
-        octokit,
-        owner,
-        repo,
-        headSha,
-        config.statusContext,
-        "error",
-        "Jules did not return a valid review in time"
-      );
+      await finalizeCheckRun(octokit, owner, repo, checkRunId!, "failure", {
+        title: "Jules Review",
+        summary: "Jules did not return a valid review in time",
+      });
       logStructured("review_failed", {
         reason: "No valid review returned",
         stage: "api_response",
@@ -296,16 +297,16 @@ async function run(): Promise<void> {
       commentCount: commentsForReview.length,
     });
 
-    const { state, description } = statusFromVerdict(verdict, config.failOn);
-    await setStatus(
-      octokit,
-      owner,
-      repo,
-      headSha,
-      config.statusContext,
-      state,
-      description
+    const { conclusion, description } = conclusionFromVerdict(
+      verdict,
+      config.failOn
     );
+    const annotations = buildAnnotations(newComments || []);
+    await finalizeCheckRun(octokit, owner, repo, checkRunId!, conclusion, {
+      title: "Jules Review",
+      summary: description,
+      ...(annotations.length > 0 ? { annotations } : {}),
+    });
 
     // Compute issue counts from newComments
     const highCount = (newComments || []).filter(
@@ -338,7 +339,7 @@ async function run(): Promise<void> {
       duration: reviewDuration,
     });
 
-    core.info(`Verdict: ${verdict}. Status check: ${state}.`);
+    core.info(`Verdict: ${verdict}. Check run conclusion: ${conclusion}.`);
   } catch (err) {
     const msg = getErrorMessage(err);
     core.error(`Review failed: ${msg}`);
@@ -356,15 +357,12 @@ async function run(): Promise<void> {
       info_issues_count: 0,
     });
 
-    await setStatus(
-      octokit,
-      owner,
-      repo,
-      headSha,
-      config.statusContext,
-      "error",
-      "Review failed. Check GitHub Actions log for details."
-    ).catch(() => {});
+    if (checkRunId !== undefined) {
+      await finalizeCheckRun(octokit, owner, repo, checkRunId, "failure", {
+        title: "Jules Review",
+        summary: "Review failed. Check GitHub Actions log for details.",
+      }).catch(() => {});
+    }
     core.setFailed(`Jules PR review failed: ${msg}`);
   }
 }
@@ -385,34 +383,61 @@ export function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max - 1) + "…";
 }
 
-export function statusFromVerdict(
+export function conclusionFromVerdict(
   verdict: Verdict,
   failOn: FailOn
-): { state: "success" | "failure"; description: string } {
+): { conclusion: "success" | "failure"; description: string } {
   if (!["approve", "comment", "block"].includes(verdict)) {
     return {
-      state: "failure",
+      conclusion: "failure",
       description: "Invalid review verdict",
     };
   }
 
   if (failOn === "never") {
     return {
-      state: "success",
+      conclusion: "success",
       description: `Review complete (verdict: ${verdict})`,
     };
   }
   if (failOn === "any") {
     return verdict === "approve"
-      ? { state: "success", description: "Approved" }
-      : { state: "failure", description: `Review verdict: ${verdict}` };
+      ? { conclusion: "success", description: "Approved" }
+      : { conclusion: "failure", description: `Review verdict: ${verdict}` };
   }
   return verdict === "block"
-    ? { state: "failure", description: "Blocking issues found" }
+    ? { conclusion: "failure", description: "Blocking issues found" }
     : {
-        state: "success",
+        conclusion: "success",
         description: `Review complete (verdict: ${verdict})`,
       };
+}
+
+const MAX_ANNOTATIONS = 50;
+
+function severityToAnnotationLevel(
+  severity: ReviewComment["severity"]
+): CheckRunAnnotation["annotationLevel"] {
+  switch (severity) {
+    case "High":
+      return "failure";
+    case "Warning":
+      return "warning";
+    case "Info":
+      return "notice";
+  }
+}
+
+export function buildAnnotations(
+  comments: ReviewComment[]
+): CheckRunAnnotation[] {
+  return comments.slice(0, MAX_ANNOTATIONS).map((c) => ({
+    path: c.file,
+    startLine: c.startLine ?? c.line,
+    endLine: c.line,
+    annotationLevel: severityToAnnotationLevel(c.severity),
+    message: c.message,
+  }));
 }
 
 run().catch((err) => {

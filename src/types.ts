@@ -70,6 +70,15 @@ export interface StructuredLogEntry {
   payload: unknown;
 }
 
+export interface CheckRunAnnotation {
+  path: string;
+  startLine: number;
+  endLine: number;
+  annotationLevel: "notice" | "warning" | "failure";
+  message: string;
+  title?: string;
+}
+
 export interface ReviewOutputs {
   verdict: "approve" | "comment" | "block" | "skipped";
   issues_count: number;

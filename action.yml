@@ -11,10 +11,10 @@ inputs:
     description: "Jules API key (create one at jules.google.com)."
     required: true
   github_token:
-    description: "GitHub token with pull-requests:write and statuses:write. Usually the default GITHUB_TOKEN secret."
+    description: "GitHub token with pull-requests:write and checks:write. Usually the default GITHUB_TOKEN secret."
     required: true
   fail_on:
-    description: "When to fail the commit status check: never | blocking | any. Default blocking."
+    description: "When to fail the check run: never | blocking | any. Default blocking."
     required: false
     default: "blocking"
   skip_drafts:
@@ -30,7 +30,7 @@ inputs:
     required: false
     default: "jules-override"
   status_context:
-    description: "Commit status context name."
+    description: "Check run name."
     required: false
     default: "jules/review"
   extra_instructions:
