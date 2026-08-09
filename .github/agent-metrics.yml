@@ -30,7 +30,7 @@ metrics:
     test_pass_rate_percent: 100
     coverage_pass_rate_percent: 100
     build_pass_rate_percent: 100
-    openspec_artifact_consistency_percent: 100
+    spec_consistency_percent: 100
 
   cycle_time:
     median_review_loop_count_target: 1.5

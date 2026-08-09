@@ -7,4 +7,3 @@ pnpm-lock.yaml
 *.yaml
 *.json
 *.properties
-graphify-out

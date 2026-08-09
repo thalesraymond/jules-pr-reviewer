@@ -291,17 +291,17 @@ Then run: `JULES_API_KEY=... node list-sources.mjs`
 - **Drafts**: skipped by default; mark `ready_for_review` to trigger.
 - **Large diffs**: diff is truncated at 80 KB. When truncated, the prompt tells Jules its review may be incomplete.
 
-## Agent Workflow (OpenSpec + Cost Control)
+## Agent Workflow (Spec-Driven + Cost Control)
 
 For internal agent workflows, use a planner-led chain to reduce overhead:
 
 1. Start from the planner agent.
 2. Planner invokes a small code-explorer subagent for discovery.
 3. Planner hands off to builder for execution.
-4. Builder updates OpenSpec artifacts first, then implements code tasks.
+4. Builder checks the feature spec in `docs/specs/` first, then implements code tasks.
 5. Builder hands off to reviewer for pass/fail audit.
 6. On fail, loop fixes through planner -> builder until pass.
-7. After pass and verification checks, archive the completed OpenSpec change.
+7. After pass and verification checks, mark the spec work as complete.
 
 Recommended invocation policy:
 

@@ -125,4 +125,4 @@ Canonical roles map to: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-
 
 ### Domain docs
 
-Single-context layout: `CONTEXT.md` at repo root + `docs/adr/`. See `docs/agents/domain.md`.
+Single-context layout: `CONTEXT.md` at repo root + `docs/adr/`. Feature specs live in `docs/specs/` (to-spec model). See `docs/agents/domain.md`.

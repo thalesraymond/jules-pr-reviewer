@@ -27,18 +27,9 @@ pnpm coverage
 - The `dist/` folder is checked in; rebuild after code changes.
 - Do not run `git commit`, `git push`, `git reset`, `git rebase`, or similar git mutations unless the user explicitly asks.
 
-## OpenSpec Workflow
+## Spec Workflow
 
-Use the prompt-backed flows in `.github/prompts/`:
-
-| Slash command | Prompt file | Purpose |
-| ------------- | ----------- | ------- |
-| `/opsx:explore` | `.github/prompts/opsx-explore.prompt.md` | Clarify requirements and investigate |
-| `/opsx:propose` | `.github/prompts/opsx-propose.prompt.md` | Create a bounded change proposal |
-| `/opsx:apply` | `.github/prompts/opsx-apply.prompt.md` | Implement an approved change |
-| `/opsx:archive` | `.github/prompts/opsx-archive.prompt.md` | Close out a completed change |
-
-Implementation details for each stage live in the corresponding `.github/skills/openspec-*` directory.
+Feature specs live in `docs/specs/`, written in the to-spec model (Problem Statement, Solution, User Stories, Implementation Decisions, Testing Decisions, Out of Scope, Further Notes). When a new feature or change needs a spec, use the `/to-spec` skill to synthesize it from the conversation and write it under `docs/specs/`. Publish the spec to the issue tracker and apply the `ready-for-agent` label when the work is agent-ready.
 
 ## Cost-Conscious Patterns
 

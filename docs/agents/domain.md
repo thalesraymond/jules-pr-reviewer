@@ -19,8 +19,12 @@ Single-context repo:
 ├── docs/adr/
 │   ├── 0001-event-sourced-orders.md
 │   └── 0002-postgres-for-write-model.md
+├── docs/specs/
+│   └── <feature>-spec.md
 └── src/
 ```
+
+Feature specs live in `docs/specs/`, written in the to-spec model (Problem Statement, Solution, User Stories, Implementation Decisions, Testing Decisions, Out of Scope, Further Notes). Use `/to-spec` to create them.
 
 ## Use the glossary's vocabulary
 
