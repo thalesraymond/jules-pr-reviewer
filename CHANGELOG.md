@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.6.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.5.0...v1.6.0) (2026-08-09)
+
+
+### Features
+
+* adopt GitHub Checks API for review status ([ae00f48](https://github.com/thalesraymond/jules-pr-reviewer/commit/ae00f48877ec8fc8e9a298db472c65ca6e575f9d)), closes [#113](https://github.com/thalesraymond/jules-pr-reviewer/issues/113)
+* **dedup:** dedplucation feat ([#132](https://github.com/thalesraymond/jules-pr-reviewer/issues/132)) ([6536068](https://github.com/thalesraymond/jules-pr-reviewer/commit/65360680675c72aa0510965e13915b50d783044e))
+* harden concurrency ([#134](https://github.com/thalesraymond/jules-pr-reviewer/issues/134)) ([637bd30](https://github.com/thalesraymond/jules-pr-reviewer/commit/637bd3022fdb6648c134f73e4089b83e59a4293f))
+* large pr handling ([#133](https://github.com/thalesraymond/jules-pr-reviewer/issues/133)) ([f618fe6](https://github.com/thalesraymond/jules-pr-reviewer/commit/f618fe638201e6fca6ed71102fe483c17c355f3a))
+* ticket 113 ([d399580](https://github.com/thalesraymond/jules-pr-reviewer/commit/d399580712c2b99df1f8cb3d1b436b22a6acff6f))
+
 ## [1.5.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.4.0...v1.5.0) (2026-08-07)
 
 
