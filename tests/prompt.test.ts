@@ -254,6 +254,81 @@ describe("buildReviewPrompt (prompt mode)", () => {
     expect(prompt).not.toContain("# Trusted: Open Review Comments");
     expect(prompt).not.toContain("MUST NOT re-report");
   });
+
+  it("renders the large-PR coverage section when the PR is large", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      openThreads: [],
+      largePrCoverage: {
+        isLarge: true,
+        totalFiles: 3,
+        reviewedFiles: 2,
+        includedFiles: ["src/big.ts", "src/small.ts"],
+        partialFiles: [],
+        excludedFiles: ["src/mid.ts"],
+      },
+    });
+
+    expect(prompt).toContain("# Large PR — coverage");
+    expect(prompt).toContain(
+      'Your summary MUST state coverage as "Reviewed 2 of 3 changed files"'
+    );
+    expect(prompt).toContain("Do NOT report issues about files that are not");
+  });
+
+  it("lists excluded files as data inside the UNTRUSTED diff section", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      openThreads: [],
+      largePrCoverage: {
+        isLarge: true,
+        totalFiles: 3,
+        reviewedFiles: 2,
+        includedFiles: ["src/big.ts"],
+        partialFiles: [],
+        excludedFiles: ["src/mid.ts"],
+      },
+    });
+
+    expect(prompt).toContain("# UNTRUSTED: Incremental Diff to Review");
+    expect(prompt).toContain("src/mid.ts");
+    const diffSection = prompt.split(
+      "# UNTRUSTED: Incremental Diff to Review"
+    )[1];
+    expect(diffSection).toContain("not included in the diff below");
+  });
+
+  it("does not render the large-PR coverage section when the PR is small", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      openThreads: [],
+      largePrCoverage: {
+        isLarge: false,
+        totalFiles: 2,
+        reviewedFiles: 2,
+        includedFiles: ["a.ts", "b.ts"],
+        partialFiles: [],
+        excludedFiles: [],
+      },
+    });
+
+    expect(prompt).not.toContain("# Large PR — coverage");
+  });
 });
 
 describe("buildReviewPrompt (agentic mode)", () => {
@@ -267,7 +342,6 @@ describe("buildReviewPrompt (agentic mode)", () => {
       baseSha: "aaa111",
       headSha: "bbb222",
       openThreads: [],
-      fileCount: 5,
     });
 
     expect(prompt).toContain("git diff aaa111...bbb222");
@@ -283,7 +357,6 @@ describe("buildReviewPrompt (agentic mode)", () => {
       baseSha: "aaa111",
       headSha: "bbb222",
       openThreads: [],
-      fileCount: 5,
     });
 
     expect(prompt).toContain("fall back");
@@ -300,7 +373,6 @@ describe("buildReviewPrompt (agentic mode)", () => {
       baseSha: "aaa111",
       headSha: "bbb222",
       openThreads: [],
-      fileCount: 5,
     });
 
     expect(prompt).toContain("MUST NOT modify, create, or delete");
@@ -317,14 +389,13 @@ describe("buildReviewPrompt (agentic mode)", () => {
       headSha: "bbb222",
       ignoredPaths: "dist/**, *.lock",
       openThreads: [],
-      fileCount: 5,
     });
 
     expect(prompt).toContain("dist/**, *.lock");
     expect(prompt).toContain(".gitignore");
   });
 
-  it("includes large-PR nudge when fileCount > 50", () => {
+  it("includes large-PR coverage instruction when the PR is large", () => {
     const prompt = buildReviewPrompt({
       mode: "agentic",
       repoFullName: "owner/repo",
@@ -334,14 +405,24 @@ describe("buildReviewPrompt (agentic mode)", () => {
       baseSha: "aaa111",
       headSha: "bbb222",
       openThreads: [],
-      fileCount: 55,
+      largePrCoverage: {
+        isLarge: true,
+        totalFiles: 55,
+        includedFiles: [],
+        partialFiles: [],
+        excludedFiles: [],
+      },
     });
 
+    expect(prompt).toContain("# Large PR — coverage");
     expect(prompt).toContain("Prioritize");
     expect(prompt).toContain("high-impact");
+    expect(prompt).toContain(
+      'Your summary MUST state coverage as "Reviewed X of 55 changed files"'
+    );
   });
 
-  it("does not include large-PR nudge when fileCount <= 50", () => {
+  it("does not include the large-PR coverage section when the PR is small", () => {
     const prompt = buildReviewPrompt({
       mode: "agentic",
       repoFullName: "owner/repo",
@@ -351,9 +432,9 @@ describe("buildReviewPrompt (agentic mode)", () => {
       baseSha: "aaa111",
       headSha: "bbb222",
       openThreads: [],
-      fileCount: 50,
     });
 
+    expect(prompt).not.toContain("# Large PR — coverage");
     expect(prompt).not.toContain("prioritize high-impact");
   });
 
@@ -367,7 +448,6 @@ describe("buildReviewPrompt (agentic mode)", () => {
       baseSha: "aaa111",
       headSha: "bbb222",
       openThreads: [],
-      fileCount: 5,
     });
 
     expect(prompt).toContain("# UNTRUSTED: How to obtain the diff");
@@ -383,7 +463,6 @@ describe("buildReviewPrompt (agentic mode)", () => {
       baseSha: "aaa111",
       headSha: "bbb222",
       openThreads: [],
-      fileCount: 5,
     });
 
     expect(prompt).toContain("# UNTRUSTED: PR title");
@@ -401,7 +480,6 @@ describe("buildReviewPrompt (agentic mode)", () => {
       headSha: "bbb222",
       ignoredPaths: "dist/**",
       openThreads: [],
-      fileCount: 5,
     });
 
     expect(prompt).toContain("# UNTRUSTED: Ignored paths");
@@ -417,7 +495,6 @@ describe("buildReviewPrompt (agentic mode)", () => {
       baseSha: "aaa111",
       headSha: "bbb222",
       openThreads: [],
-      fileCount: 5,
     });
 
     expect(prompt).toContain("changedFiles");

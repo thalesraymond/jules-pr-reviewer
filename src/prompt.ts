@@ -20,6 +20,7 @@ export function buildReviewPrompt(args: ReviewPromptArgs): string {
 
   const threadsContext = buildThreadsContext(openThreads, dedupe);
   const diffSection = buildDiffSection(args);
+  const largePrSection = buildLargePrSection(args);
   const readOnlyBullet =
     mode === "agentic"
       ? "- You MUST NOT modify, create, or delete any files in the repository. You are a read-only reviewer.\n"
@@ -46,7 +47,7 @@ ${prTitle}
 # UNTRUSTED: PR description
 ${prBody || "(no description)"}
 
-${diffSection}${
+${diffSection}${largePrSection ? `\n${largePrSection}\n` : ""}${
     rulesFromFile
       ? `
 # UNTRUSTED: Project-specific rules
@@ -118,10 +119,17 @@ function buildDiffSection(args: ReviewPromptArgs): string {
 }
 
 function buildInlineDiffSection(args: InlineDiffModeArgs): string {
-  const { diff, diffTruncatedNote } = args;
+  const { diff, diffTruncatedNote, largePrCoverage } = args;
+  const excludedFiles = largePrCoverage?.excludedFiles ?? [];
+  const excludedNote =
+    excludedFiles.length > 0
+      ? `NOTE: This PR is large — these changed files are not included in the diff below:\n${excludedFiles.join(
+          "\n"
+        )}\n`
+      : "";
 
   return `# UNTRUSTED: Incremental Diff to Review
-${diffTruncatedNote ? `NOTE: ${diffTruncatedNote}\n` : ""}
+${diffTruncatedNote ? `NOTE: ${diffTruncatedNote}\n` : ""}${excludedNote}
 \`\`\`diff
 ${diff}
 \`\`\`
@@ -129,14 +137,7 @@ ${diff}
 }
 
 function buildAgenticDiffSection(args: AgenticDiffModeArgs): string {
-  const { baseSha, headSha, ignoredPaths, fileCount } = args;
-
-  const largePrNudge =
-    fileCount > 50
-      ? `
-# Large PR
-This PR changes ${fileCount} files. Prioritize high-impact, high-confidence reviews. Focus on correctness, security, and reliability rather than style nitpicks.`
-      : "";
+  const { baseSha, headSha, ignoredPaths } = args;
 
   return `# UNTRUSTED: How to obtain the diff
 Run the following command to see the changes in this PR:
@@ -146,7 +147,6 @@ git diff ${baseSha}...${headSha}
 \`\`\`
 
 If the SHA \`git diff\` command fails, fall back to inferring the base and head refs from your session context (e.g. \`git diff origin/<base-branch>...HEAD\`).
-${largePrNudge}
 ${
   ignoredPaths
     ? `
@@ -156,6 +156,25 @@ ${ignoredPaths}
 `
     : ""
 }`;
+}
+
+function buildLargePrSection(args: ReviewPromptArgs): string {
+  const coverage = args.largePrCoverage;
+  if (!coverage || !coverage.isLarge) {
+    return "";
+  }
+
+  if (args.mode === "agentic") {
+    return `# Large PR — coverage
+This PR changes ${coverage.totalFiles} changed files. Prioritize high-impact, high-confidence reviews. Focus on correctness, security, and reliability rather than style nitpicks.
+Your summary MUST state coverage as "Reviewed X of ${coverage.totalFiles} changed files", where X is the number of files you actually reviewed.`;
+  }
+
+  const reviewed = coverage.reviewedFiles ?? 0;
+  return `# Large PR — coverage
+This PR is large. You are reviewing ${reviewed} of ${coverage.totalFiles} changed files; the remaining files are not shown in the diff.
+Your summary MUST state coverage as "Reviewed ${reviewed} of ${coverage.totalFiles} changed files".
+Do NOT report issues about files that are not shown in the diff.`;
 }
 
 function buildThreadsContext(

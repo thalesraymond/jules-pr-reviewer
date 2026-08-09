@@ -42145,6 +42145,7 @@ function buildReviewPrompt(args) {
     const { mode, repoFullName, prNumber, prTitle, prBody, extraInstructions, rulesFromFile, openThreads, dedupe = true, } = args;
     const threadsContext = buildThreadsContext(openThreads, dedupe);
     const diffSection = buildDiffSection(args);
+    const largePrSection = buildLargePrSection(args);
     const readOnlyBullet = mode === "agentic"
         ? "- You MUST NOT modify, create, or delete any files in the repository. You are a read-only reviewer.\n"
         : "";
@@ -42168,7 +42169,7 @@ ${prTitle}
 # UNTRUSTED: PR description
 ${prBody || "(no description)"}
 
-${diffSection}${rulesFromFile
+${diffSection}${largePrSection ? `\n${largePrSection}\n` : ""}${rulesFromFile
         ? `
 # UNTRUSTED: Project-specific rules
 ${rulesFromFile}
@@ -42234,21 +42235,20 @@ function buildDiffSection(args) {
     return buildInlineDiffSection(args);
 }
 function buildInlineDiffSection(args) {
-    const { diff, diffTruncatedNote } = args;
+    const { diff, diffTruncatedNote, largePrCoverage } = args;
+    const excludedFiles = largePrCoverage?.excludedFiles ?? [];
+    const excludedNote = excludedFiles.length > 0
+        ? `NOTE: This PR is large — these changed files are not included in the diff below:\n${excludedFiles.join("\n")}\n`
+        : "";
     return `# UNTRUSTED: Incremental Diff to Review
-${diffTruncatedNote ? `NOTE: ${diffTruncatedNote}\n` : ""}
+${diffTruncatedNote ? `NOTE: ${diffTruncatedNote}\n` : ""}${excludedNote}
 \`\`\`diff
 ${diff}
 \`\`\`
 `;
 }
 function buildAgenticDiffSection(args) {
-    const { baseSha, headSha, ignoredPaths, fileCount } = args;
-    const largePrNudge = fileCount > 50
-        ? `
-# Large PR
-This PR changes ${fileCount} files. Prioritize high-impact, high-confidence reviews. Focus on correctness, security, and reliability rather than style nitpicks.`
-        : "";
+    const { baseSha, headSha, ignoredPaths } = args;
     return `# UNTRUSTED: How to obtain the diff
 Run the following command to see the changes in this PR:
 
@@ -42257,7 +42257,6 @@ git diff ${baseSha}...${headSha}
 \`\`\`
 
 If the SHA \`git diff\` command fails, fall back to inferring the base and head refs from your session context (e.g. \`git diff origin/<base-branch>...HEAD\`).
-${largePrNudge}
 ${ignoredPaths
         ? `
 # UNTRUSTED: Ignored paths
@@ -42265,6 +42264,22 @@ The following paths should be excluded from your review. Merge this list with th
 ${ignoredPaths}
 `
         : ""}`;
+}
+function buildLargePrSection(args) {
+    const coverage = args.largePrCoverage;
+    if (!coverage || !coverage.isLarge) {
+        return "";
+    }
+    if (args.mode === "agentic") {
+        return `# Large PR — coverage
+This PR changes ${coverage.totalFiles} changed files. Prioritize high-impact, high-confidence reviews. Focus on correctness, security, and reliability rather than style nitpicks.
+Your summary MUST state coverage as "Reviewed X of ${coverage.totalFiles} changed files", where X is the number of files you actually reviewed.`;
+    }
+    const reviewed = coverage.reviewedFiles ?? 0;
+    return `# Large PR — coverage
+This PR is large. You are reviewing ${reviewed} of ${coverage.totalFiles} changed files; the remaining files are not shown in the diff.
+Your summary MUST state coverage as "Reviewed ${reviewed} of ${coverage.totalFiles} changed files".
+Do NOT report issues about files that are not shown in the diff.`;
 }
 function buildThreadsContext(openThreads, dedupe) {
     if (openThreads.length === 0) {
@@ -44900,17 +44915,139 @@ function shouldIgnorePath(filePath, ignoredPatterns) {
     return false;
 }
 
+;// CONCATENATED MODULE: ./src/coverage.ts
+function splitDiffSections(diff) {
+    if (!diff) {
+        return [];
+    }
+    const sections = diff.split(/(?=^diff --git )/m);
+    const result = [];
+    for (const section of sections) {
+        if (!section.trim())
+            continue;
+        const headerMatch = section.match(/^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/m);
+        if (!headerMatch)
+            continue;
+        const pathA = (headerMatch[1] ?? headerMatch[2]);
+        const pathB = (headerMatch[3] ?? headerMatch[4]);
+        const path = pathA !== "dev/null" ? pathA : pathB;
+        if (path === "dev/null")
+            continue;
+        result.push({ path, text: section });
+    }
+    return result;
+}
+function preparePromptDiff(diff, budget, strategy) {
+    const sections = splitDiffSections(diff);
+    if (diff.length <= budget) {
+        return { diff };
+    }
+    if (sections.length === 0) {
+        return {
+            diff: diff.slice(0, budget),
+            diffTruncatedNote: buildTruncatedNote(diff.length, budget),
+        };
+    }
+    if (strategy === "truncate") {
+        return {
+            diff: diff.slice(0, budget),
+            diffTruncatedNote: buildTruncatedNote(diff.length, budget),
+            coverage: coverageForCut(sections, budget),
+        };
+    }
+    return selectByPriority(sections, budget);
+}
+function selectByPriority(sections, budget) {
+    const sorted = [...sections].sort((a, b) => b.text.length - a.text.length);
+    const largest = sorted[0];
+    if (largest.text.length > budget) {
+        return {
+            diff: largest.text.slice(0, budget),
+            coverage: makeCoverage(sections, [], [largest.path]),
+        };
+    }
+    const included = [];
+    const kept = [];
+    let used = 0;
+    for (const section of sorted) {
+        if (used + section.text.length > budget)
+            continue;
+        used += section.text.length;
+        kept.push(section.text);
+        included.push(section.path);
+    }
+    return {
+        diff: kept.join(""),
+        coverage: makeCoverage(sections, included, []),
+    };
+}
+function coverageForCut(sections, budget) {
+    const included = [];
+    const partial = [];
+    let used = 0;
+    for (const section of sections) {
+        if (used + section.text.length <= budget) {
+            used += section.text.length;
+            included.push(section.path);
+        }
+        else if (used < budget) {
+            partial.push(section.path);
+            break;
+        }
+        else {
+            break;
+        }
+    }
+    return makeCoverage(sections, included, partial);
+}
+function makeCoverage(sections, includedFiles, partialFiles) {
+    const includedSet = new Set([...includedFiles, ...partialFiles]);
+    const excludedFiles = sections
+        .filter((s) => !includedSet.has(s.path))
+        .map((s) => s.path);
+    return {
+        isLarge: true,
+        totalFiles: sections.length,
+        reviewedFiles: includedFiles.length + partialFiles.length,
+        includedFiles,
+        partialFiles,
+        excludedFiles,
+    };
+}
+function buildTruncatedNote(total, budget) {
+    return `The diff was truncated: original ${total} chars, kept first ${budget}. Some changes are not visible in the diff above; your review of the visible portion should state this caveat.`;
+}
+function buildPostedCoverageNote(coverage) {
+    if (!coverage || !coverage.isLarge || coverage.reviewedFiles === undefined) {
+        return undefined;
+    }
+    const partialNote = coverage.partialFiles.length > 0 ? " (one file partially)" : "";
+    const excludedNote = coverage.excludedFiles.length > 0
+        ? `\n\nFiles not covered: \`${coverage.excludedFiles.join("`, `")}\``
+        : "";
+    return `> **Large PR:** reviewed ${coverage.reviewedFiles} of ${coverage.totalFiles} changed files${partialNote}.${excludedNote}`;
+}
+
 ;// CONCATENATED MODULE: ./src/config.ts
 
 const VALID_FAIL_ON = ["never", "blocking", "any"];
 const VALID_DIFF_MODES = ["prompt", "agentic"];
+const VALID_LARGE_PR_STRATEGIES = [
+    "truncate",
+    "prioritize",
+];
 const DEFAULT_DIFF_MODE = "prompt";
 const DEFAULT_TIMEOUT_MINUTES = 30;
+const DEFAULT_LARGE_PR_THRESHOLD = 80_000;
+const DEFAULT_LARGE_PR_STRATEGY = "prioritize";
 function isFailOn(value) {
     return VALID_FAIL_ON.some((v) => v === value);
 }
 function isDiffMode(value) {
     return VALID_DIFF_MODES.some((v) => v === value);
+}
+function isLargePrStrategy(value) {
+    return VALID_LARGE_PR_STRATEGIES.some((v) => v === value);
 }
 function normalizeOptional(value) {
     return value === "" ? undefined : value;
@@ -44941,6 +45078,13 @@ function loadConfig(io) {
         return {
             ok: false,
             error: `Invalid diff_mode: "${diffModeRaw}". Must be one of: prompt, agentic.`,
+        };
+    }
+    const largePrStrategyRaw = io.getInput("large_pr_strategy") || DEFAULT_LARGE_PR_STRATEGY;
+    if (!isLargePrStrategy(largePrStrategyRaw)) {
+        return {
+            ok: false,
+            error: `Invalid large_pr_strategy: "${largePrStrategyRaw}". Must be one of: ${VALID_LARGE_PR_STRATEGIES.join(", ")}.`,
         };
     }
     let skipDrafts;
@@ -44974,11 +45118,15 @@ function loadConfig(io) {
                 DEFAULT_TIMEOUT_MINUTES),
             enableSuggestions,
             dedupe,
+            largePrThreshold: Math.max(1, parseInt(io.getInput("large_pr_threshold") || "80000", 10) ||
+                DEFAULT_LARGE_PR_THRESHOLD),
+            largePrStrategy: largePrStrategyRaw,
         },
     };
 }
 
 ;// CONCATENATED MODULE: ./src/index.ts
+
 
 
 
@@ -45095,7 +45243,18 @@ async function run() {
         const changedFiles = extractChangedFilePaths(filteredDiff);
         let reviewResult = null;
         let sessionId = "";
+        let reviewCoverage;
         if (config.diffMode === "agentic") {
+            const isLarge = filteredDiff.length > config.largePrThreshold;
+            const largePrCoverage = isLarge
+                ? {
+                    isLarge: true,
+                    totalFiles: changedFiles.length,
+                    includedFiles: [],
+                    partialFiles: [],
+                    excludedFiles: [],
+                }
+                : undefined;
             const agenticPrompt = buildReviewPrompt({
                 mode: "agentic",
                 repoFullName: `${owner}/${repo}`,
@@ -45109,7 +45268,7 @@ async function run() {
                 rulesFromFile,
                 openThreads,
                 dedupe: config.dedupe,
-                fileCount: changedFiles.length,
+                largePrCoverage,
             });
             const agentic = await runAgenticReview(config.apiKey, agenticPrompt, { github: `${owner}/${repo}`, baseBranch: pr.head.ref }, config.timeoutMinutes, changedFiles);
             sessionId = agentic.sessionId;
@@ -45121,15 +45280,17 @@ async function run() {
             }
         }
         if (reviewResult === null) {
-            const { text: diffText, truncatedNote } = truncateDiff(filteredDiff, 80_000);
+            const prepared = preparePromptDiff(filteredDiff, config.largePrThreshold, config.largePrStrategy);
+            reviewCoverage = prepared.coverage;
             const prompt = buildReviewPrompt({
                 mode: "prompt",
                 repoFullName: `${owner}/${repo}`,
                 prNumber,
                 prTitle: pr.title || "",
                 prBody: pr.body || "",
-                diff: diffText,
-                diffTruncatedNote: truncatedNote,
+                diff: prepared.diff,
+                diffTruncatedNote: prepared.diffTruncatedNote,
+                largePrCoverage: prepared.coverage,
                 extraInstructions: config.extraInstructions,
                 rulesFromFile,
                 openThreads,
@@ -45168,7 +45329,8 @@ async function run() {
             }
         }
         // Prepare body for the PR review
-        const finalBody = `${COMMENT_MARKER}\n## 🤖 Jules Review\n\n${summary}\n\n---\n_Session: \`${sessionId}\`_`;
+        const coverageNote = buildPostedCoverageNote(reviewCoverage);
+        const finalBody = `${COMMENT_MARKER}\n## 🤖 Jules Review\n\n${summary}${coverageNote ? `\n\n${coverageNote}` : ""}\n\n---\n_Session: \`${sessionId}\`_`;
         const commentsForReview = (newComments || []).map((c) => {
             const copy = { ...c };
             if (!config.enableSuggestions) {
@@ -45211,6 +45373,15 @@ async function run() {
             infoIssues: infoCount,
             sessionId,
             duration: reviewDuration,
+            ...(reviewCoverage
+                ? {
+                    coverage: {
+                        reviewedFiles: reviewCoverage.reviewedFiles,
+                        totalFiles: reviewCoverage.totalFiles,
+                        excludedCount: reviewCoverage.excludedFiles.length,
+                    },
+                }
+                : {}),
         });
         info(`Verdict: ${verdict}. Check run conclusion: ${conclusion}.`);
     }
@@ -45236,15 +45407,6 @@ async function run() {
         }
         setFailed(`Jules PR review failed: ${msg}`);
     }
-}
-function truncateDiff(diff, maxChars) {
-    if (diff.length <= maxChars)
-        return { text: diff };
-    const text = diff.slice(0, maxChars);
-    return {
-        text,
-        truncatedNote: `The diff was truncated: original ${diff.length} chars, kept first ${maxChars}. Some changes are not visible in the diff above; your review of the visible portion should state this caveat.`,
-    };
 }
 function truncate(s, max) {
     return s.length <= max ? s : s.slice(0, max - 1) + "…";
