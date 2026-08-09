@@ -37140,7 +37140,7 @@ function timeoutExitSummary(timeoutMinutes) {
  */
 function isRetryableGithubError(error) {
     const message = getErrorMessage(error);
-    return /(?:5\d\d|\b429\b|\brate limit\b|\bsecondary rate limit\b|\babuse detection\b)/i.test(message);
+    return /(?:\b5\d\d\b|\b429\b|\brate limit\b|\bsecondary rate limit\b|\babuse detection\b)/i.test(message);
 }
 async function withRetry(operation, options) {
     const { maxRetries, initialDelayMs, maxDelayMs, shouldRetry } = options;

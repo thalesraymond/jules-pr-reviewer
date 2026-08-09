@@ -165,6 +165,16 @@ describe("isRetryableGithubError", () => {
     expect(
       isRetryableGithubError(new Error("Request failed with status 502"))
     ).toBe(true);
+    expect(
+      isRetryableGithubError(new Error("HTTP/1.1 500 Internal Server Error"))
+    ).toBe(true);
+  });
+
+  it("does not match embedded 5xx-like numbers such as 1500", () => {
+    expect(isRetryableGithubError(new Error("Received 1500 bytes"))).toBe(
+      false
+    );
+    expect(isRetryableGithubError(new Error("error code 5000"))).toBe(false);
   });
 
   it("returns true for 429 and rate-limit messages", () => {

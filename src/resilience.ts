@@ -14,7 +14,7 @@ export interface RetryOptions {
  */
 export function isRetryableGithubError(error: unknown): boolean {
   const message = getErrorMessage(error);
-  return /(?:5\d\d|\b429\b|\brate limit\b|\bsecondary rate limit\b|\babuse detection\b)/i.test(
+  return /(?:\b5\d\d\b|\b429\b|\brate limit\b|\bsecondary rate limit\b|\babuse detection\b)/i.test(
     message
   );
 }
