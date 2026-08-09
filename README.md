@@ -151,6 +151,8 @@ The workflow's `extra_instructions` is appended after the rules file content. Us
 | `enable_suggestions` | `false`                         | Enable GitHub-native one-click suggested changes in review comments. |
 | `dedupe`             | `true`                          | Don't re-report previously posted, still-open findings on subsequent reviews. Set to `false` to allow Jules to re-review and re-report prior findings. |
 | `diff_mode`          | `prompt`                        | Review pipeline: `prompt` (embed the diff in the prompt) or `agentic` (Jules inspects the PR branch directly). |
+| `large_pr_threshold` | `80000`                         | Diff size (characters) above which the large-PR strategy kicks in. |
+| `large_pr_strategy`  | `prioritize`                    | How to handle diffs over `large_pr_threshold`: `prioritize` (review the highest-churn files that fit in the prompt budget and report which files were not covered) or `truncate` (keep the first N characters, legacy behaviour). |
 
 ## Outputs
 
@@ -201,7 +203,7 @@ Opt-in to include GitHub-native one-click suggested changes in Jules' review com
 
 ### Agentic diff mode
 
-By default the action embeds the PR diff in the prompt, which is truncated at 80 KB. Set `diff_mode: agentic` to let Jules inspect the PR head branch directly instead — it runs `git diff <base>...<head>` itself, which removes the diff-size ceiling and gives it full repository context:
+By default the action embeds the PR diff in the prompt. Diffs over `large_pr_threshold` (80,000 chars) are reviewed with the `prioritize` strategy: the highest-churn files that fit in the prompt budget are selected, and the review explicitly states which files were **not** covered. Set `diff_mode: agentic` to let Jules inspect the PR head branch directly instead — it runs `git diff <base>...<head>` itself, which removes the diff-size ceiling and gives it full repository context:
 
 ```yaml
 - uses: thalesraymond/jules-pr-reviewer@v1
@@ -215,7 +217,7 @@ In agentic mode:
 
 - Jules is instructed to fetch the diff with SHA-pinned `git diff` commands (with a branch-ref fallback) and is explicitly prohibited from modifying the repository.
 - Ignored paths are passed to Jules as a hint merged with the repo's `.gitignore`, while the action-side filter stays active as defence-in-depth.
-- Reviews of large PRs (>50 changed files) include a soft nudge to prioritize high-impact, high-confidence findings.
+- Reviews of large PRs (diff over `large_pr_threshold`) include a coverage instruction to prioritize high-impact, high-confidence findings and to state how many of the changed files were actually reviewed.
 - If the agentic session fails to start or times out, the action automatically falls back to the standard prompt-mode pipeline so the PR still gets exactly one review.
 - The `changedFiles` list Jules reports is compared against the actual changed files; any mismatch is logged and surfaced as a warning, but it is never treated as a failure and does not trigger a fallback.
 - Every Jules session created by the action is archived (best-effort) once the review is done.
@@ -289,7 +291,7 @@ Then run: `JULES_API_KEY=... node list-sources.mjs`
 - **Latency**: typical review is 40s–5min.
 - **Cost**: each PR open/push creates one Jules session. Rate-limit via `bypass_label`, label-gated workflow triggers, or `paths:` filters.
 - **Drafts**: skipped by default; mark `ready_for_review` to trigger.
-- **Large diffs**: diff is truncated at 80 KB. When truncated, the prompt tells Jules its review may be incomplete.
+- **Large diffs**: diffs over `large_pr_threshold` (default 80,000 chars) are reviewed with the `prioritize` strategy — the highest-churn files that fit in the prompt budget are selected and the posted review states how many of the changed files were covered and which were not. Set `large_pr_strategy: truncate` to restore the legacy behaviour of silently keeping the first N characters.
 
 ## Agent Workflow (Spec-Driven + Cost Control)
 

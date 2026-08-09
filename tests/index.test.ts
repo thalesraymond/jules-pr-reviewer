@@ -19,6 +19,14 @@ describe("index.ts", () => {
   let mockInfo: any;
   let mockOctokit: any;
 
+  const makeDiffSection = (path: string, contentChars: number): string => {
+    const header = `diff --git a/${path} b/${path}\nindex 123..456 100644\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n+`;
+    return header + "x".repeat(contentChars) + "\n";
+  };
+  const BIG = makeDiffSection("src/big.ts", 60_000);
+  const MID = makeDiffSection("src/mid.ts", 30_000);
+  const SMALL = makeDiffSection("src/small.ts", 10_000);
+
   // mock sub-modules
   const mockGithubHelper = {
     fetchDiff: vi.fn(),
@@ -63,6 +71,8 @@ describe("index.ts", () => {
     timeoutMinutes: 30,
     enableSuggestions: false,
     dedupe: true,
+    largePrThreshold: 80000,
+    largePrStrategy: "prioritize",
   };
 
   beforeEach(async () => {
@@ -275,6 +285,127 @@ describe("index.ts", () => {
       ),
       expect.anything(),
       expect.anything()
+    );
+  });
+
+  it("instructs coverage even on a large headerless diff", async () => {
+    mockGithubHelper.fetchDiff.mockResolvedValue("x".repeat(81_000));
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: { verdict: "approve", summary: "Good", newComments: [] },
+      sessionId: "s1",
+    });
+    await loadIndex();
+
+    const prompt = mockJulesHelper.runJulesReview.mock.calls[0][1];
+    expect(prompt).toContain("# Large PR — coverage");
+    expect(prompt).toContain("per-file coverage could not be computed");
+  });
+
+  it("selects a prioritized subset of a large diff and reports coverage in the posted body", async () => {
+    mockGithubHelper.fetchDiff.mockResolvedValue(BIG + MID + SMALL);
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: { verdict: "approve", summary: "Good", newComments: [] },
+      sessionId: "s1",
+    });
+    await loadIndex();
+
+    const prompt = mockJulesHelper.runJulesReview.mock.calls[0][1];
+    expect(prompt).toContain("# Large PR — coverage");
+    expect(prompt).toContain("a/src/big.ts");
+    expect(prompt).toContain("a/src/small.ts");
+    expect(prompt).not.toContain("a/src/mid.ts");
+    expect(prompt).toContain(
+      "these changed files are not included in the diff below:\nsrc/mid.ts"
+    );
+
+    const body = mockSubmissionHelper.submitReview.mock.calls[0][5];
+    expect(body).toContain("reviewed 2 of 3 changed files");
+    expect(body).toContain("Files not covered: `src/mid.ts`");
+  });
+
+  it("does not append a coverage note for a small PR", async () => {
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: { verdict: "approve", summary: "Good", newComments: [] },
+      sessionId: "s1",
+    });
+    await loadIndex();
+
+    const body = mockSubmissionHelper.submitReview.mock.calls[0][5];
+    expect(body).not.toContain("Large PR");
+    expect(body).not.toContain("reviewed ");
+  });
+
+  it("passes large-PR coverage to the agentic prompt on a large PR", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, diffMode: "agentic", largePrThreshold: 10 },
+    });
+    mockGithubHelper.fetchDiff.mockResolvedValue(BIG + MID);
+    mockJulesHelper.runAgenticReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "approve",
+        summary: "ok",
+        newComments: [],
+        changedFiles: ["src/big.ts", "src/mid.ts"],
+      },
+      sessionId: "agentic-session",
+      fallback: false,
+    });
+    await loadIndex();
+
+    const prompt = mockJulesHelper.runAgenticReview.mock.calls[0][1];
+    expect(prompt).toContain("# Large PR — coverage");
+    expect(prompt).toContain(
+      'Your summary MUST state coverage as "Reviewed X of 2 changed files"'
+    );
+  });
+
+  it("omits large-PR coverage from the agentic prompt when the PR is small", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, diffMode: "agentic" },
+    });
+    mockGithubHelper.fetchDiff
+      .mockResolvedValue(`diff --git a/src/index.ts b/src/index.ts
+index 123..456 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1 +1 @@
+-old
++new`);
+    mockJulesHelper.runAgenticReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "approve",
+        summary: "ok",
+        newComments: [],
+        changedFiles: ["src/index.ts"],
+      },
+      sessionId: "s1",
+      fallback: false,
+    });
+    await loadIndex();
+
+    const prompt = mockJulesHelper.runAgenticReview.mock.calls[0][1];
+    expect(prompt).not.toContain("# Large PR — coverage");
+  });
+
+  it("emits coverage in the review_completed log on a large PR", async () => {
+    mockGithubHelper.fetchDiff.mockResolvedValue(BIG + MID + SMALL);
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: { verdict: "approve", summary: "Good", newComments: [] },
+      sessionId: "s1",
+    });
+    await loadIndex();
+
+    expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
+      "review_completed",
+      expect.objectContaining({
+        coverage: {
+          reviewedFiles: 2,
+          totalFiles: 3,
+          excludedCount: 1,
+        },
+      })
     );
   });
 

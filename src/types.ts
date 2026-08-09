@@ -1,6 +1,7 @@
 export type FailOn = "never" | "blocking" | "any";
 export type Verdict = "approve" | "comment" | "block";
 export type DiffMode = "prompt" | "agentic";
+export type LargePrStrategy = "truncate" | "prioritize";
 
 export interface OpenThread {
   index: number;
@@ -25,6 +26,7 @@ export interface InlineDiffModeArgs extends CommonPromptArgs {
   mode: "prompt";
   diff: string;
   diffTruncatedNote?: string;
+  largePrCoverage?: ReviewCoverage;
 }
 
 export interface AgenticDiffModeArgs extends CommonPromptArgs {
@@ -32,10 +34,21 @@ export interface AgenticDiffModeArgs extends CommonPromptArgs {
   baseSha: string;
   headSha: string;
   ignoredPaths?: string;
-  fileCount: number;
+  largePrCoverage?: ReviewCoverage;
 }
 
 export type ReviewPromptArgs = InlineDiffModeArgs | AgenticDiffModeArgs;
+
+export interface ReviewCoverage {
+  isLarge: boolean;
+  totalFiles: number;
+  /** Files with content in the prompt. Absent in agentic mode, where Jules
+   *  decides what to review, and when per-file coverage cannot be computed. */
+  reviewedFiles?: number;
+  includedFiles?: string[];
+  partialFiles?: string[];
+  excludedFiles?: string[];
+}
 
 export interface ReviewComment {
   file: string;

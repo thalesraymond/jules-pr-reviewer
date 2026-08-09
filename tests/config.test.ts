@@ -16,6 +16,8 @@ const DEFAULT_INPUTS: Record<string, string> = {
   timeout_minutes: "30",
   enable_suggestions: "false",
   dedupe: "true",
+  large_pr_threshold: "80000",
+  large_pr_strategy: "prioritize",
 };
 
 function makeIo(overrides: Record<string, string> = {}): {
@@ -96,6 +98,8 @@ describe("loadConfig", () => {
       timeoutMinutes: 45,
       enableSuggestions: true,
       dedupe: false,
+      largePrThreshold: 80000,
+      largePrStrategy: "prioritize",
     });
     expect(secrets).toEqual(["test-api-key", "test-token"]);
     expect(process.env.JULES_API_KEY).toBe("test-api-key");
@@ -119,6 +123,8 @@ describe("loadConfig", () => {
     expect(config.timeoutMinutes).toBe(30);
     expect(config.enableSuggestions).toBe(false);
     expect(config.dedupe).toBe(true);
+    expect(config.largePrThreshold).toBe(80000);
+    expect(config.largePrStrategy).toBe("prioritize");
     expect(config.extraInstructions).toBeUndefined();
     expect(config.rulesFilePath).toBeUndefined();
     expect(config.ignoredPaths).toBeUndefined();
@@ -271,5 +277,62 @@ describe("loadConfig", () => {
     expect(expectConfig(result).rulesFilePath).toBe(
       ".github/jules-review-rules.md"
     );
+  });
+
+  it("parses a custom large_pr_threshold and large_pr_strategy", () => {
+    const { io } = makeIo({
+      large_pr_threshold: "50000",
+      large_pr_strategy: "truncate",
+    });
+
+    const result = loadConfig(io);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(expectConfig(result).largePrThreshold).toBe(50000);
+    expect(expectConfig(result).largePrStrategy).toBe("truncate");
+  });
+
+  it("falls back to defaults when large_pr inputs are empty strings", () => {
+    const { io } = makeIo({
+      large_pr_threshold: "",
+      large_pr_strategy: "",
+    });
+
+    const result = loadConfig(io);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(expectConfig(result).largePrThreshold).toBe(80000);
+    expect(expectConfig(result).largePrStrategy).toBe("prioritize");
+  });
+
+  it("clamps large_pr_threshold to at least 1", () => {
+    const negative = loadConfig(makeIo({ large_pr_threshold: "-5" }).io);
+    const zero = loadConfig(makeIo({ large_pr_threshold: "0" }).io);
+
+    expect(negative.ok).toBe(true);
+    expect(zero.ok).toBe(true);
+    if (!negative.ok || !zero.ok) return;
+    expect(expectConfig(negative).largePrThreshold).toBe(1);
+    expect(expectConfig(zero).largePrThreshold).toBe(80000);
+  });
+
+  it("falls back to 80000 when large_pr_threshold is unparseable", () => {
+    const result = loadConfig(makeIo({ large_pr_threshold: "abc" }).io);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(expectConfig(result).largePrThreshold).toBe(80000);
+  });
+
+  it("returns ok:false when large_pr_strategy is invalid", () => {
+    const { io } = makeIo({ large_pr_strategy: "chunk" });
+
+    const result = loadConfig(io);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain('Invalid large_pr_strategy: "chunk"');
   });
 });

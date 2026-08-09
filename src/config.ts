@@ -1,4 +1,4 @@
-import { DiffMode, FailOn } from "./types.js";
+import { DiffMode, FailOn, LargePrStrategy } from "./types.js";
 import { getErrorMessage } from "./errors.js";
 
 export interface InputReader {
@@ -22,6 +22,8 @@ export interface Config {
   timeoutMinutes: number;
   enableSuggestions: boolean;
   dedupe: boolean;
+  largePrThreshold: number;
+  largePrStrategy: LargePrStrategy;
 }
 
 export type ConfigResult =
@@ -29,8 +31,14 @@ export type ConfigResult =
 
 const VALID_FAIL_ON: readonly FailOn[] = ["never", "blocking", "any"];
 const VALID_DIFF_MODES: readonly DiffMode[] = ["prompt", "agentic"];
+const VALID_LARGE_PR_STRATEGIES: readonly LargePrStrategy[] = [
+  "truncate",
+  "prioritize",
+];
 const DEFAULT_DIFF_MODE: DiffMode = "prompt";
 const DEFAULT_TIMEOUT_MINUTES = 30;
+const DEFAULT_LARGE_PR_THRESHOLD = 80_000;
+const DEFAULT_LARGE_PR_STRATEGY: LargePrStrategy = "prioritize";
 
 function isFailOn(value: string): value is FailOn {
   return VALID_FAIL_ON.some((v) => v === value);
@@ -38,6 +46,10 @@ function isFailOn(value: string): value is FailOn {
 
 function isDiffMode(value: string): value is DiffMode {
   return VALID_DIFF_MODES.some((v) => v === value);
+}
+
+function isLargePrStrategy(value: string): value is LargePrStrategy {
+  return VALID_LARGE_PR_STRATEGIES.some((v) => v === value);
 }
 
 function normalizeOptional(value: string): string | undefined {
@@ -75,6 +87,15 @@ export function loadConfig(io: InputReader): ConfigResult {
     };
   }
 
+  const largePrStrategyRaw =
+    io.getInput("large_pr_strategy") || DEFAULT_LARGE_PR_STRATEGY;
+  if (!isLargePrStrategy(largePrStrategyRaw)) {
+    return {
+      ok: false,
+      error: `Invalid large_pr_strategy: "${largePrStrategyRaw}". Must be one of: ${VALID_LARGE_PR_STRATEGIES.join(", ")}.`,
+    };
+  }
+
   let skipDrafts: boolean;
   let skipForks: boolean;
   let enableSuggestions: boolean;
@@ -109,6 +130,15 @@ export function loadConfig(io: InputReader): ConfigResult {
       ),
       enableSuggestions,
       dedupe,
+      largePrThreshold: Math.max(
+        1,
+        parseInt(
+          io.getInput("large_pr_threshold") ||
+            String(DEFAULT_LARGE_PR_THRESHOLD),
+          10
+        ) || DEFAULT_LARGE_PR_THRESHOLD
+      ),
+      largePrStrategy: largePrStrategyRaw,
     },
   };
 }

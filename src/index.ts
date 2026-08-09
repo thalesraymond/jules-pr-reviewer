@@ -5,6 +5,7 @@ import {
   Verdict,
   ReviewComment,
   ReviewResult,
+  ReviewCoverage,
   CheckRunAnnotation,
 } from "./types.js";
 import {
@@ -27,6 +28,7 @@ import {
   filterDiff,
   extractChangedFilePaths,
 } from "./filtering.js";
+import { preparePromptDiff, buildPostedCoverageNote } from "./coverage.js";
 import { getErrorMessage } from "./errors.js";
 import { loadConfig } from "./config.js";
 import { logStructured, setReviewOutputs } from "./logging.js";
@@ -170,8 +172,14 @@ async function run(): Promise<void> {
 
     let reviewResult: ReviewResult | null = null;
     let sessionId = "";
+    let reviewCoverage: ReviewCoverage | undefined;
 
     if (config.diffMode === "agentic") {
+      const isLarge = filteredDiff.length > config.largePrThreshold;
+      const largePrCoverage: ReviewCoverage | undefined = isLarge
+        ? { isLarge: true, totalFiles: new Set(changedFiles).size }
+        : undefined;
+
       const agenticPrompt = buildReviewPrompt({
         mode: "agentic",
         repoFullName: `${owner}/${repo}`,
@@ -185,7 +193,7 @@ async function run(): Promise<void> {
         rulesFromFile,
         openThreads,
         dedupe: config.dedupe,
-        fileCount: changedFiles.length,
+        largePrCoverage,
       });
 
       const agentic = await runAgenticReview(
@@ -208,10 +216,12 @@ async function run(): Promise<void> {
     }
 
     if (reviewResult === null) {
-      const { text: diffText, truncatedNote } = truncateDiff(
+      const prepared = preparePromptDiff(
         filteredDiff,
-        80_000
+        config.largePrThreshold,
+        config.largePrStrategy
       );
+      reviewCoverage = prepared.coverage;
 
       const prompt = buildReviewPrompt({
         mode: "prompt",
@@ -219,8 +229,9 @@ async function run(): Promise<void> {
         prNumber,
         prTitle: pr.title || "",
         prBody: pr.body || "",
-        diff: diffText,
-        diffTruncatedNote: truncatedNote,
+        diff: prepared.diff,
+        diffTruncatedNote: prepared.diffTruncatedNote,
+        largePrCoverage: prepared.coverage,
         extraInstructions: config.extraInstructions,
         rulesFromFile,
         openThreads,
@@ -272,7 +283,10 @@ async function run(): Promise<void> {
     }
 
     // Prepare body for the PR review
-    const finalBody = `${COMMENT_MARKER}\n## 🤖 Jules Review\n\n${summary}\n\n---\n_Session: \`${sessionId}\`_`;
+    const coverageNote = buildPostedCoverageNote(reviewCoverage);
+    const finalBody = `${COMMENT_MARKER}\n## 🤖 Jules Review\n\n${summary}${
+      coverageNote ? `\n\n${coverageNote}` : ""
+    }\n\n---\n_Session: \`${sessionId}\`_`;
 
     const commentsForReview: ReviewComment[] = (newComments || []).map((c) => {
       const copy = { ...c };
@@ -339,6 +353,15 @@ async function run(): Promise<void> {
       infoIssues: infoCount,
       sessionId,
       duration: reviewDuration,
+      ...(reviewCoverage
+        ? {
+            coverage: {
+              reviewedFiles: reviewCoverage.reviewedFiles,
+              totalFiles: reviewCoverage.totalFiles,
+              excludedCount: (reviewCoverage.excludedFiles ?? []).length,
+            },
+          }
+        : {}),
     });
 
     core.info(`Verdict: ${verdict}. Check run conclusion: ${conclusion}.`);
@@ -367,18 +390,6 @@ async function run(): Promise<void> {
     }
     core.setFailed(`Jules PR review failed: ${msg}`);
   }
-}
-
-function truncateDiff(
-  diff: string,
-  maxChars: number
-): { text: string; truncatedNote?: string } {
-  if (diff.length <= maxChars) return { text: diff };
-  const text = diff.slice(0, maxChars);
-  return {
-    text,
-    truncatedNote: `The diff was truncated: original ${diff.length} chars, kept first ${maxChars}. Some changes are not visible in the diff above; your review of the visible portion should state this caveat.`,
-  };
 }
 
 export function truncate(s: string, max: number): string {

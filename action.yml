@@ -61,6 +61,14 @@ inputs:
     description: "Review pipeline: prompt (embed diff in prompt, default) or agentic (Jules inspects PR branch directly)."
     required: false
     default: "prompt"
+  large_pr_threshold:
+    description: "Diff size (characters) above which the large-PR strategy kicks in. Default 80000."
+    required: false
+    default: "80000"
+  large_pr_strategy:
+    description: "How to handle diffs over large_pr_threshold: prioritize (review the highest-churn files that fit in the prompt budget and report which files were not covered) or truncate (keep the first N characters, legacy behaviour). Default prioritize."
+    required: false
+    default: "prioritize"
 
 outputs:
   verdict:
