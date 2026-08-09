@@ -177,13 +177,7 @@ async function run(): Promise<void> {
     if (config.diffMode === "agentic") {
       const isLarge = filteredDiff.length > config.largePrThreshold;
       const largePrCoverage: ReviewCoverage | undefined = isLarge
-        ? {
-            isLarge: true,
-            totalFiles: changedFiles.length,
-            includedFiles: [],
-            partialFiles: [],
-            excludedFiles: [],
-          }
+        ? { isLarge: true, totalFiles: new Set(changedFiles).size }
         : undefined;
 
       const agenticPrompt = buildReviewPrompt({
@@ -364,7 +358,7 @@ async function run(): Promise<void> {
             coverage: {
               reviewedFiles: reviewCoverage.reviewedFiles,
               totalFiles: reviewCoverage.totalFiles,
-              excludedCount: reviewCoverage.excludedFiles.length,
+              excludedCount: (reviewCoverage.excludedFiles ?? []).length,
             },
           }
         : {}),

@@ -43,11 +43,11 @@ export interface ReviewCoverage {
   isLarge: boolean;
   totalFiles: number;
   /** Files with content in the prompt. Absent in agentic mode, where Jules
-   *  decides what to review. */
+   *  decides what to review, and when per-file coverage cannot be computed. */
   reviewedFiles?: number;
-  includedFiles: string[];
-  partialFiles: string[];
-  excludedFiles: string[];
+  includedFiles?: string[];
+  partialFiles?: string[];
+  excludedFiles?: string[];
 }
 
 export interface ReviewComment {

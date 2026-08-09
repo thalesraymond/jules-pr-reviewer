@@ -329,6 +329,22 @@ describe("buildReviewPrompt (prompt mode)", () => {
 
     expect(prompt).not.toContain("# Large PR — coverage");
   });
+
+  it("uses truncation-limitation wording when per-file coverage is unavailable", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      openThreads: [],
+      largePrCoverage: { isLarge: true, totalFiles: 0 },
+    });
+
+    expect(prompt).toContain("# Large PR — coverage");
+    expect(prompt).toContain("per-file coverage could not be computed");
+  });
 });
 
 describe("buildReviewPrompt (agentic mode)", () => {

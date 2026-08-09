@@ -132,8 +132,11 @@ export function loadConfig(io: InputReader): ConfigResult {
       dedupe,
       largePrThreshold: Math.max(
         1,
-        parseInt(io.getInput("large_pr_threshold") || "80000", 10) ||
-          DEFAULT_LARGE_PR_THRESHOLD
+        parseInt(
+          io.getInput("large_pr_threshold") ||
+            String(DEFAULT_LARGE_PR_THRESHOLD),
+          10
+        ) || DEFAULT_LARGE_PR_THRESHOLD
       ),
       largePrStrategy: largePrStrategyRaw,
     },

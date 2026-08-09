@@ -288,6 +288,19 @@ describe("index.ts", () => {
     );
   });
 
+  it("instructs coverage even on a large headerless diff", async () => {
+    mockGithubHelper.fetchDiff.mockResolvedValue("x".repeat(81_000));
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: { verdict: "approve", summary: "Good", newComments: [] },
+      sessionId: "s1",
+    });
+    await loadIndex();
+
+    const prompt = mockJulesHelper.runJulesReview.mock.calls[0][1];
+    expect(prompt).toContain("# Large PR — coverage");
+    expect(prompt).toContain("per-file coverage could not be computed");
+  });
+
   it("selects a prioritized subset of a large diff and reports coverage in the posted body", async () => {
     mockGithubHelper.fetchDiff.mockResolvedValue(BIG + MID + SMALL);
     mockJulesHelper.runJulesReview.mockResolvedValue({

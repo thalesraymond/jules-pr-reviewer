@@ -93,7 +93,35 @@ describe("preparePromptDiff", () => {
     expect(result.diffTruncatedNote).toContain(
       "The diff was truncated: original 81000 chars, kept first 80000."
     );
-    expect(result.coverage).toBeUndefined();
+    expect(result.coverage).toMatchObject({ isLarge: true, totalFiles: 0 });
+    expect(result.coverage?.reviewedFiles).toBeUndefined();
+  });
+
+  it("groups repeated sections for the same path into one section", () => {
+    const first = makeDiffSection("src/dup.ts", 100);
+    const second = makeDiffSection("src/dup.ts", 200);
+    const sections = splitDiffSections(first + second);
+    expect(sections).toHaveLength(1);
+    expect(sections[0].path).toBe("src/dup.ts");
+    expect(sections[0].text).toBe(first + second);
+  });
+
+  it("counts a duplicated path once when reporting coverage", () => {
+    const dupBig = makeDiffSection("src/dup.ts", 60_000);
+    const dupMore = makeDiffSection("src/dup.ts", 30_000);
+    const small = makeDiffSection("src/small.ts", 10_000);
+    const result = preparePromptDiff(
+      dupBig + dupMore + small,
+      BUDGET,
+      "prioritize"
+    );
+    expect(result.coverage).toMatchObject({
+      isLarge: true,
+      totalFiles: 2,
+      reviewedFiles: 1,
+      partialFiles: ["src/dup.ts"],
+      excludedFiles: ["src/small.ts"],
+    });
   });
 
   it("marks a single oversized file as partially reviewed instead of dropping it", () => {

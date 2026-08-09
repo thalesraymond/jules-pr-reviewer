@@ -170,10 +170,15 @@ This PR changes ${coverage.totalFiles} changed files. Prioritize high-impact, hi
 Your summary MUST state coverage as "Reviewed X of ${coverage.totalFiles} changed files", where X is the number of files you actually reviewed.`;
   }
 
-  const reviewed = coverage.reviewedFiles ?? 0;
+  if (coverage.reviewedFiles === undefined || coverage.totalFiles === 0) {
+    return `# Large PR — coverage
+The diff below was truncated because it is large; per-file coverage could not be computed.
+Your summary MUST state that the diff was truncated and which portions remain unreviewed.`;
+  }
+
   return `# Large PR — coverage
-This PR is large. You are reviewing ${reviewed} of ${coverage.totalFiles} changed files; the remaining files are not shown in the diff.
-Your summary MUST state coverage as "Reviewed ${reviewed} of ${coverage.totalFiles} changed files".
+This PR is large. You are reviewing ${coverage.reviewedFiles} of ${coverage.totalFiles} changed files; the remaining files are not shown in the diff.
+Your summary MUST state coverage as "Reviewed ${coverage.reviewedFiles} of ${coverage.totalFiles} changed files".
 Do NOT report issues about files that are not shown in the diff.`;
 }
 

@@ -31,7 +31,11 @@ The ticket allows either. Chunked review would run several Jules sessions per PR
 
 ### Priority = churn (diff size, descending), greedy pack
 
-Sorting by section size descending and greedily filling the budget maximizes the churn actually reviewed — the biggest, riskiest changes first. `excludedFiles` is re-presented in original diff order for stable, readable output. If a single file alone exceeds the budget, its first `budget` characters are included and it is marked "partially reviewed" so the biggest change still gets some coverage rather than being dropped.
+Sorting by section size descending and greedily filling the budget maximizes the churn actually reviewed — the biggest, riskiest changes first. Sections are grouped by path before selection so a file split across repeated `diff --git` headers is counted once and cannot be silently half-included. `excludedFiles` is re-presented in original diff order for stable, readable output. If a single file alone exceeds the budget, its first `budget` characters are included and it is marked "partially reviewed" so the biggest change still gets some coverage rather than being dropped.
+
+### Headerless diffs still report the truncation
+
+If a large diff cannot be split into per-file sections (no `diff --git` headers), per-file coverage cannot be computed. Instead of silently degrading, the action keeps the legacy truncation note and passes a coverage flag with no file counts, so the prompt still instructs Jules to state that the diff was truncated and which portions remain unreviewed.
 
 ### Threshold doubles as the packing budget
 

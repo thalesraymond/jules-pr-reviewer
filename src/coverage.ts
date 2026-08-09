@@ -17,7 +17,7 @@ export function splitDiffSections(diff: string): DiffSection[] {
   }
 
   const sections = diff.split(/(?=^diff --git )/m);
-  const result: DiffSection[] = [];
+  const byPath = new Map<string, string>();
 
   for (const section of sections) {
     if (!section.trim()) continue;
@@ -29,10 +29,10 @@ export function splitDiffSections(diff: string): DiffSection[] {
     const pathB = (headerMatch[3] ?? headerMatch[4])!;
     const path = pathA !== "dev/null" ? pathA : pathB;
     if (path === "dev/null") continue;
-    result.push({ path, text: section });
+    byPath.set(path, (byPath.get(path) ?? "") + section);
   }
 
-  return result;
+  return [...byPath.entries()].map(([path, text]) => ({ path, text }));
 }
 
 export function preparePromptDiff(
@@ -50,6 +50,7 @@ export function preparePromptDiff(
     return {
       diff: diff.slice(0, budget),
       diffTruncatedNote: buildTruncatedNote(diff.length, budget),
+      coverage: { isLarge: true, totalFiles: 0 },
     };
   }
 
@@ -149,11 +150,12 @@ export function buildPostedCoverageNote(
     return undefined;
   }
 
-  const partialNote =
-    coverage.partialFiles.length > 0 ? " (one file partially)" : "";
+  const partialFiles = coverage.partialFiles ?? [];
+  const excludedFiles = coverage.excludedFiles ?? [];
+  const partialNote = partialFiles.length > 0 ? " (one file partially)" : "";
   const excludedNote =
-    coverage.excludedFiles.length > 0
-      ? `\n\nFiles not covered: \`${coverage.excludedFiles.join("`, `")}\``
+    excludedFiles.length > 0
+      ? `\n\nFiles not covered: \`${excludedFiles.join("`, `")}\``
       : "";
 
   return `> **Large PR:** reviewed ${coverage.reviewedFiles} of ${coverage.totalFiles} changed files${partialNote}.${excludedNote}`;

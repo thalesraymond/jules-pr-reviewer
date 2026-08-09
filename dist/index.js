@@ -42275,10 +42275,14 @@ function buildLargePrSection(args) {
 This PR changes ${coverage.totalFiles} changed files. Prioritize high-impact, high-confidence reviews. Focus on correctness, security, and reliability rather than style nitpicks.
 Your summary MUST state coverage as "Reviewed X of ${coverage.totalFiles} changed files", where X is the number of files you actually reviewed.`;
     }
-    const reviewed = coverage.reviewedFiles ?? 0;
+    if (coverage.reviewedFiles === undefined || coverage.totalFiles === 0) {
+        return `# Large PR — coverage
+The diff below was truncated because it is large; per-file coverage could not be computed.
+Your summary MUST state that the diff was truncated and which portions remain unreviewed.`;
+    }
     return `# Large PR — coverage
-This PR is large. You are reviewing ${reviewed} of ${coverage.totalFiles} changed files; the remaining files are not shown in the diff.
-Your summary MUST state coverage as "Reviewed ${reviewed} of ${coverage.totalFiles} changed files".
+This PR is large. You are reviewing ${coverage.reviewedFiles} of ${coverage.totalFiles} changed files; the remaining files are not shown in the diff.
+Your summary MUST state coverage as "Reviewed ${coverage.reviewedFiles} of ${coverage.totalFiles} changed files".
 Do NOT report issues about files that are not shown in the diff.`;
 }
 function buildThreadsContext(openThreads, dedupe) {
@@ -44921,7 +44925,7 @@ function splitDiffSections(diff) {
         return [];
     }
     const sections = diff.split(/(?=^diff --git )/m);
-    const result = [];
+    const byPath = new Map();
     for (const section of sections) {
         if (!section.trim())
             continue;
@@ -44933,9 +44937,9 @@ function splitDiffSections(diff) {
         const path = pathA !== "dev/null" ? pathA : pathB;
         if (path === "dev/null")
             continue;
-        result.push({ path, text: section });
+        byPath.set(path, (byPath.get(path) ?? "") + section);
     }
-    return result;
+    return [...byPath.entries()].map(([path, text]) => ({ path, text }));
 }
 function preparePromptDiff(diff, budget, strategy) {
     const sections = splitDiffSections(diff);
@@ -44946,6 +44950,7 @@ function preparePromptDiff(diff, budget, strategy) {
         return {
             diff: diff.slice(0, budget),
             diffTruncatedNote: buildTruncatedNote(diff.length, budget),
+            coverage: { isLarge: true, totalFiles: 0 },
         };
     }
     if (strategy === "truncate") {
@@ -45021,9 +45026,11 @@ function buildPostedCoverageNote(coverage) {
     if (!coverage || !coverage.isLarge || coverage.reviewedFiles === undefined) {
         return undefined;
     }
-    const partialNote = coverage.partialFiles.length > 0 ? " (one file partially)" : "";
-    const excludedNote = coverage.excludedFiles.length > 0
-        ? `\n\nFiles not covered: \`${coverage.excludedFiles.join("`, `")}\``
+    const partialFiles = coverage.partialFiles ?? [];
+    const excludedFiles = coverage.excludedFiles ?? [];
+    const partialNote = partialFiles.length > 0 ? " (one file partially)" : "";
+    const excludedNote = excludedFiles.length > 0
+        ? `\n\nFiles not covered: \`${excludedFiles.join("`, `")}\``
         : "";
     return `> **Large PR:** reviewed ${coverage.reviewedFiles} of ${coverage.totalFiles} changed files${partialNote}.${excludedNote}`;
 }
@@ -45118,8 +45125,8 @@ function loadConfig(io) {
                 DEFAULT_TIMEOUT_MINUTES),
             enableSuggestions,
             dedupe,
-            largePrThreshold: Math.max(1, parseInt(io.getInput("large_pr_threshold") || "80000", 10) ||
-                DEFAULT_LARGE_PR_THRESHOLD),
+            largePrThreshold: Math.max(1, parseInt(io.getInput("large_pr_threshold") ||
+                String(DEFAULT_LARGE_PR_THRESHOLD), 10) || DEFAULT_LARGE_PR_THRESHOLD),
             largePrStrategy: largePrStrategyRaw,
         },
     };
@@ -45247,13 +45254,7 @@ async function run() {
         if (config.diffMode === "agentic") {
             const isLarge = filteredDiff.length > config.largePrThreshold;
             const largePrCoverage = isLarge
-                ? {
-                    isLarge: true,
-                    totalFiles: changedFiles.length,
-                    includedFiles: [],
-                    partialFiles: [],
-                    excludedFiles: [],
-                }
+                ? { isLarge: true, totalFiles: new Set(changedFiles).size }
                 : undefined;
             const agenticPrompt = buildReviewPrompt({
                 mode: "agentic",
@@ -45378,7 +45379,7 @@ async function run() {
                     coverage: {
                         reviewedFiles: reviewCoverage.reviewedFiles,
                         totalFiles: reviewCoverage.totalFiles,
-                        excludedCount: reviewCoverage.excludedFiles.length,
+                        excludedCount: (reviewCoverage.excludedFiles ?? []).length,
                     },
                 }
                 : {}),
