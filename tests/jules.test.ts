@@ -4,6 +4,7 @@ import {
   runAgenticReview,
   wrapPermissionError,
 } from "../src/jules.js";
+import { QuotaExceededError } from "../src/errors.js";
 import { runSession } from "../src/session.js";
 import * as core from "@actions/core";
 
@@ -121,6 +122,21 @@ describe("runAgenticReview", () => {
     expect(core.warning).toHaveBeenCalledWith(
       expect.stringContaining("Agentic session creation failed")
     );
+  });
+
+  it("throws a quota error instead of falling back when creation hits the session cap", async () => {
+    mockedRunSession.mockResolvedValue({
+      kind: "creation_failed",
+      sessionId: "",
+      error: new QuotaExceededError(
+        "Jules API quota or rate limit exceeded (status 429). The free tier allows 15 sessions per 24 hours."
+      ),
+    });
+
+    await expect(
+      runAgenticReview("api-key", "prompt", source, 30)
+    ).rejects.toThrow("15 sessions per 24 hours");
+    expect(core.warning).not.toHaveBeenCalled();
   });
 
   it("returns a timeout fallback when the session times out", async () => {

@@ -2,7 +2,15 @@ import * as core from "@actions/core";
 import { jules, type SessionClient, type SourceInput } from "@google/jules-sdk";
 import { ReviewResult } from "./types.js";
 import { parseReviewResponse } from "./validation.js";
-import { getErrorMessage } from "./errors.js";
+import {
+  getErrorMessage,
+  isAuthError,
+  isQuotaError,
+  AuthError,
+  QuotaExceededError,
+  QUOTA_HINT,
+} from "./errors.js";
+import { logStructured } from "./logging.js";
 
 type PollableSession = SessionClient & { hydrate: () => Promise<number> };
 
@@ -12,6 +20,7 @@ const PARSE_FAILURE_REVIEW: ReviewResult = {
   verdict: "block",
   resolvedCommentIds: [],
   newComments: [],
+  unparseable: true,
 };
 
 export type SessionOutcome =
@@ -43,7 +52,11 @@ export async function runSession(
       autoPr: false,
     });
   } catch (err) {
-    return { kind: "creation_failed", sessionId: "", error: err };
+    return {
+      kind: "creation_failed",
+      sessionId: "",
+      error: wrapJulesError(err) ?? err,
+    };
   }
   core.info(`Jules session: ${session.id}`);
 
@@ -65,7 +78,13 @@ export async function runSession(
     try {
       reviewResult = parseReviewResponse(reviewMessage);
     } catch (err) {
-      core.error(`Failed to parse Jules response: ${err}`);
+      const msg = getErrorMessage(err);
+      logStructured("review_failed", {
+        reason: msg,
+        stage: "parse",
+        kind: "parse",
+      });
+      core.error(`Failed to parse Jules response: ${msg}`);
       await archiveSession(session);
       return {
         kind: "review",
@@ -94,13 +113,9 @@ async function waitUntilSessionReady(session: {
       core.info(`Session ${session.id} is ready after ${i + 1} attempt(s).`);
       return;
     } catch (err) {
+      const wrapped = wrapJulesError(err);
+      if (wrapped) throw wrapped;
       const msg = getErrorMessage(err);
-      if (isAuthError(msg)) {
-        throw new Error(
-          `Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`,
-          { cause: err }
-        );
-      }
       if (!msg.includes("404")) {
         throw new Error(`Jules session.info() failed: ${msg}`, { cause: err });
       }
@@ -132,22 +147,35 @@ async function pollForReview(
       }
       core.info(`No agentMessaged yet (attempt ${attempt})…`);
     } catch (err) {
-      const msg = getErrorMessage(err);
-      if (isAuthError(msg)) {
-        throw new Error(
-          `Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`,
-          { cause: err }
-        );
-      }
-      core.info(`hydrate/history error (attempt ${attempt}): ${msg}`);
+      const wrapped = wrapJulesError(err);
+      if (wrapped) throw wrapped;
+      core.info(
+        `hydrate/history error (attempt ${attempt}): ${getErrorMessage(err)}`
+      );
     }
     await new Promise((r) => setTimeout(r, 20_000));
   }
   return "";
 }
 
-export function isAuthError(msg: string): boolean {
-  return /\b(?:401|403)\b/.test(msg);
+/** Wrap a Jules API error in an actionable typed error, or return null. */
+function wrapJulesError(err: unknown): QuotaExceededError | AuthError | null {
+  const msg = getErrorMessage(err);
+  if (isQuotaError(msg)) {
+    return new QuotaExceededError(quotaMessage(msg), { cause: err });
+  }
+  if (isAuthError(msg)) {
+    return new AuthError(authMessage(msg), { cause: err });
+  }
+  return null;
+}
+
+function quotaMessage(msg: string): string {
+  return `Jules API quota or rate limit exceeded (${msg}). ${QUOTA_HINT}`;
+}
+
+function authMessage(msg: string): string {
+  return `Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`;
 }
 
 async function archiveSession(session: {

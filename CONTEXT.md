@@ -4,7 +4,7 @@
 
 **Config module** (`src/config.ts`) — loads and validates action inputs. Exports `loadConfig` which reads from an injected input-reader and returns a `ConfigResult` (`ok`/`error`), never throwing. Hides input reads, defaults (mirrored from `action.yml`), validation, empty-string normalization (`rules_file`, `extra_instructions`, `ignored_paths`), and the secret envelope (`setSecret` masking plus the `process.env` wiring that `logging.ts`'s scrubber redacts against).
 
-**Resilience module** (`src/resilience.ts`) — handles transient and permanent failures in external API calls. Exports `withRetry` (exponential backoff for transient errors) and `withFallback` (switch to alternative operation on permanent failure).
+**Resilience module** (`src/resilience.ts`) — handles transient and permanent failures in external API calls. Exports `withRetry` (exponential backoff for transient errors), `withFallback` (switch to alternative operation on permanent failure), and `isRetryableGithubError` (classify a GitHub API error as transient — `5xx`/`429`/rate-limit — so auth and permission errors fail fast instead of burning retries).
 
 **Validation module** (`src/validation.ts`) — parses and validates LLM responses. Exports `parseReviewResponse` which extracts JSON from markdown and validates the review structure in one call.
 
@@ -12,9 +12,9 @@
 
 **Coverage module** (`src/coverage.ts`) — large-PR handling. Exports `preparePromptDiff` (select a subset of the diff within a char budget — greedy pack by churn for `prioritize`, original-order cut for `truncate` — plus a coverage report of included/partial/excluded files), `splitDiffSections` (parse `diff --git` boundaries), and `buildPostedCoverageNote` (deterministic coverage line appended to the posted review).
 
-**Errors module** (`src/errors.ts`) — cross-cutting error message extraction. Exports `getErrorMessage` which handles Error objects, objects with message properties, and raw values.
+**Errors module** (`src/errors.ts`) — cross-cutting error handling. Exports `getErrorMessage` (extract a message from Error objects, message-bearing objects, and raw values), the failure taxonomy (`FailureKind`, `ReviewFailure`, `QuotaExceededError`, `AuthError`, `QUOTA_HINT`), `isQuotaError` / `isAuthError` classifiers, and `classifyFailure` which maps any thrown value to `{ kind, stage, message, summary }` so the check run and structured log describe the root cause. `timeoutExitSummary` is the shared wording for the no-review timeout exit.
 
-**Session module** (`src/session.ts`) — runs a single Jules session to completion: creates the session, waits for it to be ready, polls for the review message, parses the response, and archives the session on every exit. Exports `runSession` which reports its outcome as `review`, `timeout`, or `creation_failed`, plus `isAuthError` for classifying Jules API auth failures.
+**Session module** (`src/session.ts`) — runs a single Jules session to completion: creates the session, waits for it to be ready, polls for the review message, parses the response, and archives the session on every exit. Exports `runSession` which reports its outcome as `review`, `timeout`, or `creation_failed`. It wraps Jules quota/auth errors into the typed `QuotaExceededError`/`AuthError` (classifiers live in `src/errors.ts`) and logs unparseable responses as `review_failed` with `kind: "parse"`.
 
 **Submission module** (`src/submission.ts`) — formats and submits review comments to GitHub. Exports `submitReview` which handles the 3-tier fallback ladder (with suggestions → without suggestions → summary-only), XSS sanitization, suggestion escaping, and comment formatting. The formatting pipeline (severity emojis, confidence indicators, prompt-for-agents collapsible blocks) is hidden as an implementation detail.
 

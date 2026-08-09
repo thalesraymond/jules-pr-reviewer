@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import * as core from "@actions/core";
 import {
   fetchDiff,
   loadRulesFromBase,
@@ -285,7 +286,7 @@ describe("github.ts", () => {
       graphql: vi
         .fn()
         .mockResolvedValueOnce({})
-        .mockRejectedValue(new Error("fail")), // The first thread succeeds, second thread fails and retries
+        .mockRejectedValue(new Error("Request failed with status 500")), // The first thread succeeds, second thread fails and retries
     } as any;
 
     const resolvePromise = resolveThreads(octokit, ["t1", "t2"]);
@@ -296,6 +297,18 @@ describe("github.ts", () => {
     await resolvePromise;
     expect(octokit.graphql).toHaveBeenCalledTimes(5);
     vi.useRealTimers();
+  });
+
+  it("resolveThreads does not retry permanent (auth) errors", async () => {
+    const octokit = {
+      graphql: vi
+        .fn()
+        .mockRejectedValue(new Error("Resource not accessible by integration")),
+    } as any;
+
+    await resolveThreads(octokit, ["t1"]);
+    expect(octokit.graphql).toHaveBeenCalledTimes(1);
+    expect(core.warning).toHaveBeenCalled();
   });
 
   it("createCheckRun creates a check run and returns the ID", async () => {
@@ -328,7 +341,9 @@ describe("github.ts", () => {
     const octokit = {
       rest: {
         checks: {
-          create: vi.fn().mockRejectedValue(new Error("fail")),
+          create: vi
+            .fn()
+            .mockRejectedValue(new Error("Request failed with status 500")),
         },
       },
     } as any;
@@ -346,6 +361,23 @@ describe("github.ts", () => {
 
     expect(octokit.rest.checks.create).toHaveBeenCalledTimes(4);
     vi.useRealTimers();
+  });
+
+  it("createCheckRun fails fast on a permanent (auth) error without retries", async () => {
+    const octokit = {
+      rest: {
+        checks: {
+          create: vi
+            .fn()
+            .mockRejectedValue(new Error("Bad credentials status 401")),
+        },
+      },
+    } as any;
+
+    await expect(
+      createCheckRun(octokit, "owner", "repo", "jules/review", "sha")
+    ).rejects.toThrow("Bad credentials status 401");
+    expect(octokit.rest.checks.create).toHaveBeenCalledTimes(1);
   });
 
   it("finalizeCheckRun updates a check run with conclusion and output", async () => {
@@ -423,7 +455,9 @@ describe("github.ts", () => {
     const octokit = {
       rest: {
         checks: {
-          update: vi.fn().mockRejectedValue(new Error("fail")),
+          update: vi
+            .fn()
+            .mockRejectedValue(new Error("Request failed with status 500")),
         },
       },
     } as any;

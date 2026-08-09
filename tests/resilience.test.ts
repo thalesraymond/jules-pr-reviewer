@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { withRetry, withFallback, RetryOptions } from "../src/resilience.js";
+import {
+  withRetry,
+  withFallback,
+  isRetryableGithubError,
+  RetryOptions,
+} from "../src/resilience.js";
 
 describe("withRetry", () => {
   it("should return the result immediately if the operation succeeds", async () => {
@@ -152,5 +157,57 @@ describe("withFallback", () => {
     expect(primary).toHaveBeenCalledTimes(1);
     expect(shouldFallback).toHaveBeenCalledWith(primaryError);
     expect(fallback).toHaveBeenCalledWith(primaryError);
+  });
+});
+
+describe("isRetryableGithubError", () => {
+  it("returns true for 5xx status codes", () => {
+    expect(
+      isRetryableGithubError(new Error("Request failed with status 502"))
+    ).toBe(true);
+    expect(
+      isRetryableGithubError(new Error("HTTP/1.1 500 Internal Server Error"))
+    ).toBe(true);
+  });
+
+  it("does not match embedded 5xx-like numbers such as 1500", () => {
+    expect(isRetryableGithubError(new Error("Received 1500 bytes"))).toBe(
+      false
+    );
+    expect(isRetryableGithubError(new Error("error code 5000"))).toBe(false);
+  });
+
+  it("returns true for 429 and rate-limit messages", () => {
+    expect(isRetryableGithubError(new Error("status 429"))).toBe(true);
+    expect(
+      isRetryableGithubError(
+        new Error("You have exceeded a secondary rate limit")
+      )
+    ).toBe(true);
+    expect(isRetryableGithubError(new Error("API rate limit exceeded"))).toBe(
+      true
+    );
+  });
+
+  it("returns true for abuse detection messages", () => {
+    expect(isRetryableGithubError(new Error("abuse detection mechanism"))).toBe(
+      true
+    );
+  });
+
+  it("returns false for auth errors", () => {
+    expect(
+      isRetryableGithubError(new Error("Bad credentials status 401"))
+    ).toBe(false);
+    expect(
+      isRetryableGithubError(
+        new Error("Resource not accessible by integration")
+      )
+    ).toBe(false);
+  });
+
+  it("returns false for other errors and non-Error values", () => {
+    expect(isRetryableGithubError(new Error("some failure"))).toBe(false);
+    expect(isRetryableGithubError("some string error")).toBe(false);
   });
 });

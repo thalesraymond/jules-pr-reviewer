@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { runSession, isAuthError } from "../src/session.js";
+import { runSession } from "../src/session.js";
+import { isAuthError, QuotaExceededError, AuthError } from "../src/errors.js";
 import { jules } from "@google/jules-sdk";
 import * as core from "@actions/core";
 
@@ -77,11 +78,33 @@ describe("session.ts", () => {
           verdict: "block",
           resolvedCommentIds: [],
           newComments: [],
+          unparseable: true,
         },
         sessionId: "test-session-id",
       });
       expect(core.error).toHaveBeenCalled();
       expect(session.archive).toHaveBeenCalled();
+    });
+
+    it("logs a review_failed structured event with stage parse on parse failure", async () => {
+      const session = mockSession([
+        { type: "agentMessaged", message: "not valid json at all" },
+      ]);
+      (jules as any).with = vi.fn().mockReturnValue({
+        session: vi.fn().mockResolvedValue(session),
+      });
+
+      await runSession(runOptions);
+
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('"event":"review_failed"')
+      );
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('"stage":"parse"')
+      );
+      expect(core.info).toHaveBeenCalledWith(
+        expect.stringContaining('"kind":"parse"')
+      );
     });
 
     it("returns a timeout outcome when no message arrives before the deadline", async () => {
@@ -111,6 +134,37 @@ describe("session.ts", () => {
         sessionId: "",
         error: boom,
       });
+    });
+
+    it("wraps a quota error from session creation in QuotaExceededError", async () => {
+      (jules as any).with = vi.fn().mockReturnValue({
+        session: vi
+          .fn()
+          .mockRejectedValue(new Error("status code 429 quota exceeded")),
+      });
+
+      const result = await runSession(runOptions);
+
+      expect(result.kind).toBe("creation_failed");
+      if (result.kind === "creation_failed") {
+        expect(result.error).toBeInstanceOf(QuotaExceededError);
+        expect((result.error as Error).message).toContain(
+          "15 sessions per 24 hours"
+        );
+      }
+    });
+
+    it("wraps an auth error from session creation in AuthError", async () => {
+      (jules as any).with = vi.fn().mockReturnValue({
+        session: vi.fn().mockRejectedValue(new Error("status code 401")),
+      });
+
+      const result = await runSession(runOptions);
+
+      expect(result.kind).toBe("creation_failed");
+      if (result.kind === "creation_failed") {
+        expect(result.error).toBeInstanceOf(AuthError);
+      }
     });
 
     it("throws an auth error and archives when readiness returns 401", async () => {
@@ -187,6 +241,28 @@ describe("session.ts", () => {
       await expect(runSession(runOptions)).rejects.toThrow(
         "Jules API rejected request"
       );
+      expect(session.archive).toHaveBeenCalled();
+    });
+
+    it("throws a QuotaExceededError when polling hits a 429", async () => {
+      const session = mockSession([]);
+      session.hydrate.mockRejectedValue(new Error("status code 429 quota"));
+      (jules as any).with = vi.fn().mockReturnValue({
+        session: vi.fn().mockResolvedValue(session),
+      });
+
+      await expect(runSession(runOptions)).rejects.toThrow("15 sessions");
+      expect(session.archive).toHaveBeenCalled();
+    });
+
+    it("throws a QuotaExceededError when readiness hits a 429", async () => {
+      const session = mockSession([]);
+      session.info.mockRejectedValue(new Error("status code 429 quota"));
+      (jules as any).with = vi.fn().mockReturnValue({
+        session: vi.fn().mockResolvedValue(session),
+      });
+
+      await expect(runSession(runOptions)).rejects.toThrow("15 sessions");
       expect(session.archive).toHaveBeenCalled();
     });
 

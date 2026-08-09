@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as core from "@actions/core";
 import * as github from "@actions/github";
+import { QuotaExceededError, AuthError } from "../src/errors.js";
 
 // Mock dependencies
 vi.mock("@actions/core");
@@ -177,6 +178,7 @@ describe("index.ts", () => {
     expect(mockSetFailed).toHaveBeenCalledWith(
       expect.stringContaining("pull_request_target is not supported")
     );
+    expect(mockGithubHelper.createCheckRun).not.toHaveBeenCalled();
   });
 
   it("fails if eventName is not pull_request", async () => {
@@ -185,6 +187,7 @@ describe("index.ts", () => {
     expect(mockSetFailed).toHaveBeenCalledWith(
       expect.stringContaining("Unsupported event")
     );
+    expect(mockGithubHelper.createCheckRun).not.toHaveBeenCalled();
   });
 
   it("fails if no pull_request payload", async () => {
@@ -204,6 +207,15 @@ describe("index.ts", () => {
     expect(mockSetFailed).toHaveBeenCalledWith('Invalid fail_on: "invalid"');
     expect(mockJulesHelper.runJulesReview).not.toHaveBeenCalled();
     expect(mockGithubHelper.fetchDiff).not.toHaveBeenCalled();
+    expect(mockGithubHelper.createCheckRun).not.toHaveBeenCalled();
+    expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
+      "review_failed",
+      expect.objectContaining({
+        stage: "config",
+        kind: "config",
+        reason: 'Invalid fail_on: "invalid"',
+      })
+    );
   });
 
   it("skips draft PR if skip_drafts is true", async () => {
@@ -588,11 +600,19 @@ index 789..abc 100644
       "failure",
       {
         title: "Jules Review",
-        summary: "Jules did not return a valid review in time",
+        summary:
+          "Jules did not return a valid review within 30 minutes. Try increasing timeout_minutes or re-run the workflow.",
       }
     );
     expect(mockSetFailed).toHaveBeenCalledWith(
       expect.stringContaining("Jules returned no review message")
+    );
+    expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
+      "review_failed",
+      expect.objectContaining({
+        stage: "timeout",
+        kind: "timeout",
+      })
     );
   });
 
@@ -858,8 +878,126 @@ index 789..abc 100644
       "failure",
       {
         title: "Jules Review",
-        summary: "Review failed. Check GitHub Actions log for details.",
+        summary:
+          "Review failed: Fetch diff failed. Check GitHub Actions log for details.",
       }
+    );
+  });
+
+  it("finalizes the check run with an actionable quota summary on quota exhaustion", async () => {
+    mockJulesHelper.runJulesReview.mockRejectedValue(
+      new QuotaExceededError(
+        "Jules API quota or rate limit exceeded (status code 429). The free tier allows 15 sessions per 24 hours — wait for the window to reset or reduce usage."
+      )
+    );
+    await loadIndex();
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      42,
+      "failure",
+      {
+        title: "Jules Review",
+        summary: expect.stringContaining("15 sessions per 24 hours"),
+      }
+    );
+    expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
+      "review_failed",
+      expect.objectContaining({
+        stage: "quota",
+        kind: "quota",
+      })
+    );
+    expect(mockSetFailed).toHaveBeenCalledWith(
+      "Jules PR review failed: Jules API quota or rate limit exceeded (status code 429). The free tier allows 15 sessions per 24 hours — wait for the window to reset or reduce usage."
+    );
+  });
+
+  it("classifies a raw 429 as quota and finalizes the check run", async () => {
+    mockJulesHelper.runJulesReview.mockRejectedValue(
+      new Error("status code 429")
+    );
+    await loadIndex();
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      42,
+      "failure",
+      {
+        title: "Jules Review",
+        summary: expect.stringContaining("15 sessions per 24 hours"),
+      }
+    );
+  });
+
+  it("finalizes the check run with an auth failure surface on auth errors", async () => {
+    mockJulesHelper.runJulesReview.mockRejectedValue(
+      new AuthError(
+        "Jules API rejected request (status code 401). Check JULES_API_KEY is valid."
+      )
+    );
+    await loadIndex();
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      42,
+      "failure",
+      {
+        title: "Jules Review",
+        summary: expect.stringContaining("Check JULES_API_KEY is valid"),
+      }
+    );
+    expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
+      "review_failed",
+      expect.objectContaining({
+        stage: "auth",
+        kind: "auth",
+      })
+    );
+  });
+
+  it("regression: never leaves a stale in_progress check run when a mid-run failure occurs", async () => {
+    mockGithubHelper.fetchDiff.mockRejectedValue(new Error("boom mid-run"));
+    await loadIndex();
+    expect(mockGithubHelper.createCheckRun).toHaveBeenCalledTimes(1);
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      42,
+      "failure",
+      expect.anything()
+    );
+  });
+
+  it("fails the check run on a parse-failure review even when fail_on is never", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, failOn: "never" },
+    });
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        summary: "Jules returned an invalid response that could not be parsed.",
+        verdict: "block",
+        resolvedCommentIds: [],
+        newComments: [],
+        unparseable: true,
+      },
+      sessionId: "s1",
+    });
+    await loadIndex();
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      42,
+      "failure",
+      expect.objectContaining({
+        summary: expect.stringContaining("could not be parsed"),
+      })
     );
   });
 

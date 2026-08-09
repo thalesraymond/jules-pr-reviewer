@@ -29,31 +29,44 @@ import {
   extractChangedFilePaths,
 } from "./filtering.js";
 import { preparePromptDiff, buildPostedCoverageNote } from "./coverage.js";
-import { getErrorMessage } from "./errors.js";
+import {
+  getErrorMessage,
+  classifyFailure,
+  timeoutExitSummary,
+} from "./errors.js";
 import { loadConfig } from "./config.js";
 import { logStructured, setReviewOutputs } from "./logging.js";
 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
+
+function failWithConfigError(reason: string): void {
+  logStructured("review_failed", {
+    reason,
+    stage: "config",
+    kind: "config",
+  });
+  core.setFailed(reason);
+}
 
 async function run(): Promise<void> {
   const reviewStartTime = Date.now();
 
   const configResult = loadConfig(core);
   if (!configResult.ok) {
-    core.setFailed(configResult.error);
+    failWithConfigError(configResult.error);
     return;
   }
   const config = configResult.config;
 
   const ctx = github.context;
   if (ctx.eventName === "pull_request_target") {
-    core.setFailed(
+    failWithConfigError(
       "pull_request_target is not supported — it runs with base-repo write tokens and exposes the action to prompt-injection via attacker-controlled diffs. Use on: pull_request instead."
     );
     return;
   }
   if (ctx.eventName !== "pull_request") {
-    core.setFailed(
+    failWithConfigError(
       `Unsupported event: ${ctx.eventName}. Use on: pull_request.`
     );
     return;
@@ -61,7 +74,7 @@ async function run(): Promise<void> {
 
   const pr = ctx.payload.pull_request;
   if (!pr) {
-    core.setFailed("No pull_request payload found.");
+    failWithConfigError("No pull_request payload found.");
     return;
   }
 
@@ -257,11 +270,12 @@ async function run(): Promise<void> {
     if (!reviewResult) {
       await finalizeCheckRun(octokit, owner, repo, checkRunId!, "failure", {
         title: "Jules Review",
-        summary: "Jules did not return a valid review in time",
+        summary: timeoutExitSummary(config.timeoutMinutes),
       });
       logStructured("review_failed", {
         reason: "No valid review returned",
-        stage: "api_response",
+        stage: "timeout",
+        kind: "timeout",
       });
       core.setFailed(
         `Jules returned no review message within ${config.timeoutMinutes} minutes.`
@@ -269,7 +283,8 @@ async function run(): Promise<void> {
       return;
     }
 
-    const { verdict, summary, resolvedCommentIds, newComments } = reviewResult;
+    const { verdict, summary, resolvedCommentIds, newComments, unparseable } =
+      reviewResult;
 
     // Resolve threads that the LLM identified as fixed
     if (resolvedCommentIds && resolvedCommentIds.length > 0) {
@@ -313,10 +328,13 @@ async function run(): Promise<void> {
       commentCount: commentsForReview.length,
     });
 
-    const { conclusion, description } = conclusionFromVerdict(
-      verdict,
-      config.failOn
-    );
+    const { conclusion, description } = unparseable
+      ? {
+          conclusion: "failure" as const,
+          description:
+            "Jules returned a response that could not be parsed as a review.",
+        }
+      : conclusionFromVerdict(verdict, config.failOn);
     const annotations = buildAnnotations(newComments || []);
     await finalizeCheckRun(octokit, owner, repo, checkRunId!, conclusion, {
       title: "Jules Review",
@@ -366,12 +384,13 @@ async function run(): Promise<void> {
 
     core.info(`Verdict: ${verdict}. Check run conclusion: ${conclusion}.`);
   } catch (err) {
-    const msg = getErrorMessage(err);
-    core.error(`Review failed: ${msg}`);
+    const failure = classifyFailure(err);
+    core.error(`Review failed: ${failure.message}`);
 
     logStructured("review_failed", {
-      reason: msg,
-      stage: "review_execution",
+      reason: failure.message,
+      stage: failure.stage,
+      kind: failure.kind,
     });
 
     setReviewOutputs({
@@ -385,10 +404,10 @@ async function run(): Promise<void> {
     if (checkRunId !== undefined) {
       await finalizeCheckRun(octokit, owner, repo, checkRunId, "failure", {
         title: "Jules Review",
-        summary: "Review failed. Check GitHub Actions log for details.",
+        summary: failure.summary,
       }).catch(() => {});
     }
-    core.setFailed(`Jules PR review failed: ${msg}`);
+    core.setFailed(`Jules PR review failed: ${failure.message}`);
   }
 }
 

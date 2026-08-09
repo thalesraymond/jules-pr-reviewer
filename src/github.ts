@@ -1,8 +1,19 @@
 import * as github from "@actions/github";
 import * as core from "@actions/core";
 import { CheckRunAnnotation, OpenThread } from "./types.js";
-import { withRetry } from "./resilience.js";
+import {
+  withRetry,
+  isRetryableGithubError,
+  RetryOptions,
+} from "./resilience.js";
 import { getErrorMessage } from "./errors.js";
+
+const GITHUB_RETRY_OPTIONS: RetryOptions = {
+  maxRetries: 3,
+  initialDelayMs: 1000,
+  maxDelayMs: 5000,
+  shouldRetry: isRetryableGithubError,
+};
 
 export async function fetchDiff(
   octokit: ReturnType<typeof github.getOctokit>,
@@ -143,7 +154,7 @@ export async function resolveThreads(
         `,
             { id }
           ),
-        { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 }
+        GITHUB_RETRY_OPTIONS
       );
       core.info(`Resolved thread ${id}`);
     } catch (e) {
@@ -168,7 +179,7 @@ export async function createCheckRun(
         head_sha: headSha,
         status: "in_progress",
       }),
-    { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 }
+    GITHUB_RETRY_OPTIONS
   );
   return result.data.id;
 }
@@ -215,6 +226,6 @@ export async function finalizeCheckRun(
       octokit.rest.checks.update(
         params as Parameters<typeof octokit.rest.checks.update>[0]
       ),
-    { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 }
+    GITHUB_RETRY_OPTIONS
   );
 }
