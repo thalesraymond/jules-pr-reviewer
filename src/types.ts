@@ -67,6 +67,8 @@ export interface ReviewResult {
   resolvedCommentIds: number[];
   newComments: ReviewComment[];
   changedFiles?: string[];
+  /** Set when Jules' response could not be parsed; forces a failed check run. */
+  unparseable?: boolean;
 }
 
 export type StructuredLogEvent =

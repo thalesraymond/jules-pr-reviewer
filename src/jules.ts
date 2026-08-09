@@ -1,8 +1,8 @@
 import * as core from "@actions/core";
 import type { SourceInput } from "@google/jules-sdk";
-import { runSession, isAuthError } from "./session.js";
+import { runSession } from "./session.js";
 import { ReviewResult } from "./types.js";
-import { getErrorMessage } from "./errors.js";
+import { getErrorMessage, isAuthError, QuotaExceededError } from "./errors.js";
 import { logStructured } from "./logging.js";
 
 export async function runJulesReview(
@@ -81,6 +81,11 @@ export async function runAgenticReview(
   });
 
   if (outcome.kind === "creation_failed") {
+    if (outcome.error instanceof QuotaExceededError) {
+      // Don't fall back to prompt mode — quota is exhausted, that session
+      // would fail the same way. Fail fast with an actionable error.
+      throw outcome.error;
+    }
     const msg = getErrorMessage(outcome.error);
     core.warning(`Agentic session creation failed: ${msg}`);
     logStructured("agentic_fallback", {

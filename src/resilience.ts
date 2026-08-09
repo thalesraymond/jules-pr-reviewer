@@ -1,8 +1,22 @@
+import { getErrorMessage } from "./errors.js";
+
 export interface RetryOptions {
   maxRetries: number;
   initialDelayMs: number;
   maxDelayMs: number;
   shouldRetry?: (error: unknown) => boolean;
+}
+
+/**
+ * Whether a GitHub API error is transient and worth retrying. 5xx, 429, and
+ * rate-limit/abuse-detection responses benefit from backoff; auth and
+ * permission errors are deterministic and should fail fast.
+ */
+export function isRetryableGithubError(error: unknown): boolean {
+  const message = getErrorMessage(error);
+  return /(?:5\d\d|\b429\b|\brate limit\b|\bsecondary rate limit\b|\babuse detection\b)/i.test(
+    message
+  );
 }
 
 export async function withRetry<T>(

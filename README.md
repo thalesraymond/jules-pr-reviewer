@@ -73,6 +73,16 @@ jobs:
 
 The `concurrency` block cancels an older review run when a new commit lands, preventing race conditions where a stale run's verdict overwrites a fresh one. **Recommended.**
 
+### Why the `concurrency` block matters
+
+Each review run creates one Jules session (billed against your 15-sessions/24h free quota) and owns a `jules/review` check run. Without a `concurrency` guard, two runs for the same PR can overlap: both spawn Jules sessions and both finalize the same-named check run, so the last one to finish wins — which may be the *older* verdict. GitHub's `concurrency` key is the only reliable mutual-exclusion for GitHub Actions jobs:
+
+- `group: jules-review-${{ github.event.pull_request.number }}` — one review in flight per PR. Change the prefix (`jules-review-`) to make the group unique to this action if you also run other workflows on the same PR.
+- `cancel-in-progress: true` — a new push cancels the in-flight review job so a stale run never overwrites a fresh verdict.
+- `cancel-in-progress: false` — queued runs wait for the running one to finish. Safer for quota but slower: a burst of pushes can stack several full reviews.
+
+Forks are skipped by default (`skip_forks: true`), and each run is also scoped to its head SHA via the check run, so two pushes to the *same* branch in quick succession are the main overlap case the `concurrency` block covers. If you prefer to keep the workflow file minimal, the check run name is configurable with `status_context` (default `jules/review`) so you can run this action under a different context alongside other tools.
+
 ### 3. (Optional) Gate merges on the review
 
 `Settings → Branches → Branch protection rules → Require check runs to pass → jules/review`.
@@ -284,7 +294,26 @@ Then run: `JULES_API_KEY=... node list-sources.mjs`
 - **Fork PRs are skipped by default** (`skip_forks: true`). An untrusted fork's diff/PR description can contain prompt-injection payloads.
 - **`rules_file` is loaded from the base SHA**, not the PR head. An attacker cannot change the review rules by editing them in their PR.
 - **All untrusted content is fenced** in the prompt as "UNTRUSTED" with explicit instructions to Jules.
-- **Failure modes are resilient**: if Jules times out, the API errors, or the action crashes, the check run is completed with a failure conclusion and the PR comment is updated with a failure note — merge isn't silently blocked by a stale in-progress check run.
+- **Failure modes are resilient and actionable**: the action never leaves a stale `in_progress` check run. Every exit path either never creates the check run (config/event errors) or finalizes it with a `failure` conclusion (quota, auth, parse failure, timeout, crash). The failure summary on the check run names the root cause and tells you what to do about it.
+
+## Rate limits & failure surface
+
+The action classifies failures so you can tell what happened at a glance instead of reading raw stack traces:
+
+| Failure kind | Detected by | What you see |
+| ------------ | ----------- | ------------ |
+| `config` | Invalid/missing inputs before the run starts | Job fails immediately; check run is not created. |
+| `auth` | Jules `401`/`403` or GitHub "Resource not accessible" | Check run fails with a note to check `JULES_API_KEY` / `GITHUB_TOKEN` and workflow permissions. |
+| `quota` | Jules `429` / quota / rate-limit wording | Check run fails with the session-cap message. |
+| `parse` | Jules response that can't be parsed as a review | Block-verdict review is posted and the check run fails, noting the parse failure. |
+| `timeout` | No review within `timeout_minutes` (2 attempts) | Check run fails suggesting a higher `timeout_minutes`. |
+| `unknown` | Anything else | Check run fails with the root-cause message; details in the action log. |
+
+Every failure also emits a structured `review_failed` log entry (`::structured::`) carrying `{ kind, stage, reason }`.
+
+**Quota exhaustion.** Free Jules keys are capped at 15 sessions per 24 hours. When the cap is hit (HTTP 429 / quota message), the action fails fast with an explicit message instead of a cryptic error — including in agentic mode, where it skips the prompt-mode fallback because that session would fail the same way. To stay under the cap: use the `concurrency` block above, gate runs with `paths:` filters or the `bypass_label`, and skip drafts/forks.
+
+**GitHub API rate limits.** GitHub calls — check-run create/update and thread resolution — retry transient failures (HTTP `5xx`, `429`, and rate-limit/abuse-detection responses) with exponential backoff, but fail fast on deterministic `401`/`403` auth errors instead of burning retries. The diff fetch falls back to the full PR diff if the incremental comparison fails.
 
 ## Notes
 

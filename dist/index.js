@@ -37020,7 +37020,128 @@ function getOctokit(token, options, ...additionalPlugins) {
     return new GitHubWithPlugins(getOctokitOptions(token, options));
 }
 //# sourceMappingURL=github.js.map
+;// CONCATENATED MODULE: ./src/errors.ts
+function getErrorMessage(error) {
+    if (error instanceof Error) {
+        return error.message;
+    }
+    if (error !== null && typeof error === "object" && "message" in error) {
+        return String(error.message);
+    }
+    return String(error);
+}
+class QuotaExceededError extends Error {
+    kind = "quota";
+    constructor(message, options) {
+        super(message, options);
+        this.name = "QuotaExceededError";
+    }
+}
+class AuthError extends Error {
+    kind = "auth";
+    constructor(message, options) {
+        super(message, options);
+        this.name = "AuthError";
+    }
+}
+const CONFIG_PATTERN = /(?:invalid fail_on|invalid diff_mode|invalid large_pr_strategy|missing input)/i;
+/** Jules SDK quota exhaustion (HTTP 429, quota/cap wording). */
+const JULES_QUOTA_PATTERN = /(?:429|\bquota\b|\bsession cap\b)/i;
+/** GitHub API rate-limit responses (403 with rate-limit wording). */
+const GITHUB_RATE_LIMIT_PATTERN = /(?:rate limit|secondary rate limit|abuse detection)/i;
+const AUTH_PATTERN = /(?:401|403|\bnot accessible\b)/i;
+const PARSE_PATTERN = /(?:could not be parsed|failed to parse|unparseable|invalid review response)/i;
+const TIMEOUT_PATTERN = /(?:timed out|did not respond|no review message|become ready within timeout)/i;
+/** Single copy of the free-tier quota guidance, shared across error wrappers. */
+const QUOTA_HINT = "The free tier allows 15 sessions per 24 hours — wait for the window to reset or reduce usage.";
+function isQuotaError(message) {
+    return /(?:429|\bquota\b|\brate limit\b|\bsession cap\b)/i.test(message);
+}
+function isAuthError(message) {
+    return AUTH_PATTERN.test(message);
+}
+function quotaSummary(message) {
+    if (GITHUB_RATE_LIMIT_PATTERN.test(message) &&
+        !JULES_QUOTA_PATTERN.test(message)) {
+        return `GitHub API rate limit exceeded (${message}). Wait for the rate-limit window to reset or reduce API usage.`;
+    }
+    return `Jules review failed: API quota or rate limit exceeded (429 / session cap). ${QUOTA_HINT} Root cause: ${message}`;
+}
+function authSummary(message) {
+    return ("Jules review failed: authentication or permissions error. " +
+        "Check that JULES_API_KEY and GITHUB_TOKEN are valid and the workflow " +
+        `grants the required permissions. Root cause: ${message}`);
+}
+function parseSummary(message) {
+    return `Jules returned a response that could not be parsed as a review. Root cause: ${message}`;
+}
+function configSummary(message) {
+    return `Configuration error: ${message}`;
+}
+function timeoutSummary(message) {
+    return ("Jules review timed out. The review did not complete within the " +
+        "configured timeout_minutes; try increasing timeout_minutes or " +
+        `re-running the workflow. Root cause: ${message}`);
+}
+function unknownSummary(message) {
+    return `Review failed: ${message}. Check GitHub Actions log for details.`;
+}
+/** Stage and actionable summary for each failure kind. */
+const FAILURE_SPEC = {
+    config: { stage: "config", summary: configSummary },
+    auth: { stage: "auth", summary: authSummary },
+    quota: { stage: "quota", summary: quotaSummary },
+    parse: { stage: "parse", summary: parseSummary },
+    timeout: { stage: "timeout", summary: timeoutSummary },
+    unknown: { stage: "review_execution", summary: unknownSummary },
+};
+function classifyFailure(error) {
+    const message = getErrorMessage(error);
+    let kind;
+    if (error instanceof QuotaExceededError ||
+        JULES_QUOTA_PATTERN.test(message)) {
+        kind = "quota";
+    }
+    else if (GITHUB_RATE_LIMIT_PATTERN.test(message)) {
+        kind = "quota";
+    }
+    else if (error instanceof AuthError || AUTH_PATTERN.test(message)) {
+        kind = "auth";
+    }
+    else if (CONFIG_PATTERN.test(message)) {
+        kind = "config";
+    }
+    else if (PARSE_PATTERN.test(message)) {
+        kind = "parse";
+    }
+    else if (TIMEOUT_PATTERN.test(message)) {
+        kind = "timeout";
+    }
+    else {
+        kind = "unknown";
+    }
+    const spec = FAILURE_SPEC[kind];
+    const summary = error instanceof QuotaExceededError || error instanceof AuthError
+        ? message
+        : spec.summary(message);
+    return { kind, stage: spec.stage, message, summary };
+}
+/** Summary for the "no review within timeout" exit, shared with index.ts. */
+function timeoutExitSummary(timeoutMinutes) {
+    return `Jules did not return a valid review within ${timeoutMinutes} minutes. Try increasing timeout_minutes or re-run the workflow.`;
+}
+
 ;// CONCATENATED MODULE: ./src/resilience.ts
+
+/**
+ * Whether a GitHub API error is transient and worth retrying. 5xx, 429, and
+ * rate-limit/abuse-detection responses benefit from backoff; auth and
+ * permission errors are deterministic and should fail fast.
+ */
+function isRetryableGithubError(error) {
+    const message = getErrorMessage(error);
+    return /(?:5\d\d|\b429\b|\brate limit\b|\bsecondary rate limit\b|\babuse detection\b)/i.test(message);
+}
 async function withRetry(operation, options) {
     const { maxRetries, initialDelayMs, maxDelayMs, shouldRetry } = options;
     let attempt = 0;
@@ -37051,21 +37172,16 @@ async function withFallback(primary, fallback, shouldFallback) {
     }
 }
 
-;// CONCATENATED MODULE: ./src/errors.ts
-function getErrorMessage(error) {
-    if (error instanceof Error) {
-        return error.message;
-    }
-    if (error !== null && typeof error === "object" && "message" in error) {
-        return String(error.message);
-    }
-    return String(error);
-}
-
 ;// CONCATENATED MODULE: ./src/github.ts
 
 
 
+const GITHUB_RETRY_OPTIONS = {
+    maxRetries: 3,
+    initialDelayMs: 1000,
+    maxDelayMs: 5000,
+    shouldRetry: isRetryableGithubError,
+};
 async function fetchDiff(octokit, owner, repo, pr, baseShaForDiff, headSha) {
     try {
         const compare = await octokit.rest.repos.compareCommitsWithBasehead({
@@ -37174,7 +37290,7 @@ async function resolveThreads(octokit, threadIds) {
               thread { isResolved }
             }
           }
-        `, { id }), { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 });
+        `, { id }), GITHUB_RETRY_OPTIONS);
             info(`Resolved thread ${id}`);
         }
         catch (e) {
@@ -37189,7 +37305,7 @@ async function createCheckRun(octokit, owner, repo, name, headSha) {
         name,
         head_sha: headSha,
         status: "in_progress",
-    }), { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 });
+    }), GITHUB_RETRY_OPTIONS);
     return result.data.id;
 }
 async function finalizeCheckRun(octokit, owner, repo, checkRunId, conclusion, output) {
@@ -37216,7 +37332,7 @@ async function finalizeCheckRun(octokit, owner, repo, checkRunId, conclusion, ou
                 : {}),
         },
     };
-    await withRetry(() => octokit.rest.checks.update(params), { maxRetries: 3, initialDelayMs: 1000, maxDelayMs: 5000 });
+    await withRetry(() => octokit.rest.checks.update(params), GITHUB_RETRY_OPTIONS);
 }
 
 ;// CONCATENATED MODULE: ./src/submission.ts
@@ -41809,129 +41925,6 @@ function strictValidateReviewResult(parsed) {
     };
 }
 
-;// CONCATENATED MODULE: ./src/session.ts
-
-
-
-
-const PARSE_FAILURE_REVIEW = {
-    summary: "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
-    verdict: "block",
-    resolvedCommentIds: [],
-    newComments: [],
-};
-async function runSession(options) {
-    const customJules = jules.with({ apiKey: options.apiKey });
-    info("Creating Jules session…");
-    let session;
-    try {
-        session = await customJules.session({
-            prompt: options.prompt,
-            source: options.source,
-            requireApproval: false,
-            title: options.title,
-            autoPr: false,
-        });
-    }
-    catch (err) {
-        return { kind: "creation_failed", sessionId: "", error: err };
-    }
-    info(`Jules session: ${session.id}`);
-    try {
-        await waitUntilSessionReady(session);
-        const reviewMessage = await pollForReview(session, options.timeoutMinutes * 60 * 1000);
-        info(`Collected review (${reviewMessage.length} chars)`);
-        if (!reviewMessage) {
-            await archiveSession(session);
-            return { kind: "timeout", sessionId: session.id };
-        }
-        let reviewResult;
-        try {
-            reviewResult = parseReviewResponse(reviewMessage);
-        }
-        catch (err) {
-            error(`Failed to parse Jules response: ${err}`);
-            await archiveSession(session);
-            return {
-                kind: "review",
-                reviewResult: PARSE_FAILURE_REVIEW,
-                sessionId: session.id,
-            };
-        }
-        await archiveSession(session);
-        return { kind: "review", reviewResult, sessionId: session.id };
-    }
-    catch (err) {
-        await archiveSession(session);
-        throw err;
-    }
-}
-async function waitUntilSessionReady(session) {
-    const maxAttempts = 20;
-    let delay = 2000;
-    for (let i = 0; i < maxAttempts; i++) {
-        try {
-            await session.info();
-            info(`Session ${session.id} is ready after ${i + 1} attempt(s).`);
-            return;
-        }
-        catch (err) {
-            const msg = getErrorMessage(err);
-            if (isAuthError(msg)) {
-                throw new Error(`Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`, { cause: err });
-            }
-            if (!msg.includes("404")) {
-                throw new Error(`Jules session.info() failed: ${msg}`, { cause: err });
-            }
-            info(`Session not yet ready (attempt ${i + 1}/${maxAttempts})…`);
-            await new Promise((r) => setTimeout(r, delay));
-            delay = Math.min(delay * 1.5, 15000);
-        }
-    }
-    throw new Error("Session did not become ready within timeout.");
-}
-async function pollForReview(session, timeoutMs) {
-    const deadline = Date.now() + timeoutMs;
-    let attempt = 0;
-    while (Date.now() < deadline) {
-        attempt++;
-        try {
-            await session.hydrate();
-            let last = "";
-            for await (const a of session.history()) {
-                if (a.type === "agentMessaged")
-                    last = a.message;
-            }
-            if (last) {
-                info(`Got agentMessaged on attempt ${attempt}.`);
-                return last;
-            }
-            info(`No agentMessaged yet (attempt ${attempt})…`);
-        }
-        catch (err) {
-            const msg = getErrorMessage(err);
-            if (isAuthError(msg)) {
-                throw new Error(`Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`, { cause: err });
-            }
-            info(`hydrate/history error (attempt ${attempt}): ${msg}`);
-        }
-        await new Promise((r) => setTimeout(r, 20_000));
-    }
-    return "";
-}
-function isAuthError(msg) {
-    return /\b(?:401|403)\b/.test(msg);
-}
-async function archiveSession(session) {
-    try {
-        await session.archive();
-        info(`Archived session ${session.id}.`);
-    }
-    catch (err) {
-        warning(`Failed to archive session ${session.id}: ${getErrorMessage(err)}`);
-    }
-}
-
 ;// CONCATENATED MODULE: ./src/logging.ts
 
 /**
@@ -42017,6 +42010,154 @@ function setReviewOutputs(outputs) {
     }
 }
 
+;// CONCATENATED MODULE: ./src/session.ts
+
+
+
+
+
+const PARSE_FAILURE_REVIEW = {
+    summary: "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
+    verdict: "block",
+    resolvedCommentIds: [],
+    newComments: [],
+    unparseable: true,
+};
+async function runSession(options) {
+    const customJules = jules.with({ apiKey: options.apiKey });
+    info("Creating Jules session…");
+    let session;
+    try {
+        session = await customJules.session({
+            prompt: options.prompt,
+            source: options.source,
+            requireApproval: false,
+            title: options.title,
+            autoPr: false,
+        });
+    }
+    catch (err) {
+        return {
+            kind: "creation_failed",
+            sessionId: "",
+            error: wrapJulesError(err) ?? err,
+        };
+    }
+    info(`Jules session: ${session.id}`);
+    try {
+        await waitUntilSessionReady(session);
+        const reviewMessage = await pollForReview(session, options.timeoutMinutes * 60 * 1000);
+        info(`Collected review (${reviewMessage.length} chars)`);
+        if (!reviewMessage) {
+            await archiveSession(session);
+            return { kind: "timeout", sessionId: session.id };
+        }
+        let reviewResult;
+        try {
+            reviewResult = parseReviewResponse(reviewMessage);
+        }
+        catch (err) {
+            const msg = getErrorMessage(err);
+            logStructured("review_failed", {
+                reason: msg,
+                stage: "parse",
+                kind: "parse",
+            });
+            error(`Failed to parse Jules response: ${msg}`);
+            await archiveSession(session);
+            return {
+                kind: "review",
+                reviewResult: PARSE_FAILURE_REVIEW,
+                sessionId: session.id,
+            };
+        }
+        await archiveSession(session);
+        return { kind: "review", reviewResult, sessionId: session.id };
+    }
+    catch (err) {
+        await archiveSession(session);
+        throw err;
+    }
+}
+async function waitUntilSessionReady(session) {
+    const maxAttempts = 20;
+    let delay = 2000;
+    for (let i = 0; i < maxAttempts; i++) {
+        try {
+            await session.info();
+            info(`Session ${session.id} is ready after ${i + 1} attempt(s).`);
+            return;
+        }
+        catch (err) {
+            const wrapped = wrapJulesError(err);
+            if (wrapped)
+                throw wrapped;
+            const msg = getErrorMessage(err);
+            if (!msg.includes("404")) {
+                throw new Error(`Jules session.info() failed: ${msg}`, { cause: err });
+            }
+            info(`Session not yet ready (attempt ${i + 1}/${maxAttempts})…`);
+            await new Promise((r) => setTimeout(r, delay));
+            delay = Math.min(delay * 1.5, 15000);
+        }
+    }
+    throw new Error("Session did not become ready within timeout.");
+}
+async function pollForReview(session, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    let attempt = 0;
+    while (Date.now() < deadline) {
+        attempt++;
+        try {
+            await session.hydrate();
+            let last = "";
+            for await (const a of session.history()) {
+                if (a.type === "agentMessaged")
+                    last = a.message;
+            }
+            if (last) {
+                info(`Got agentMessaged on attempt ${attempt}.`);
+                return last;
+            }
+            info(`No agentMessaged yet (attempt ${attempt})…`);
+        }
+        catch (err) {
+            const wrapped = wrapJulesError(err);
+            if (wrapped)
+                throw wrapped;
+            info(`hydrate/history error (attempt ${attempt}): ${getErrorMessage(err)}`);
+        }
+        await new Promise((r) => setTimeout(r, 20_000));
+    }
+    return "";
+}
+/** Wrap a Jules API error in an actionable typed error, or return null. */
+function wrapJulesError(err) {
+    const msg = getErrorMessage(err);
+    if (isQuotaError(msg)) {
+        return new QuotaExceededError(quotaMessage(msg), { cause: err });
+    }
+    if (isAuthError(msg)) {
+        return new AuthError(authMessage(msg), { cause: err });
+    }
+    return null;
+}
+function quotaMessage(msg) {
+    return `Jules API quota or rate limit exceeded (${msg}). ${QUOTA_HINT}`;
+}
+function authMessage(msg) {
+    return `Jules API rejected request (${msg}). Check JULES_API_KEY is valid.`;
+}
+async function archiveSession(session) {
+    try {
+        await session.archive();
+        info(`Archived session ${session.id}.`);
+    }
+    catch (err) {
+        warning(`Failed to archive session ${session.id}: ${getErrorMessage(err)}`);
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/jules.ts
 
 
@@ -42068,6 +42209,11 @@ async function runAgenticReview(apiKey, prompt, source, timeoutMinutes, actualCh
         timeoutMinutes,
     });
     if (outcome.kind === "creation_failed") {
+        if (outcome.error instanceof QuotaExceededError) {
+            // Don't fall back to prompt mode — quota is exhausted, that session
+            // would fail the same way. Fail fast with an actionable error.
+            throw outcome.error;
+        }
         const msg = getErrorMessage(outcome.error);
         warning(`Agentic session creation failed: ${msg}`);
         logStructured("agentic_fallback", {
@@ -45145,26 +45291,34 @@ function loadConfig(io) {
 
 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
+function failWithConfigError(reason) {
+    logStructured("review_failed", {
+        reason,
+        stage: "config",
+        kind: "config",
+    });
+    setFailed(reason);
+}
 async function run() {
     const reviewStartTime = Date.now();
     const configResult = loadConfig(core_namespaceObject);
     if (!configResult.ok) {
-        setFailed(configResult.error);
+        failWithConfigError(configResult.error);
         return;
     }
     const config = configResult.config;
     const ctx = github_context;
     if (ctx.eventName === "pull_request_target") {
-        setFailed("pull_request_target is not supported — it runs with base-repo write tokens and exposes the action to prompt-injection via attacker-controlled diffs. Use on: pull_request instead.");
+        failWithConfigError("pull_request_target is not supported — it runs with base-repo write tokens and exposes the action to prompt-injection via attacker-controlled diffs. Use on: pull_request instead.");
         return;
     }
     if (ctx.eventName !== "pull_request") {
-        setFailed(`Unsupported event: ${ctx.eventName}. Use on: pull_request.`);
+        failWithConfigError(`Unsupported event: ${ctx.eventName}. Use on: pull_request.`);
         return;
     }
     const pr = ctx.payload.pull_request;
     if (!pr) {
-        setFailed("No pull_request payload found.");
+        failWithConfigError("No pull_request payload found.");
         return;
     }
     const owner = ctx.repo.owner;
@@ -45310,16 +45464,17 @@ async function run() {
         if (!reviewResult) {
             await finalizeCheckRun(octokit, owner, repo, checkRunId, "failure", {
                 title: "Jules Review",
-                summary: "Jules did not return a valid review in time",
+                summary: timeoutExitSummary(config.timeoutMinutes),
             });
             logStructured("review_failed", {
                 reason: "No valid review returned",
-                stage: "api_response",
+                stage: "timeout",
+                kind: "timeout",
             });
             setFailed(`Jules returned no review message within ${config.timeoutMinutes} minutes.`);
             return;
         }
-        const { verdict, summary, resolvedCommentIds, newComments } = reviewResult;
+        const { verdict, summary, resolvedCommentIds, newComments, unparseable } = reviewResult;
         // Resolve threads that the LLM identified as fixed
         if (resolvedCommentIds && resolvedCommentIds.length > 0) {
             const threadIdsToResolve = openThreads
@@ -45346,7 +45501,12 @@ async function run() {
             sessionId,
             commentCount: commentsForReview.length,
         });
-        const { conclusion, description } = conclusionFromVerdict(verdict, config.failOn);
+        const { conclusion, description } = unparseable
+            ? {
+                conclusion: "failure",
+                description: "Jules returned a response that could not be parsed as a review.",
+            }
+            : conclusionFromVerdict(verdict, config.failOn);
         const annotations = buildAnnotations(newComments || []);
         await finalizeCheckRun(octokit, owner, repo, checkRunId, conclusion, {
             title: "Jules Review",
@@ -45387,11 +45547,12 @@ async function run() {
         info(`Verdict: ${verdict}. Check run conclusion: ${conclusion}.`);
     }
     catch (err) {
-        const msg = getErrorMessage(err);
-        error(`Review failed: ${msg}`);
+        const failure = classifyFailure(err);
+        error(`Review failed: ${failure.message}`);
         logStructured("review_failed", {
-            reason: msg,
-            stage: "review_execution",
+            reason: failure.message,
+            stage: failure.stage,
+            kind: failure.kind,
         });
         setReviewOutputs({
             verdict: "skipped",
@@ -45403,10 +45564,10 @@ async function run() {
         if (checkRunId !== undefined) {
             await finalizeCheckRun(octokit, owner, repo, checkRunId, "failure", {
                 title: "Jules Review",
-                summary: "Review failed. Check GitHub Actions log for details.",
+                summary: failure.summary,
             }).catch(() => { });
         }
-        setFailed(`Jules PR review failed: ${msg}`);
+        setFailed(`Jules PR review failed: ${failure.message}`);
     }
 }
 function truncate(s, max) {
