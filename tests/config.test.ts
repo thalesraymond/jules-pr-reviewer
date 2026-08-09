@@ -15,6 +15,7 @@ const DEFAULT_INPUTS: Record<string, string> = {
   ignored_paths: "",
   timeout_minutes: "30",
   enable_suggestions: "false",
+  dedupe: "true",
 };
 
 function makeIo(overrides: Record<string, string> = {}): {
@@ -70,6 +71,7 @@ describe("loadConfig", () => {
       timeout_minutes: "45",
       skip_drafts: "false",
       enable_suggestions: "true",
+      dedupe: "false",
       extra_instructions: "Be strict",
       rules_file: ".github/rules.md",
       ignored_paths: '["dist/**", "*.lock"]',
@@ -93,6 +95,7 @@ describe("loadConfig", () => {
       ignoredPaths: '["dist/**", "*.lock"]',
       timeoutMinutes: 45,
       enableSuggestions: true,
+      dedupe: false,
     });
     expect(secrets).toEqual(["test-api-key", "test-token"]);
     expect(process.env.JULES_API_KEY).toBe("test-api-key");
@@ -115,6 +118,7 @@ describe("loadConfig", () => {
     expect(config.statusContext).toBe("jules/review");
     expect(config.timeoutMinutes).toBe(30);
     expect(config.enableSuggestions).toBe(false);
+    expect(config.dedupe).toBe(true);
     expect(config.extraInstructions).toBeUndefined();
     expect(config.rulesFilePath).toBeUndefined();
     expect(config.ignoredPaths).toBeUndefined();
@@ -221,6 +225,26 @@ describe("loadConfig", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toContain("enable_suggestions");
+  });
+
+  it("parses dedupe as false when dedupe is false", () => {
+    const { io } = makeIo({ dedupe: "false" });
+
+    const result = loadConfig(io);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(expectConfig(result).dedupe).toBe(false);
+  });
+
+  it("returns ok:false when dedupe is not a boolean", () => {
+    const { io } = makeIo({ dedupe: "maybe" });
+
+    const result = loadConfig(io);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("dedupe");
   });
 
   it("preserves ignored_paths as a raw string", () => {

@@ -20,7 +20,7 @@ describe("buildReviewPrompt (prompt mode)", () => {
     expect(prompt).not.toContain("# UNTRUSTED: Project-specific rules");
     expect(prompt).not.toContain("# Trusted: Additional instructions");
     expect(prompt).not.toContain("NOTE: The diff was truncated");
-    expect(prompt).not.toContain("# Open Review Comments");
+    expect(prompt).not.toContain("# Trusted: Open Review Comments");
   });
 
   it("should include diff truncated note", () => {
@@ -159,10 +159,100 @@ describe("buildReviewPrompt (prompt mode)", () => {
       ],
     });
 
-    expect(prompt).toContain("# Open Review Comments");
+    expect(prompt).toContain("# Trusted: Open Review Comments");
     expect(prompt).toContain(
       "[Index 1] File: file.ts, Line: 10\nComment: Bad code"
     );
+  });
+
+  it("should include the dedupe instruction by default when open threads exist", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      openThreads: [
+        {
+          index: 1,
+          threadId: "t1",
+          path: "file.ts",
+          line: 10,
+          body: "Bad code",
+        },
+      ],
+    });
+
+    expect(prompt).toContain("# Trusted: Open Review Comments");
+    expect(prompt).toContain("MUST NOT re-report");
+    expect(prompt).toContain("`resolvedCommentIds`");
+  });
+
+  it("should include the dedupe instruction when dedupe is explicitly true", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      dedupe: true,
+      openThreads: [
+        {
+          index: 1,
+          threadId: "t1",
+          path: "file.ts",
+          line: 10,
+          body: "Bad code",
+        },
+      ],
+    });
+
+    expect(prompt).toContain("MUST NOT re-report");
+  });
+
+  it("should omit the dedupe instruction when dedupe is false but keep the thread list", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      dedupe: false,
+      openThreads: [
+        {
+          index: 1,
+          threadId: "t1",
+          path: "file.ts",
+          line: 10,
+          body: "Bad code",
+        },
+      ],
+    });
+
+    expect(prompt).toContain("# Trusted: Open Review Comments");
+    expect(prompt).toContain(
+      "[Index 1] File: file.ts, Line: 10\nComment: Bad code"
+    );
+    expect(prompt).not.toContain("MUST NOT re-report");
+  });
+
+  it("should not render threads or the dedupe section when there are no open threads", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      dedupe: true,
+      openThreads: [],
+    });
+
+    expect(prompt).not.toContain("# Trusted: Open Review Comments");
+    expect(prompt).not.toContain("MUST NOT re-report");
   });
 });
 
@@ -355,7 +445,7 @@ describe("buildReviewPrompt (agentic mode)", () => {
       fileCount: 5,
     });
 
-    expect(prompt).toContain("# Open Review Comments");
+    expect(prompt).toContain("# Trusted: Open Review Comments");
     expect(prompt).toContain("[Index 0] File: src/index.ts, Line: 10");
   });
 });

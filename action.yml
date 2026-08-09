@@ -53,6 +53,10 @@ inputs:
     description: "Enable GitHub-native one-click suggested changes in review comments. Default false."
     required: false
     default: "false"
+  dedupe:
+    description: "Avoid re-reporting previously posted, still-open findings on subsequent reviews. Set to false to let Jules re-review and re-report prior findings."
+    required: false
+    default: "true"
   diff_mode:
     description: "Review pipeline: prompt (embed diff in prompt, default) or agentic (Jules inspects PR branch directly)."
     required: false
