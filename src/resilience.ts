@@ -1,4 +1,5 @@
 import { getErrorMessage } from "./errors.js";
+import { sleep } from "./utils.js";
 
 export interface RetryOptions {
   maxRetries: number;
@@ -35,7 +36,7 @@ export async function withRetry<T>(
         throw error;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      await sleep(delay);
 
       attempt++;
       delay = Math.min(delay * 2, maxDelayMs);

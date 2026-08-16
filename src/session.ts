@@ -11,6 +11,7 @@ import {
   QUOTA_HINT,
 } from "./errors.js";
 import { logStructured } from "./logging.js";
+import { sleep } from "./utils.js";
 
 type PollableSession = SessionClient & { hydrate: () => Promise<number> };
 
@@ -120,7 +121,7 @@ async function waitUntilSessionReady(session: {
         throw new Error(`Jules session.info() failed: ${msg}`, { cause: err });
       }
       core.info(`Session not yet ready (attempt ${i + 1}/${maxAttempts})…`);
-      await new Promise((r) => setTimeout(r, delay));
+      await sleep(delay);
       delay = Math.min(delay * 1.5, 15000);
     }
   }
@@ -153,7 +154,7 @@ async function pollForReview(
         `hydrate/history error (attempt ${attempt}): ${getErrorMessage(err)}`
       );
     }
-    await new Promise((r) => setTimeout(r, 20_000));
+    await sleep(20_000);
   }
   return "";
 }
