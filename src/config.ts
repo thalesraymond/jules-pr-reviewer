@@ -56,6 +56,7 @@ const VALID_LARGE_PR_STRATEGIES: readonly LargePrStrategy[] = [
 ];
 const DEFAULT_DIFF_MODE: DiffMode = "prompt";
 const DEFAULT_STRICTNESS: Strictness = "chill";
+const DEFAULT_FAIL_ON: FailOn = "never";
 const DEFAULT_TIMEOUT_MINUTES = 30;
 const DEFAULT_LARGE_PR_THRESHOLD = 80_000;
 const DEFAULT_LARGE_PR_STRATEGY: LargePrStrategy = "prioritize";
@@ -96,7 +97,7 @@ export function loadConfig(io: InputReader): ConfigResult {
   process.env.JULES_API_KEY = apiKey;
   process.env.GITHUB_TOKEN = token;
 
-  const failOnRaw = io.getInput("fail_on");
+  const failOnRaw = io.getInput("fail_on") || DEFAULT_FAIL_ON;
   if (!isFailOn(failOnRaw)) {
     return {
       ok: false,

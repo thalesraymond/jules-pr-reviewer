@@ -9,10 +9,9 @@ jobs:
     permissions:
       pull-requests: write
       contents: read
-      statuses: write
+      checks: write
     steps:
       - uses: thalesraymond/jules-pr-reviewer@v1
         with:
           jules_api_key: ${{ secrets.JULES_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          fail_on: blocking
