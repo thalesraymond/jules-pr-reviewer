@@ -12,6 +12,12 @@ export interface OpenThread {
   body: string;
 }
 
+export interface PathRuleFile {
+  path: string;
+  glob: string;
+  content: string;
+}
+
 export interface CommonPromptArgs {
   repoFullName: string;
   prNumber: number;
@@ -19,6 +25,7 @@ export interface CommonPromptArgs {
   prBody: string;
   extraInstructions?: string;
   rulesFromFile?: string;
+  perPathRules?: PathRuleFile[];
   openThreads: OpenThread[];
   dedupe?: boolean;
 }

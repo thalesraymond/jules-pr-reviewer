@@ -58,6 +58,10 @@ describe("index.ts", () => {
     loadConfig: vi.fn(),
   };
 
+  const mockPathRulesHelper = {
+    loadPerPathRules: vi.fn(),
+  };
+
   const defaultConfig = {
     apiKey: "dummy_key",
     token: "dummy_token",
@@ -136,12 +140,14 @@ describe("index.ts", () => {
     vi.doMock("../src/jules.js", () => mockJulesHelper);
     vi.doMock("../src/logging.js", () => mockLoggingHelper);
     vi.doMock("../src/config.js", () => mockConfigHelper);
+    vi.doMock("../src/pathRules.js", () => mockPathRulesHelper);
 
     // default config result
     mockConfigHelper.loadConfig.mockReturnValue({
       ok: true,
       config: defaultConfig,
     });
+    mockPathRulesHelper.loadPerPathRules.mockResolvedValue([]);
 
     // default helper returns
     mockGithubHelper.fetchDiff.mockResolvedValue("diff");
@@ -419,6 +425,76 @@ describe("index.ts", () => {
       "repo",
       "rules.md",
       "baseSHA"
+    );
+  });
+
+  it("loads per-path rules from the base SHA when rules_directory is set and merges them into the prompt", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, rulesDirectory: ".github/jules-rules" },
+    });
+    mockPathRulesHelper.loadPerPathRules.mockResolvedValue([
+      {
+        path: ".github/jules-rules/src/**.md",
+        glob: "src/**",
+        content: "Strict auth rules",
+      },
+    ]);
+    mockGithubHelper.fetchDiff.mockResolvedValue(
+      "diff --git a/src/auth/login.ts b/src/auth/login.ts\nindex 123..456 100644\n--- a/src/auth/login.ts\n+++ b/src/auth/login.ts\n@@ -1 +1 @@\n+new"
+    );
+    await loadIndex();
+
+    expect(mockPathRulesHelper.loadPerPathRules).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      ".github/jules-rules",
+      "baseSHA",
+      ["src/auth/login.ts"]
+    );
+    const prompt = mockJulesHelper.runJulesReview.mock.calls[0][1];
+    expect(prompt).toContain("# UNTRUSTED: Project-specific rules");
+    expect(prompt).toContain(
+      "## Per-path rules — files matching `src/**`\nStrict auth rules"
+    );
+  });
+
+  it("skips per-path rule loading when rules_directory is disabled", async () => {
+    await loadIndex();
+    expect(mockPathRulesHelper.loadPerPathRules).not.toHaveBeenCalled();
+  });
+
+  it("merges per-path rules into the agentic prompt when rules_directory is set", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: {
+        ...defaultConfig,
+        diffMode: "agentic",
+        rulesDirectory: ".github/jules-rules",
+      },
+    });
+    mockPathRulesHelper.loadPerPathRules.mockResolvedValue([
+      {
+        path: ".github/jules-rules/src/**.md",
+        glob: "src/**",
+        content: "Strict auth rules",
+      },
+    ]);
+    mockJulesHelper.runAgenticReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "approve",
+        summary: "ok",
+        newComments: [],
+      },
+      sessionId: "agentic-session",
+      fallback: false,
+    });
+    await loadIndex();
+
+    const prompt = mockJulesHelper.runAgenticReview.mock.calls[0][1];
+    expect(prompt).toContain(
+      "## Per-path rules — files matching `src/**`\nStrict auth rules"
     );
   });
 

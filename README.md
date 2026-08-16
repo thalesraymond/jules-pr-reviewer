@@ -91,7 +91,7 @@ Without this, a blocking verdict shows as a failed check run but won't stop merg
 
 ## Customizing the review
 
-Three ways to shape what Jules looks for (most → least common):
+Four ways to shape what Jules looks for (most → least common):
 
 ### A. Inline rules in the workflow
 
@@ -139,9 +139,42 @@ Best when rules are long, evolving, or shared across workflows. Default path: `.
 
 The action reads the file from the PR's base commit. Override the path with `rules_file:` or disable with `rules_file: ""`.
 
-### C. Both
+### C. Per-path rules directory
 
-The workflow's `extra_instructions` is appended after the rules file content. Use the file for stable rules and the workflow for quick situational overrides.
+Best when different areas of the repo need different review standards (e.g. strict for `src/` auth code, relaxed for `docs/`). Default path: `.github/jules-rules`.
+
+Every `.md` file in the directory is a per-path rule. The file's path relative to the directory **is the glob** (minus the trailing `.md`) — so globs containing `/` are expressed as real subdirectories:
+
+```
+.github/jules-rules/
+├── src/**.md              → applies to files matching src/**
+├── src/auth/**.md         → applies to files matching src/auth/**
+├── docs/**.md             → applies to files matching docs/**
+└── **.test.ts.md          → applies to files matching **.test.ts
+```
+
+Example `src/**.md`:
+
+```markdown
+## src/ rules
+
+- Any usage of `eval` or `child_process.exec` with user input is BLOCKING.
+- Every exported function must have a JSDoc type comment.
+```
+
+Example `docs/**.md`:
+
+```markdown
+## docs/ rules
+
+- Only flag factual errors or broken links. Style nits in prose are out of scope.
+```
+
+The action reads the rules directory from the PR's base commit, matches each glob against the PR's changed files, and injects **only the rules that match at least one changed file** into the prompt — the prompt never bloats with rules for areas the PR doesn't touch. Override the path with `rules_directory:` or disable with `rules_directory: ""`. Missing or malformed rule files warn without failing the review.
+
+### D. Both
+
+The workflow's `extra_instructions` is appended after the rules file content. Global (`rules_file`) and per-path (`rules_directory`) rules are merged under one UNTRUSTED section, each per-path block labelled with its glob. Use files for stable rules and the workflow for quick situational overrides.
 
 ## Inputs
 
@@ -161,6 +194,7 @@ The workflow's `extra_instructions` is appended after the rules file content. Us
 | `status_context`     | `jules/review`                  | Check run name.                                                   |
 | `extra_instructions` | `''`                            | Markdown appended to the prompt.                                  |
 | `rules_file`         | `.github/jules-review-rules.md` | Path in repo to load as extra rules. Set empty to disable.        |
+| `rules_directory`    | `.github/jules-rules`           | Directory in repo with per-path rule files; each `.md` file's path relative to the directory is a glob applied to the PR's changed files (e.g. `src/**.md` → `src/**`). Only matching rules are injected. Set empty to disable. |
 | `ignored_paths`      | `[]`                            | JSON array **or** comma/newline-separated list of paths/globs to exclude from diff (e.g. `["dist/**", "*.lock"]` or `dist/**, *.lock`). |
 | `timeout_minutes`    | `30`                            | How long to wait for Jules to return a review.                    |
 | `enable_suggestions` | `false`                         | Enable GitHub-native one-click suggested changes in review comments. |
@@ -345,7 +379,7 @@ Then run: `JULES_API_KEY=... node list-sources.mjs`
 
 - **Only `pull_request` is supported.** `pull_request_target` is rejected — it runs with base-repo write tokens, and exposes the action to prompt-injection via attacker-controlled diffs.
 - **Fork PRs are skipped by default** (`skip_forks: true`). An untrusted fork's diff/PR description can contain prompt-injection payloads.
-- **`rules_file` is loaded from the base SHA**, not the PR head. An attacker cannot change the review rules by editing them in their PR.
+- **`rules_file` and `rules_directory` are loaded from the base SHA**, not the PR head. An attacker cannot change the review rules by editing them in their PR.
 - **All untrusted content is fenced** in the prompt as "UNTRUSTED" with explicit instructions to Jules.
 - **Failure modes are resilient and actionable**: the action never leaves a stale `in_progress` check run. Every exit path either never creates the check run (config/event errors) or finalizes it with a `failure` conclusion (quota, auth, parse failure, timeout, crash). The failure summary on the check run names the root cause and tells you what to do about it.
 

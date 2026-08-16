@@ -58,23 +58,86 @@ export async function loadRulesFromBase(
   path: string,
   baseSha: string
 ): Promise<string | undefined> {
-  try {
-    const file = await octokit.rest.repos.getContent({
-      owner,
-      repo,
-      path,
-      ref: baseSha,
-    });
-    if ("content" in file.data && typeof file.data.content === "string") {
-      const content = Buffer.from(file.data.content, "base64").toString("utf8");
-      core.info(`Loaded ${content.length} chars from ${path} at base SHA`);
-      return content;
+  const data = await getContentWithWarning(
+    octokit,
+    owner,
+    repo,
+    path,
+    baseSha,
+    "Failed to load rules from base"
+  );
+  if (
+    data !== undefined &&
+    typeof data === "object" &&
+    data !== null &&
+    "content" in data
+  ) {
+    const { content } = data as { content?: unknown };
+    if (typeof content === "string") {
+      const decoded = Buffer.from(content, "base64").toString("utf8");
+      core.info(`Loaded ${decoded.length} chars from ${path} at base SHA`);
+      return decoded;
     }
-    return undefined;
+  }
+  return undefined;
+}
+
+async function getContentWithWarning(
+  octokit: ReturnType<typeof github.getOctokit>,
+  owner: string,
+  repo: string,
+  path: string,
+  ref: string,
+  warnMessage: string
+): Promise<unknown> {
+  try {
+    const res = await octokit.rest.repos.getContent({ owner, repo, path, ref });
+    return res.data;
   } catch (err) {
-    core.warning(`Failed to load rules from base: ${getErrorMessage(err)}`);
+    core.warning(`${warnMessage}: ${getErrorMessage(err)}`);
     return undefined;
   }
+}
+
+export async function listFilesInDirectory(
+  octokit: ReturnType<typeof github.getOctokit>,
+  owner: string,
+  repo: string,
+  dirPath: string,
+  refSha: string
+): Promise<string[]> {
+  const files: string[] = [];
+
+  const visit = async (dir: string): Promise<void> => {
+    const data = await getContentWithWarning(
+      octokit,
+      owner,
+      repo,
+      dir,
+      refSha,
+      `Failed to list files in ${dir} at ${refSha}`
+    );
+
+    if (data === undefined) {
+      return;
+    }
+
+    if (!Array.isArray(data)) {
+      core.warning(`Expected a directory at ${dir}, but found a file.`);
+      return;
+    }
+
+    for (const entry of data) {
+      if (entry.type === "file" && typeof entry.path === "string") {
+        files.push(entry.path);
+      } else if (entry.type === "dir" && typeof entry.path === "string") {
+        await visit(entry.path);
+      }
+    }
+  };
+
+  await visit(dirPath);
+  return files;
 }
 
 export async function fetchOpenThreads(

@@ -4,6 +4,7 @@ import * as core from "@actions/core";
 import {
   fetchDiff,
   loadRulesFromBase,
+  listFilesInDirectory,
   resolveThreads,
   createCheckRun,
   finalizeCheckRun,
@@ -154,6 +155,129 @@ describe("github.ts", () => {
       "sha"
     );
     expect(rules).toBeUndefined();
+  });
+
+  describe("listFilesInDirectory", () => {
+    it("recursively lists files under the directory at the given ref", async () => {
+      const octokit = {
+        rest: {
+          repos: {
+            getContent: vi
+              .fn()
+              .mockImplementation(({ path }: { path: string }) => {
+                if (path === "rules") {
+                  return Promise.resolve({
+                    data: [
+                      { type: "file", path: "rules/src/**.md" },
+                      { type: "file", path: "rules/README.txt" },
+                      { type: "dir", path: "rules/docs" },
+                      { type: "submodule", path: "rules/vendor" },
+                      { type: "symlink", path: "rules/sym" },
+                    ],
+                  });
+                }
+                if (path === "rules/docs") {
+                  return Promise.resolve({
+                    data: [
+                      { type: "file", path: "rules/docs/guides/**.md" },
+                      { type: "file", path: "rules/docs/guide.html" },
+                    ],
+                  });
+                }
+                return Promise.resolve({ data: [] });
+              }),
+          },
+        },
+      } as any;
+
+      const files = await listFilesInDirectory(
+        octokit,
+        "owner",
+        "repo",
+        "rules",
+        "baseSHA"
+      );
+
+      expect(files).toEqual([
+        "rules/src/**.md",
+        "rules/README.txt",
+        "rules/docs/guides/**.md",
+        "rules/docs/guide.html",
+      ]);
+      expect(octokit.rest.repos.getContent).toHaveBeenCalledWith({
+        owner: "owner",
+        repo: "repo",
+        path: "rules",
+        ref: "baseSHA",
+      });
+    });
+
+    it("returns [] and warns when the directory is missing or the API fails", async () => {
+      const octokit = {
+        rest: {
+          repos: {
+            getContent: vi.fn().mockRejectedValue(new Error("Not Found")),
+          },
+        },
+      } as any;
+
+      const files = await listFilesInDirectory(
+        octokit,
+        "owner",
+        "repo",
+        "rules",
+        "baseSHA"
+      );
+
+      expect(files).toEqual([]);
+      expect(core.warning).toHaveBeenCalledWith(
+        expect.stringContaining("rules")
+      );
+    });
+
+    it("warns and returns [] when the path resolves to a file, not a directory", async () => {
+      const octokit = {
+        rest: {
+          repos: {
+            getContent: vi
+              .fn()
+              .mockResolvedValue({ data: { type: "file", content: "x" } }),
+          },
+        },
+      } as any;
+
+      const files = await listFilesInDirectory(
+        octokit,
+        "owner",
+        "repo",
+        "rules",
+        "baseSHA"
+      );
+
+      expect(files).toEqual([]);
+      expect(core.warning).toHaveBeenCalled();
+    });
+
+    it("returns [] when the directory is empty", async () => {
+      const octokit = {
+        rest: {
+          repos: {
+            getContent: vi.fn().mockResolvedValue({ data: [] }),
+          },
+        },
+      } as any;
+
+      const files = await listFilesInDirectory(
+        octokit,
+        "owner",
+        "repo",
+        "rules",
+        "baseSHA"
+      );
+
+      expect(files).toEqual([]);
+      expect(core.warning).not.toHaveBeenCalled();
+    });
   });
 
   it("fetchOpenThreads parses graphql response correctly", async () => {

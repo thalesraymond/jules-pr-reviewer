@@ -2,6 +2,7 @@ import {
   AgenticDiffModeArgs,
   InlineDiffModeArgs,
   OpenThread,
+  PathRuleFile,
   ReviewPromptArgs,
 } from "./types.js";
 
@@ -14,6 +15,7 @@ export function buildReviewPrompt(args: ReviewPromptArgs): string {
     prBody,
     extraInstructions,
     rulesFromFile,
+    perPathRules = [],
     openThreads,
     dedupe = true,
   } = args;
@@ -21,6 +23,7 @@ export function buildReviewPrompt(args: ReviewPromptArgs): string {
   const threadsContext = buildThreadsContext(openThreads, dedupe);
   const diffSection = buildDiffSection(args);
   const largePrSection = buildLargePrSection(args);
+  const rulesSection = buildRulesSection(rulesFromFile, perPathRules);
   const readOnlyBullet =
     mode === "agentic"
       ? "- You MUST NOT modify, create, or delete any files in the repository. You are a read-only reviewer.\n"
@@ -48,10 +51,9 @@ ${prTitle}
 ${prBody || "(no description)"}
 
 ${diffSection}${largePrSection ? `\n${largePrSection}\n` : ""}${
-    rulesFromFile
+    rulesSection
       ? `
-# UNTRUSTED: Project-specific rules
-${rulesFromFile}
+${rulesSection}
 `
       : ""
   }${
@@ -109,6 +111,26 @@ ${changedFilesField}  "newComments": [
 }
 \`\`\`
 `;
+}
+
+function buildRulesSection(
+  rulesFromFile: string | undefined,
+  perPathRules: PathRuleFile[]
+): string {
+  const globalRules = rulesFromFile ? rulesFromFile.trim() : "";
+  const perPathBlocks = perPathRules.map(
+    (rule) =>
+      `## Per-path rules — files matching \`${rule.glob}\`\n${rule.content.trim()}`
+  );
+  const parts = [globalRules, ...perPathBlocks].filter(
+    (part) => part.length > 0
+  );
+
+  if (parts.length === 0) {
+    return "";
+  }
+
+  return `# UNTRUSTED: Project-specific rules\n${parts.join("\n\n")}`;
 }
 
 function buildDiffSection(args: ReviewPromptArgs): string {
