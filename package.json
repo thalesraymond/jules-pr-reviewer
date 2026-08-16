@@ -33,7 +33,7 @@
     "minimatch": "^10.2.6"
   },
   "devDependencies": {
-    "@commitlint/cli": "^21.2.1",
+    "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.0",
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.2.0",
