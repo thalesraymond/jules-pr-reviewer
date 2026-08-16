@@ -185,6 +185,7 @@ The workflow's `extra_instructions` is appended after the rules file content. Gl
 | `fail_on`            | `blocking`                      | `never` \| `blocking` \| `any`. Controls check run conclusion.  |
 | `min_severity_to_report` | `info`                      | Findings below this severity (`info` \| `warning` \| `high`) are not posted, annotated, or counted. |
 | `block_on`           | unset                           | Severity at which a reported finding fails the check run (`high` \| `warning` \| `info`). Overrides `fail_on` when set. |
+| `strictness`         | `chill`                         | Review strictness profile: `quiet` \| `chill` \| `assertive`. See [Strictness profiles](#strictness-profiles). |
 | `skip_drafts`        | `true`                          | Skip review on draft PRs.                                         |
 | `skip_forks`         | `true`                          | Skip PRs from forks (diff can contain prompt-injection payloads). |
 | `bypass_label`       | `jules-override`                | If the PR has this label, skip the review.                        |
@@ -350,6 +351,30 @@ Jules also generates a summary and a final verdict line:
 Setting `block_on` replaces this verdict-based mapping with a finding-based one: the check run fails iff a *reported* finding is at or above the given severity (regardless of the verdict). This is the mechanism behind "block only on High, ignore Info" — see [Skipping & filtering reviews](#skipping--filtering-reviews). The `verdict` output always remains the LLM's verdict.
 
 The **workflow job itself always passes** if the action ran successfully — the check run is what gates merge. Job failures indicate the action broke, not that the review found issues.
+
+## Strictness profiles
+
+A single `strictness` input dials how aggressively Jules hunts for issues and which findings surface on the PR:
+
+| Level | Prompt behavior | What surfaces |
+| ----- | --------------- | ------------- |
+| `quiet` | Reviews conservatively: reports only findings it is confident about; when in doubt, leaves the comment out. | Only 🚨 **High** findings. Warnings and infos are filtered out deterministically before posting. |
+| `chill` _(default)_ | Balanced hunting — identical instructions to previous versions of the action. | Everything Jules reports (High, Warning, Info). |
+| `assertive` | Hunts aggressively: reports low-confidence suspicions (honestly tagged), and proactively surfaces style, naming, duplication, dead code, and readability issues. | Everything Jules reports (High, Warning, Info). |
+
+```yaml
+- uses: thalesraymond/jules-pr-reviewer@v1
+  with:
+    jules_api_key: ${{ secrets.JULES_API_KEY }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    strictness: quiet   # High-signal reviews for busy maintainers
+```
+
+Notes:
+
+- The strictness instructions are trusted, action-authored prompt text — they cannot be overridden by content inside the PR diff, description, or rules file.
+- `quiet` filters comments, check-run annotations, and the issue-count outputs (`issues_count`, `high_issues_count`, `warning_issues_count`, `info_issues_count`) to High findings, but the **verdict is unchanged** — the summary still reflects Jules's full judgment of the PR, and the check-run conclusion follows the verdict via `fail_on`. When `block_on` is set, the conclusion is computed from the reported (post-filter) findings instead, so the filters do shape the gate in that mode (see `block_on`).
+- `chill` is the default and is byte-identical to the pre-strictness prompt, so upgrading changes nothing for existing users.
 
 ## Inner Workings & Architecture
 

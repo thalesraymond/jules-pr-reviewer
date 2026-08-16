@@ -25,6 +25,10 @@ inputs:
     description: "Fail the check run when a reported finding is at or above this severity: high | warning | info. When set, overrides fail_on (which maps the LLM verdict); when unset, fail_on is used unchanged."
     required: false
     default: ""
+  strictness:
+    description: "Review strictness: quiet (High-severity, confident findings only) | chill (balanced, default) | assertive (hunts style/correctness aggressively)."
+    required: false
+    default: "chill"
   skip_drafts:
     description: "Skip review on draft PRs."
     required: false

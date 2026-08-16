@@ -38,6 +38,7 @@ import {
 } from "./ignore.js";
 import { filterCommentsBySeverity, hasFindingsAtOrAbove } from "./severity.js";
 import { preparePromptDiff, buildPostedCoverageNote } from "./coverage.js";
+import { filterCommentsByStrictness } from "./strictness.js";
 import {
   getErrorMessage,
   classifyFailure,
@@ -251,6 +252,7 @@ async function run(): Promise<void> {
         perPathRules,
         openThreads,
         dedupe: config.dedupe,
+        strictness: config.strictness,
         largePrCoverage,
       });
 
@@ -295,6 +297,7 @@ async function run(): Promise<void> {
         perPathRules,
         openThreads,
         dedupe: config.dedupe,
+        strictness: config.strictness,
       });
 
       const julesApiCallStart = Date.now();
@@ -331,9 +334,9 @@ async function run(): Promise<void> {
 
     const { verdict, summary, resolvedCommentIds, newComments, unparseable } =
       reviewResult;
-    const reportedComments = filterCommentsBySeverity(
-      newComments || [],
-      config.minSeverityToReport
+    const reportedComments = filterCommentsByStrictness(
+      filterCommentsBySeverity(newComments || [], config.minSeverityToReport),
+      config.strictness
     );
 
     // Resolve threads that the LLM identified as fixed

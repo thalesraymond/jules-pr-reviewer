@@ -1,4 +1,10 @@
-import { DiffMode, FailOn, LargePrStrategy, Severity } from "./types.js";
+import {
+  DiffMode,
+  FailOn,
+  LargePrStrategy,
+  Severity,
+  Strictness,
+} from "./types.js";
 import { getErrorMessage } from "./errors.js";
 import { parseSeverityGate, VALID_SEVERITY_GATES } from "./severity.js";
 
@@ -12,6 +18,7 @@ export interface Config {
   apiKey: string;
   token: string;
   failOn: FailOn;
+  strictness: Strictness;
   diffMode: DiffMode;
   skipDrafts: boolean;
   skipForks: boolean;
@@ -37,12 +44,18 @@ export type ConfigResult =
   { ok: true; config: Config } | { ok: false; error: string };
 
 const VALID_FAIL_ON: readonly FailOn[] = ["never", "blocking", "any"];
+const VALID_STRICTNESS_LEVELS: readonly Strictness[] = [
+  "quiet",
+  "chill",
+  "assertive",
+];
 const VALID_DIFF_MODES: readonly DiffMode[] = ["prompt", "agentic"];
 const VALID_LARGE_PR_STRATEGIES: readonly LargePrStrategy[] = [
   "truncate",
   "prioritize",
 ];
 const DEFAULT_DIFF_MODE: DiffMode = "prompt";
+const DEFAULT_STRICTNESS: Strictness = "chill";
 const DEFAULT_TIMEOUT_MINUTES = 30;
 const DEFAULT_LARGE_PR_THRESHOLD = 80_000;
 const DEFAULT_LARGE_PR_STRATEGY: LargePrStrategy = "prioritize";
@@ -50,6 +63,10 @@ const DEFAULT_MIN_SEVERITY_TO_REPORT: Severity = "Info";
 
 function isFailOn(value: string): value is FailOn {
   return VALID_FAIL_ON.some((v) => v === value);
+}
+
+function isStrictness(value: string): value is Strictness {
+  return VALID_STRICTNESS_LEVELS.some((v) => v === value);
 }
 
 function isDiffMode(value: string): value is DiffMode {
@@ -84,6 +101,14 @@ export function loadConfig(io: InputReader): ConfigResult {
     return {
       ok: false,
       error: `Invalid fail_on: "${failOnRaw}". Must be one of: ${VALID_FAIL_ON.join(", ")}.`,
+    };
+  }
+
+  const strictnessRaw = io.getInput("strictness") || DEFAULT_STRICTNESS;
+  if (!isStrictness(strictnessRaw)) {
+    return {
+      ok: false,
+      error: `Invalid strictness: "${strictnessRaw}". Must be one of: ${VALID_STRICTNESS_LEVELS.join(", ")}.`,
     };
   }
 
@@ -144,6 +169,7 @@ export function loadConfig(io: InputReader): ConfigResult {
       apiKey,
       token,
       failOn: failOnRaw,
+      strictness: strictnessRaw,
       diffMode: diffModeRaw,
       skipDrafts,
       skipForks,

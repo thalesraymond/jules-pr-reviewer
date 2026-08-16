@@ -5,6 +5,7 @@ const DEFAULT_INPUTS: Record<string, string> = {
   jules_api_key: "test-api-key",
   github_token: "test-token",
   fail_on: "blocking",
+  strictness: "chill",
   diff_mode: "prompt",
   skip_drafts: "true",
   skip_forks: "true",
@@ -75,6 +76,7 @@ describe("loadConfig", () => {
   it("returns a fully-populated config when all inputs are valid", () => {
     const { io, secrets } = makeIo({
       fail_on: "any",
+      strictness: "quiet",
       diff_mode: "agentic",
       timeout_minutes: "45",
       skip_drafts: "false",
@@ -94,6 +96,7 @@ describe("loadConfig", () => {
       token: "test-token",
       failOn: "any",
       diffMode: "agentic",
+      strictness: "quiet",
       skipDrafts: false,
       skipForks: true,
       bypassLabel: "jules-override",
@@ -127,6 +130,7 @@ describe("loadConfig", () => {
     if (!result.ok) return;
     const config = expectConfig(result);
     expect(config.failOn).toBe("blocking");
+    expect(config.strictness).toBe("chill");
     expect(config.diffMode).toBe("prompt");
     expect(config.skipDrafts).toBe(true);
     expect(config.skipForks).toBe(true);
@@ -440,5 +444,38 @@ describe("loadConfig", () => {
     if (result.ok) return;
     expect(result.error).toContain('Invalid block_on: "sometimes"');
     expect(result.error).toContain("high, warning, info");
+  });
+
+  it("parses each strictness level", () => {
+    const quiet = loadConfig(makeIo({ strictness: "quiet" }).io);
+    const chill = loadConfig(makeIo({ strictness: "chill" }).io);
+    const assertive = loadConfig(makeIo({ strictness: "assertive" }).io);
+
+    expect(quiet.ok).toBe(true);
+    expect(chill.ok).toBe(true);
+    expect(assertive.ok).toBe(true);
+    if (!quiet.ok || !chill.ok || !assertive.ok) return;
+    expect(expectConfig(quiet).strictness).toBe("quiet");
+    expect(expectConfig(chill).strictness).toBe("chill");
+    expect(expectConfig(assertive).strictness).toBe("assertive");
+  });
+
+  it("falls back to chill when strictness is an empty string", () => {
+    const result = loadConfig(makeIo({ strictness: "" }).io);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(expectConfig(result).strictness).toBe("chill");
+  });
+
+  it("returns ok:false when strictness is invalid", () => {
+    const { io } = makeIo({ strictness: "extreme" });
+
+    const result = loadConfig(io);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain('Invalid strictness: "extreme"');
+    expect(result.error).toContain("quiet, chill, assertive");
   });
 });

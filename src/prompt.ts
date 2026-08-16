@@ -4,7 +4,30 @@ import {
   OpenThread,
   PathRuleFile,
   ReviewPromptArgs,
+  Strictness,
 } from "./types.js";
+
+const STRICTNESS_SECTIONS: Partial<Record<Strictness, string>> = {
+  quiet: `# Trusted: Strictness profile (quiet)
+Review conservatively. Prefer a short, high-signal review over completeness.
+- Report ONLY High-severity findings that you are confident about.
+- Do NOT report Warning-severity findings.
+- Do NOT report Info-severity findings (style nits, naming, cosmetic issues) at all.
+- When in doubt, leave the comment out.
+`,
+  assertive: `# Trusted: Strictness profile (assertive)
+Hunt aggressively for issues beyond the obvious.
+- Report all correctness, security, and reliability findings, including low-confidence suspicions — always tag confidence honestly.
+- Proactively report style, naming, duplication, dead code, and readability issues as Info-severity findings.
+- Scrutinize edge cases, error paths, and non-obvious side effects even when the happy path looks correct.
+- Do not self-censor: when a finding might matter, surface it and let severity and confidence express the doubt.
+`,
+};
+
+function buildStrictnessSection(strictness: Strictness): string {
+  const section = STRICTNESS_SECTIONS[strictness];
+  return section ? `\n${section}` : "";
+}
 
 export function buildReviewPrompt(args: ReviewPromptArgs): string {
   const {
@@ -18,12 +41,14 @@ export function buildReviewPrompt(args: ReviewPromptArgs): string {
     perPathRules = [],
     openThreads,
     dedupe = true,
+    strictness = "chill",
   } = args;
 
   const threadsContext = buildThreadsContext(openThreads, dedupe);
   const diffSection = buildDiffSection(args);
   const largePrSection = buildLargePrSection(args);
   const rulesSection = buildRulesSection(rulesFromFile, perPathRules);
+  const strictnessSection = buildStrictnessSection(strictness);
   const readOnlyBullet =
     mode === "agentic"
       ? "- You MUST NOT modify, create, or delete any files in the repository. You are a read-only reviewer.\n"
@@ -78,7 +103,7 @@ Focus ONLY on lines changed in the diff. Evaluate for:
 - High: High-confidence correctness/security flaws, data loss risks, broken auth, obvious bugs.
 - Warning: Meaningful concerns worth addressing but not blocking.
 - Info: Small readability or consistency notes. Use sparingly.
-
+${strictnessSection}
 # Confidence score
 Provide a confidence score for each comment: Low, Medium, or High.
 

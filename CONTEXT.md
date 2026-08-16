@@ -2,7 +2,7 @@
 
 ## Domain modules
 
-**Config module** (`src/config.ts`) — loads and validates action inputs. Exports `loadConfig` which reads from an injected input-reader and returns a `ConfigResult` (`ok`/`error`), never throwing. Hides input reads, defaults (mirrored from `action.yml`), validation (including the `min_severity_to_report`/`block_on` severity gates), empty-string normalization (`rules_file`, `extra_instructions`, `ignored_paths`, `ignore_title_keywords`, `ignore_authors`, `review_labels`), and the secret envelope (`setSecret` masking plus the `process.env` wiring that `logging.ts`'s scrubber redacts against).
+**Config module** (`src/config.ts`) — loads and validates action inputs. Exports `loadConfig` which reads from an injected input-reader and returns a `ConfigResult` (`ok`/`error`), never throwing. Hides input reads, defaults (mirrored from `action.yml`), validation (including the `min_severity_to_report`/`block_on` severity gates and the `strictness` profile enum), empty-string normalization (`rules_file`, `extra_instructions`, `ignored_paths`, `ignore_title_keywords`, `ignore_authors`, `review_labels`), and the secret envelope (`setSecret` masking plus the `process.env` wiring that `logging.ts`'s scrubber redacts against).
 
 **Resilience module** (`src/resilience.ts`) — handles transient and permanent failures in external API calls. Exports `withRetry` (exponential backoff for transient errors), `withFallback` (switch to alternative operation on permanent failure), and `isRetryableGithubError` (classify a GitHub API error as transient — `5xx`/`429`/rate-limit — so auth and permission errors fail fast instead of burning retries).
 
@@ -24,9 +24,13 @@
 
 **Submission module** (`src/submission.ts`) — formats and submits review comments to GitHub. Exports `submitReview` which handles the 3-tier fallback ladder (with suggestions → without suggestions → summary-only), XSS sanitization, suggestion escaping, and comment formatting. The formatting pipeline (severity emojis, confidence indicators, prompt-for-agents collapsible blocks) is hidden as an implementation detail.
 
+**Strictness module** (`src/strictness.ts`) — the strictness profile dial. Exports `meetsReportThreshold` (which severities surface at a given level: `quiet` → High only, `chill`/`assertive` → everything) and `filterCommentsByStrictness` (applies the threshold to a comment list). The prompt-side per-level instructions live in `src/prompt.ts` as trusted text; `chill` renders no block so the default prompt is unchanged.
+
 ## Key concepts
 
 **ReviewResult** — the structured output from the LLM: verdict (approve/comment/block), summary, resolved comment IDs, and new comments with file/line/severity/confidence/message.
+
+**Strictness profile** — the review-culture dial (`quiet` | `chill` | `assertive`): steers the prompt (per-level trusted instruction block) and the report threshold (which severities surface). `chill` is the default and renders no block, keeping the prompt byte-identical to earlier versions.
 
 **Jules session** — a single unit of work on the Jules side: a created session that receives the review prompt and produces a review message.
 

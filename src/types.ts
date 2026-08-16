@@ -3,6 +3,7 @@ export type Verdict = "approve" | "comment" | "block";
 export type DiffMode = "prompt" | "agentic";
 export type LargePrStrategy = "truncate" | "prioritize";
 export type Severity = "High" | "Warning" | "Info";
+export type Strictness = "quiet" | "chill" | "assertive";
 
 export interface OpenThread {
   index: number;
@@ -28,6 +29,7 @@ export interface CommonPromptArgs {
   perPathRules?: PathRuleFile[];
   openThreads: OpenThread[];
   dedupe?: boolean;
+  strictness?: Strictness;
 }
 
 export interface InlineDiffModeArgs extends CommonPromptArgs {
