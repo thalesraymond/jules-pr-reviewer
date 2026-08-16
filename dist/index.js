@@ -37220,24 +37220,52 @@ async function fetchDiff(octokit, owner, repo, pr, baseShaForDiff, headSha) {
     throw new Error("GitHub returned no diff text.");
 }
 async function loadRulesFromBase(octokit, owner, repo, path, baseSha) {
-    try {
-        const file = await octokit.rest.repos.getContent({
-            owner,
-            repo,
-            path,
-            ref: baseSha,
-        });
-        if ("content" in file.data && typeof file.data.content === "string") {
-            const content = Buffer.from(file.data.content, "base64").toString("utf8");
-            info(`Loaded ${content.length} chars from ${path} at base SHA`);
-            return content;
+    const data = await getContentWithWarning(octokit, owner, repo, path, baseSha, "Failed to load rules from base");
+    if (data !== undefined &&
+        typeof data === "object" &&
+        data !== null &&
+        "content" in data) {
+        const { content } = data;
+        if (typeof content === "string") {
+            const decoded = Buffer.from(content, "base64").toString("utf8");
+            info(`Loaded ${decoded.length} chars from ${path} at base SHA`);
+            return decoded;
         }
-        return undefined;
+    }
+    return undefined;
+}
+async function getContentWithWarning(octokit, owner, repo, path, ref, warnMessage) {
+    try {
+        const res = await octokit.rest.repos.getContent({ owner, repo, path, ref });
+        return res.data;
     }
     catch (err) {
-        warning(`Failed to load rules from base: ${getErrorMessage(err)}`);
+        warning(`${warnMessage}: ${getErrorMessage(err)}`);
         return undefined;
     }
+}
+async function listFilesInDirectory(octokit, owner, repo, dirPath, refSha) {
+    const files = [];
+    const visit = async (dir) => {
+        const data = await getContentWithWarning(octokit, owner, repo, dir, refSha, `Failed to list files in ${dir} at ${refSha}`);
+        if (data === undefined) {
+            return;
+        }
+        if (!Array.isArray(data)) {
+            warning(`Expected a directory at ${dir}, but found a file.`);
+            return;
+        }
+        for (const entry of data) {
+            if (entry.type === "file" && typeof entry.path === "string") {
+                files.push(entry.path);
+            }
+            else if (entry.type === "dir" && typeof entry.path === "string") {
+                await visit(entry.path);
+            }
+        }
+    };
+    await visit(dirPath);
+    return files;
 }
 async function fetchOpenThreads(octokit, owner, repo, prNumber) {
     const query = `
@@ -42299,10 +42327,11 @@ function wrapPermissionError(err, needed, op) {
 
 ;// CONCATENATED MODULE: ./src/prompt.ts
 function buildReviewPrompt(args) {
-    const { mode, repoFullName, prNumber, prTitle, prBody, extraInstructions, rulesFromFile, openThreads, dedupe = true, } = args;
+    const { mode, repoFullName, prNumber, prTitle, prBody, extraInstructions, rulesFromFile, perPathRules = [], openThreads, dedupe = true, } = args;
     const threadsContext = buildThreadsContext(openThreads, dedupe);
     const diffSection = buildDiffSection(args);
     const largePrSection = buildLargePrSection(args);
+    const rulesSection = buildRulesSection(rulesFromFile, perPathRules);
     const readOnlyBullet = mode === "agentic"
         ? "- You MUST NOT modify, create, or delete any files in the repository. You are a read-only reviewer.\n"
         : "";
@@ -42326,10 +42355,9 @@ ${prTitle}
 # UNTRUSTED: PR description
 ${prBody || "(no description)"}
 
-${diffSection}${largePrSection ? `\n${largePrSection}\n` : ""}${rulesFromFile
+${diffSection}${largePrSection ? `\n${largePrSection}\n` : ""}${rulesSection
         ? `
-# UNTRUSTED: Project-specific rules
-${rulesFromFile}
+${rulesSection}
 `
         : ""}${extraInstructions
         ? `
@@ -42384,6 +42412,15 @@ ${changedFilesField}  "newComments": [
 }
 \`\`\`
 `;
+}
+function buildRulesSection(rulesFromFile, perPathRules) {
+    const globalRules = rulesFromFile ? rulesFromFile.trim() : "";
+    const perPathBlocks = perPathRules.map((rule) => `## Per-path rules — files matching \`${rule.glob}\`\n${rule.content.trim()}`);
+    const parts = [globalRules, ...perPathBlocks].filter((part) => part.length > 0);
+    if (parts.length === 0) {
+        return "";
+    }
+    return `# UNTRUSTED: Project-specific rules\n${parts.join("\n\n")}`;
 }
 function buildDiffSection(args) {
     if (args.mode === "agentic") {
@@ -45381,6 +45418,7 @@ function loadConfig(io) {
             statusContext: io.getInput("status_context"),
             extraInstructions: normalizeOptional(io.getInput("extra_instructions")),
             rulesFilePath: normalizeOptional(io.getInput("rules_file")),
+            rulesDirectory: normalizeOptional(io.getInput("rules_directory")),
             ignoredPaths: normalizeOptional(io.getInput("ignored_paths")),
             timeoutMinutes: Math.max(1, parseInt(io.getInput("timeout_minutes") || "30", 10) ||
                 DEFAULT_TIMEOUT_MINUTES),
@@ -45398,7 +45436,102 @@ function loadConfig(io) {
     };
 }
 
+;// CONCATENATED MODULE: ./src/pathRules.ts
+
+
+
+function isRuleFile(relativePath) {
+    return relativePath.endsWith(".md");
+}
+function globFromRulePath(relativePath) {
+    return relativePath.replace(/\.md$/, "");
+}
+function isWellFormedGlob(glob) {
+    let bracketDepth = 0;
+    let braceDepth = 0;
+    let escaped = false;
+    for (const char of glob) {
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (char === "\\") {
+            escaped = true;
+            continue;
+        }
+        if (char === "[") {
+            bracketDepth += 1;
+        }
+        else if (char === "]") {
+            bracketDepth -= 1;
+            if (bracketDepth < 0)
+                return false;
+        }
+        else if (char === "{") {
+            braceDepth += 1;
+        }
+        else if (char === "}") {
+            braceDepth -= 1;
+            if (braceDepth < 0)
+                return false;
+        }
+    }
+    return bracketDepth === 0 && braceDepth === 0;
+}
+function parseRuleCandidates(filesInDir, rulesDir) {
+    const prefix = rulesDir.replace(/\/+$/, "") + "/";
+    return filesInDir
+        .filter((path) => path.startsWith(prefix) && isRuleFile(path))
+        .map((path) => ({
+        path,
+        glob: globFromRulePath(path.slice(prefix.length)),
+    }))
+        .sort((a, b) => a.path.localeCompare(b.path));
+}
+function selectMatchingRules(candidates, changedFiles) {
+    const matched = [];
+    for (const candidate of candidates) {
+        if (!isWellFormedGlob(candidate.glob)) {
+            warning(`Malformed glob "${candidate.glob}" in per-path rules file ${candidate.path} — skipping.`);
+            continue;
+        }
+        const matches = changedFiles.some((file) => minimatch(file.replace(/\\/g, "/"), normalizeGlob(candidate.glob), {
+            dot: true,
+        }));
+        if (matches) {
+            matched.push(candidate);
+        }
+    }
+    return matched;
+}
+function normalizeGlob(glob) {
+    return glob.replace(/(?<=^|\/)\*\*(?=[^/*])/g, "**/*");
+}
+async function loadPerPathRules(octokit, owner, repo, rulesDir, baseSha, changedFiles) {
+    const filesInDir = await listFilesInDirectory(octokit, owner, repo, rulesDir, baseSha);
+    const candidates = parseRuleCandidates(filesInDir, rulesDir);
+    const matched = selectMatchingRules(candidates, changedFiles);
+    if (matched.length === 0) {
+        return [];
+    }
+    const rules = [];
+    for (const candidate of matched) {
+        const content = await loadRulesFromBase(octokit, owner, repo, candidate.path, baseSha);
+        if (content === undefined) {
+            continue;
+        }
+        rules.push({ path: candidate.path, glob: candidate.glob, content });
+    }
+    if (rules.length > 0) {
+        info(`Matched ${rules.length} per-path rule file(s): ${rules
+            .map((r) => r.path)
+            .join(", ")}`);
+    }
+    return rules;
+}
+
 ;// CONCATENATED MODULE: ./src/index.ts
+
 
 
 
@@ -45536,6 +45669,9 @@ async function run() {
         ]);
         const filteredDiff = filterDiff(diff, parseIgnoredPaths(config.ignoredPaths));
         const changedFiles = extractChangedFilePaths(filteredDiff);
+        const perPathRules = config.rulesDirectory
+            ? await loadPerPathRules(octokit, owner, repo, config.rulesDirectory, baseSha, changedFiles)
+            : [];
         let reviewResult = null;
         let sessionId = "";
         let reviewCoverage;
@@ -45555,6 +45691,7 @@ async function run() {
                 ignoredPaths: config.ignoredPaths,
                 extraInstructions: config.extraInstructions,
                 rulesFromFile,
+                perPathRules,
                 openThreads,
                 dedupe: config.dedupe,
                 largePrCoverage,
@@ -45582,6 +45719,7 @@ async function run() {
                 largePrCoverage: prepared.coverage,
                 extraInstructions: config.extraInstructions,
                 rulesFromFile,
+                perPathRules,
                 openThreads,
                 dedupe: config.dedupe,
             });

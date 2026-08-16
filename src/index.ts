@@ -44,6 +44,7 @@ import {
   timeoutExitSummary,
 } from "./errors.js";
 import { loadConfig } from "./config.js";
+import { loadPerPathRules } from "./pathRules.js";
 import { logStructured, setReviewOutputs } from "./logging.js";
 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
@@ -215,6 +216,16 @@ async function run(): Promise<void> {
       parseIgnoredPaths(config.ignoredPaths)
     );
     const changedFiles = extractChangedFilePaths(filteredDiff);
+    const perPathRules = config.rulesDirectory
+      ? await loadPerPathRules(
+          octokit,
+          owner,
+          repo,
+          config.rulesDirectory,
+          baseSha,
+          changedFiles
+        )
+      : [];
 
     let reviewResult: ReviewResult | null = null;
     let sessionId = "";
@@ -237,6 +248,7 @@ async function run(): Promise<void> {
         ignoredPaths: config.ignoredPaths,
         extraInstructions: config.extraInstructions,
         rulesFromFile,
+        perPathRules,
         openThreads,
         dedupe: config.dedupe,
         largePrCoverage,
@@ -280,6 +292,7 @@ async function run(): Promise<void> {
         largePrCoverage: prepared.coverage,
         extraInstructions: config.extraInstructions,
         rulesFromFile,
+        perPathRules,
         openThreads,
         dedupe: config.dedupe,
       });

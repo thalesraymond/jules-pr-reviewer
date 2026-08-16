@@ -12,6 +12,7 @@ const DEFAULT_INPUTS: Record<string, string> = {
   status_context: "jules/review",
   extra_instructions: "",
   rules_file: "",
+  rules_directory: ".github/jules-rules",
   ignored_paths: "",
   timeout_minutes: "30",
   enable_suggestions: "false",
@@ -99,6 +100,7 @@ describe("loadConfig", () => {
       statusContext: "jules/review",
       extraInstructions: "Be strict",
       rulesFilePath: ".github/rules.md",
+      rulesDirectory: ".github/jules-rules",
       ignoredPaths: '["dist/**", "*.lock"]',
       timeoutMinutes: 45,
       enableSuggestions: true,
@@ -139,10 +141,31 @@ describe("loadConfig", () => {
     expect(config.blockOn).toBeUndefined();
     expect(config.extraInstructions).toBeUndefined();
     expect(config.rulesFilePath).toBeUndefined();
+    expect(config.rulesDirectory).toBe(".github/jules-rules");
     expect(config.ignoredPaths).toBeUndefined();
     expect(config.ignoreTitleKeywords).toBeUndefined();
     expect(config.ignoreAuthors).toBeUndefined();
     expect(config.reviewLabels).toBeUndefined();
+  });
+
+  it("normalizes an empty rules_directory to undefined (disabled)", () => {
+    const { io } = makeIo({ rules_directory: "" });
+
+    const result = loadConfig(io);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(expectConfig(result).rulesDirectory).toBeUndefined();
+  });
+
+  it("preserves a custom rules_directory", () => {
+    const { io } = makeIo({ rules_directory: "config/jules-rules" });
+
+    const result = loadConfig(io);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(expectConfig(result).rulesDirectory).toBe("config/jules-rules");
   });
 
   it("falls back to prompt mode and 30 minutes when inputs are empty strings", () => {

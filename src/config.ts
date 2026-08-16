@@ -19,6 +19,7 @@ export interface Config {
   statusContext: string;
   extraInstructions?: string;
   rulesFilePath?: string;
+  rulesDirectory?: string;
   ignoredPaths?: string;
   timeoutMinutes: number;
   enableSuggestions: boolean;
@@ -150,6 +151,7 @@ export function loadConfig(io: InputReader): ConfigResult {
       statusContext: io.getInput("status_context"),
       extraInstructions: normalizeOptional(io.getInput("extra_instructions")),
       rulesFilePath: normalizeOptional(io.getInput("rules_file")),
+      rulesDirectory: normalizeOptional(io.getInput("rules_directory")),
       ignoredPaths: normalizeOptional(io.getInput("ignored_paths")),
       timeoutMinutes: Math.max(
         1,

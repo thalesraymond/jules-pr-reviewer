@@ -69,6 +69,88 @@ describe("buildReviewPrompt (prompt mode)", () => {
     );
   });
 
+  it("should merge global and matching per-path rules under one UNTRUSTED section", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      rulesFromFile: "Global rule",
+      perPathRules: [
+        {
+          path: ".github/jules-rules/src/**.md",
+          glob: "src/**",
+          content: "Strict auth rules",
+        },
+        {
+          path: ".github/jules-rules/docs/**.md",
+          glob: "docs/**",
+          content: "Relaxed docs rules",
+        },
+      ],
+      openThreads: [],
+    });
+
+    expect(prompt).toContain(
+      "# UNTRUSTED: Project-specific rules\nGlobal rule"
+    );
+    expect(prompt).toContain(
+      "## Per-path rules — files matching `src/**`\nStrict auth rules"
+    );
+    expect(prompt).toContain(
+      "## Per-path rules — files matching `docs/**`\nRelaxed docs rules"
+    );
+  });
+
+  it("should render only per-path rules when no global rules file is configured", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      perPathRules: [
+        {
+          path: ".github/jules-rules/src/**.md",
+          glob: "src/**",
+          content: "Strict auth rules",
+        },
+      ],
+      openThreads: [],
+    });
+
+    expect(prompt).toContain("# UNTRUSTED: Project-specific rules");
+    expect(prompt).toContain(
+      "## Per-path rules — files matching `src/**`\nStrict auth rules"
+    );
+  });
+
+  it("should trim rule content when merging", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      perPathRules: [
+        {
+          path: ".github/jules-rules/src/**.md",
+          glob: "src/**",
+          content: "  Strict auth rules  \n",
+        },
+      ],
+      openThreads: [],
+    });
+
+    expect(prompt).toContain(
+      "## Per-path rules — files matching `src/**`\nStrict auth rules"
+    );
+  });
+
   it("should include extra instructions", () => {
     const prompt = buildReviewPrompt({
       mode: "prompt",
@@ -253,6 +335,34 @@ describe("buildReviewPrompt (prompt mode)", () => {
 
     expect(prompt).not.toContain("# Trusted: Open Review Comments");
     expect(prompt).not.toContain("MUST NOT re-report");
+  });
+
+  it("should merge per-path rules in agentic mode as well", () => {
+    const prompt = buildReviewPrompt({
+      mode: "agentic",
+      repoFullName: "owner/repo",
+      prNumber: 1,
+      prTitle: "feat: add",
+      prBody: "desc",
+      baseSha: "aaa111",
+      headSha: "bbb222",
+      rulesFromFile: "Global rule",
+      perPathRules: [
+        {
+          path: ".github/jules-rules/src/**.md",
+          glob: "src/**",
+          content: "Strict auth rules",
+        },
+      ],
+      openThreads: [],
+    });
+
+    expect(prompt).toContain(
+      "# UNTRUSTED: Project-specific rules\nGlobal rule"
+    );
+    expect(prompt).toContain(
+      "## Per-path rules — files matching `src/**`\nStrict auth rules"
+    );
   });
 
   it("renders the large-PR coverage section when the PR is large", () => {

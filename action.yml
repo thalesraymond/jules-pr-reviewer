@@ -61,6 +61,10 @@ inputs:
     description: "Path (in the repo) to a Markdown file whose contents are injected into the prompt. Default .github/jules-review-rules.md if it exists. Set to empty string to disable."
     required: false
     default: ".github/jules-review-rules.md"
+  rules_directory:
+    description: "Directory (in the repo, at the base SHA) with per-path review rules. Every .md file is a rule; its path relative to this directory is a glob applied to the PR's changed files (e.g. src/**.md applies to src/**). Only rules matching at least one changed file are injected into the prompt. Default .github/jules-rules if it exists. Set to empty string to disable."
+    required: false
+    default: ".github/jules-rules"
   ignored_paths:
     description: "JSON array or list of file paths/globs to ignore when reviewing diffs (e.g. '[\"dist/**\", \"*.lock\"]')."
     required: false

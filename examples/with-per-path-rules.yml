@@ -1,0 +1,28 @@
+name: Jules PR Review (per-path rules)
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+      statuses: write
+    steps:
+      - uses: thalesraymond/jules-pr-reviewer@v1
+        with:
+          jules_api_key: ${{ secrets.JULES_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Per-path rules live in `.github/jules-rules/` (the default).
+          # Every .md file there is a rule; its path relative to the
+          # directory is the glob applied to the PR's changed files:
+          #
+          #   .github/jules-rules/src/**.md    -> files matching src/**
+          #   .github/jules-rules/docs/**.md   -> files matching docs/**
+          #
+          # Only rules matching at least one changed file are injected
+          # into the prompt. Point to a different directory with
+          # `rules_directory: path/to/rules` or disable with `rules_directory: ""`.
+          rules_directory: .github/jules-rules
