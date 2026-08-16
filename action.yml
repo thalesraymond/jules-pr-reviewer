@@ -14,9 +14,9 @@ inputs:
     description: "GitHub token with pull-requests:write and checks:write. Usually the default GITHUB_TOKEN secret."
     required: true
   fail_on:
-    description: "When to fail the check run: never | blocking | any. Default blocking."
+    description: "When to fail the check run: never | blocking | any. Default never — the review is advisory; opt in to gating with blocking/any or block_on."
     required: false
-    default: "blocking"
+    default: "never"
   min_severity_to_report:
     description: "Minimum severity of findings to post, annotate, and count: info (all, default) | warning | high. Findings below this level are not reported."
     required: false

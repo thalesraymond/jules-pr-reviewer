@@ -45361,6 +45361,7 @@ const VALID_LARGE_PR_STRATEGIES = [
 ];
 const DEFAULT_DIFF_MODE = "prompt";
 const DEFAULT_STRICTNESS = "chill";
+const DEFAULT_FAIL_ON = "never";
 const DEFAULT_TIMEOUT_MINUTES = 30;
 const DEFAULT_LARGE_PR_THRESHOLD = 80_000;
 const DEFAULT_LARGE_PR_STRATEGY = "prioritize";
@@ -45394,7 +45395,7 @@ function loadConfig(io) {
     io.setSecret(token);
     process.env.JULES_API_KEY = apiKey;
     process.env.GITHUB_TOKEN = token;
-    const failOnRaw = io.getInput("fail_on");
+    const failOnRaw = io.getInput("fail_on") || DEFAULT_FAIL_ON;
     if (!isFailOn(failOnRaw)) {
         return {
             ok: false,

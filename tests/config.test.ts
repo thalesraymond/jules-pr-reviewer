@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadConfig, type Config, type InputReader } from "../src/config.js";
 
 const DEFAULT_INPUTS: Record<string, string> = {
   jules_api_key: "test-api-key",
   github_token: "test-token",
-  fail_on: "blocking",
+  fail_on: "never",
   strictness: "chill",
   diff_mode: "prompt",
   skip_drafts: "true",
@@ -12,9 +15,9 @@ const DEFAULT_INPUTS: Record<string, string> = {
   bypass_label: "jules-override",
   status_context: "jules/review",
   extra_instructions: "",
-  rules_file: "",
+  rules_file: ".github/jules-review-rules.md",
   rules_directory: ".github/jules-rules",
-  ignored_paths: "",
+  ignored_paths: "[]",
   timeout_minutes: "30",
   enable_suggestions: "false",
   dedupe: "true",
@@ -23,7 +26,7 @@ const DEFAULT_INPUTS: Record<string, string> = {
   ignore_title_keywords: "",
   ignore_authors: "",
   review_labels: "",
-  min_severity_to_report: "",
+  min_severity_to_report: "info",
   block_on: "",
 };
 
@@ -60,6 +63,34 @@ function makeIo(overrides: Record<string, string> = {}): {
 
 function expectConfig(result: { ok: true; config: Config }): Config {
   return result.config;
+}
+
+function parseActionYmlInputDefaults(yml: string): Record<string, string> {
+  const defaults: Record<string, string> = {};
+  let inInputs = false;
+  let current: string | undefined;
+  for (const line of yml.split("\n")) {
+    if (line === "inputs:") {
+      inInputs = true;
+      continue;
+    }
+    if (/^\w+:$/.test(line)) {
+      inInputs = false;
+      continue;
+    }
+    if (!inInputs) continue;
+    const inputMatch = line.match(/^ {2}([A-Za-z0-9_]+):$/);
+    if (inputMatch) {
+      current = inputMatch[1];
+      continue;
+    }
+    if (!current) continue;
+    const defaultMatch = line.match(/^ {4}default: "([^"]*)"$/);
+    if (defaultMatch) {
+      defaults[current] = defaultMatch[1];
+    }
+  }
+  return defaults;
 }
 
 describe("loadConfig", () => {
@@ -121,7 +152,7 @@ describe("loadConfig", () => {
     expect(process.env.GITHUB_TOKEN).toBe("test-token");
   });
 
-  it("applies defaults and normalizes empty optional inputs to undefined", () => {
+  it("applies the documented defaults and normalizes empty optional inputs to undefined", () => {
     const { io } = makeIo();
 
     const result = loadConfig(io);
@@ -129,7 +160,7 @@ describe("loadConfig", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const config = expectConfig(result);
-    expect(config.failOn).toBe("blocking");
+    expect(config.failOn).toBe("never");
     expect(config.strictness).toBe("chill");
     expect(config.diffMode).toBe("prompt");
     expect(config.skipDrafts).toBe(true);
@@ -144,9 +175,9 @@ describe("loadConfig", () => {
     expect(config.minSeverityToReport).toBe("Info");
     expect(config.blockOn).toBeUndefined();
     expect(config.extraInstructions).toBeUndefined();
-    expect(config.rulesFilePath).toBeUndefined();
+    expect(config.rulesFilePath).toBe(".github/jules-review-rules.md");
     expect(config.rulesDirectory).toBe(".github/jules-rules");
-    expect(config.ignoredPaths).toBeUndefined();
+    expect(config.ignoredPaths).toBe("[]");
     expect(config.ignoreTitleKeywords).toBeUndefined();
     expect(config.ignoreAuthors).toBeUndefined();
     expect(config.reviewLabels).toBeUndefined();
@@ -243,6 +274,65 @@ describe("loadConfig", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toContain('Invalid fail_on: "sometimes"');
+  });
+
+  it("falls back to never when fail_on is an empty string", () => {
+    const { io } = makeIo({ fail_on: "" });
+
+    const result = loadConfig(io);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(expectConfig(result).failOn).toBe("never");
+  });
+
+  it("keeps the runtime defaults in sync with the defaults declared in action.yml", () => {
+    const yml = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "..", "action.yml"),
+      "utf8"
+    );
+    const declared = parseActionYmlInputDefaults(yml);
+    const requiredInputs = new Set(["jules_api_key", "github_token"]);
+
+    for (const [name, declaredDefault] of Object.entries(declared)) {
+      expect(DEFAULT_INPUTS[name], `default for ${name} in action.yml`).toBe(
+        declaredDefault
+      );
+    }
+    for (const name of Object.keys(DEFAULT_INPUTS)) {
+      if (requiredInputs.has(name)) continue;
+      expect(declared, `default declared for ${name}`).toHaveProperty(name);
+    }
+
+    const { io } = makeIo();
+    const result = loadConfig(io);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(expectConfig(result)).toEqual({
+      apiKey: "test-api-key",
+      token: "test-token",
+      failOn: "never",
+      strictness: "chill",
+      diffMode: "prompt",
+      skipDrafts: true,
+      skipForks: true,
+      bypassLabel: "jules-override",
+      statusContext: "jules/review",
+      extraInstructions: undefined,
+      rulesFilePath: ".github/jules-review-rules.md",
+      rulesDirectory: ".github/jules-rules",
+      ignoredPaths: "[]",
+      timeoutMinutes: 30,
+      enableSuggestions: false,
+      dedupe: true,
+      largePrThreshold: 80000,
+      largePrStrategy: "prioritize",
+      ignoreTitleKeywords: undefined,
+      ignoreAuthors: undefined,
+      reviewLabels: undefined,
+      minSeverityToReport: "Info",
+      blockOn: undefined,
+    });
   });
 
   it("returns ok:false when diff_mode is invalid", () => {

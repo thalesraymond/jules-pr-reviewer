@@ -73,6 +73,14 @@ jobs:
 
 The `concurrency` block cancels an older review run when a new commit lands, preventing race conditions where a stale run's verdict overwrites a fresh one. **Recommended.**
 
+That's the whole workflow — every other input has a sane default (see [Inputs](#inputs)). On a vanilla PR, "secrets + `uses:`" with no other inputs gives you:
+
+- A line-level review (inline comments tagged with severity and confidence) plus a summary comment, posted by Jules.
+- A `jules/review` check run that concludes `success` on every verdict. The review is **advisory by default** — it never fails CI unless the action itself breaks (quota, auth, timeout, parse failure, malformed verdict). Opt in to gating in [step 3](#3-optional-gate-merges-on-the-review).
+- Findings deduplication across pushes (`dedupe: true`), so re-reviewing a follow-up commit doesn't re-spam its own still-open comments.
+- Draft and fork PRs skipped by default (no Jules session burned — mark `ready_for_review` to trigger; forks are skipped for prompt-injection safety).
+- Your own rules picked up automatically if you adopt the convention: a `rules_file` at `.github/jules-review-rules.md` or per-path rules under `.github/jules-rules` (see [Customizing the review](#customizing-the-review)).
+
 ### Why the `concurrency` block matters
 
 Each review run creates one Jules session (billed against your 15-sessions/24h free quota) and owns a `jules/review` check run. Without a `concurrency` guard, two runs for the same PR can overlap: both spawn Jules sessions and both finalize the same-named check run, so the last one to finish wins — which may be the *older* verdict. GitHub's `concurrency` key is the only reliable mutual-exclusion for GitHub Actions jobs:
@@ -85,9 +93,21 @@ Forks are skipped by default (`skip_forks: true`), and each run is also scoped t
 
 ### 3. (Optional) Gate merges on the review
 
-`Settings → Branches → Branch protection rules → Require check runs to pass → jules/review`.
+With the default `fail_on: never`, a blocking verdict still shows a green check run — the check is advisory. To make the check run fail on a blocking verdict and stop merge:
 
-Without this, a blocking verdict shows as a failed check run but won't stop merge.
+1. In the workflow, set `fail_on: blocking` (fail only on `block` verdicts) or `block_on: high` (fail on any reported High-severity finding), e.g.:
+
+   ```yaml
+   - uses: thalesraymond/jules-pr-reviewer@v1
+     with:
+       jules_api_key: ${{ secrets.JULES_API_KEY }}
+       github_token: ${{ secrets.GITHUB_TOKEN }}
+       fail_on: blocking
+   ```
+
+2. `Settings → Branches → Branch protection rules → Require check runs to pass → jules/review`.
+
+The check run failing is what stops merge — the workflow job itself always passes if the action ran successfully.
 
 ## Customizing the review
 
@@ -182,7 +202,7 @@ The workflow's `extra_instructions` is appended after the rules file content. Gl
 | -------------------- | ------------------------------- | ----------------------------------------------------------------- |
 | `jules_api_key`      | —                               | **Required.** Key from jules.google.com.                          |
 | `github_token`       | —                               | **Required.** `${{ secrets.GITHUB_TOKEN }}`.                      |
-| `fail_on`            | `blocking`                      | `never` \| `blocking` \| `any`. Controls check run conclusion.  |
+| `fail_on`            | `never`                         | `never` \| `blocking` \| `any`. Default `never` — the check stays green on any verdict (advisory). Set `blocking` to fail on a `block` verdict, `any` to fail on `comment` or `block`, or use `block_on` for severity-based gating. **Upgrading from ≤1.6:** if you relied on the old default `blocking`, set `fail_on: blocking` explicitly. |
 | `min_severity_to_report` | `info`                      | Findings below this severity (`info` \| `warning` \| `high`) are not posted, annotated, or counted. |
 | `block_on`           | unset                           | Severity at which a reported finding fails the check run (`high` \| `warning` \| `info`). Overrides `fail_on` when set. |
 | `strictness`         | `chill`                         | Review strictness profile: `quiet` \| `chill` \| `assertive`. See [Strictness profiles](#strictness-profiles). |
@@ -344,13 +364,13 @@ Jules also generates a summary and a final verdict line:
 
 | `fail_on`              | approve | comment     | block       |
 | ---------------------- | ------- | ----------- | ----------- |
-| `never`                | success | success     | success     |
-| `blocking` _(default)_ | success | success     | **failure** |
+| `never` _(default)_    | success | success     | success     |
+| `blocking`             | success | success     | **failure** |
 | `any`                  | success | **failure** | **failure** |
 
 Setting `block_on` replaces this verdict-based mapping with a finding-based one: the check run fails iff a *reported* finding is at or above the given severity (regardless of the verdict). This is the mechanism behind "block only on High, ignore Info" — see [Skipping & filtering reviews](#skipping--filtering-reviews). The `verdict` output always remains the LLM's verdict.
 
-The **workflow job itself always passes** if the action ran successfully — the check run is what gates merge. Job failures indicate the action broke, not that the review found issues.
+The **workflow job itself always passes** if the action ran successfully — the check run is what gates merge, and only when you configure it to (`fail_on: blocking`/`any` or `block_on`, plus branch protection). With the default `fail_on: never` the check run also passes on every verdict, so the review is advisory out of the box. Job failures indicate the action broke, not that the review found issues.
 
 ## Strictness profiles
 
