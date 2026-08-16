@@ -66,6 +66,7 @@ describe("index.ts", () => {
     apiKey: "dummy_key",
     token: "dummy_token",
     failOn: "any",
+    strictness: "chill",
     diffMode: "prompt",
     skipDrafts: false,
     skipForks: false,
@@ -1637,6 +1638,229 @@ index 789..abc 100644
       42,
       "failure",
       expect.objectContaining({ summary: "Review verdict: comment" })
+    );
+  });
+
+  it("forwards strictness into the prompt-mode prompt builder", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, strictness: "assertive" },
+    });
+    await loadIndex();
+    const prompt = mockJulesHelper.runJulesReview.mock.calls[0][1];
+    expect(prompt).toContain("# Trusted: Strictness profile (assertive)");
+  });
+
+  it("forwards strictness into the agentic prompt builder", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, diffMode: "agentic", strictness: "quiet" },
+    });
+    mockJulesHelper.runAgenticReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "approve",
+        summary: "ok",
+        newComments: [],
+      },
+      sessionId: "s1",
+      fallback: false,
+    });
+    await loadIndex();
+    const prompt = mockJulesHelper.runAgenticReview.mock.calls[0][1];
+    expect(prompt).toContain("# Trusted: Strictness profile (quiet)");
+  });
+
+  it("suppresses Warning and Info findings in quiet mode end to end", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, strictness: "quiet" },
+    });
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "comment",
+        summary: "Mixed findings",
+        newComments: [
+          {
+            file: "a.ts",
+            line: 1,
+            severity: "High",
+            confidence: "High",
+            message: "Bug",
+            promptForAgents: "",
+          },
+          {
+            file: "b.ts",
+            line: 2,
+            severity: "Warning",
+            confidence: "Medium",
+            message: "Meh",
+            promptForAgents: "",
+          },
+          {
+            file: "c.ts",
+            line: 3,
+            severity: "Info",
+            confidence: "Low",
+            message: "Nit",
+            promptForAgents: "",
+          },
+        ],
+      },
+      sessionId: "s1",
+    });
+    await loadIndex();
+
+    const submittedComments =
+      mockSubmissionHelper.submitReview.mock.calls[0][6];
+    expect(submittedComments).toHaveLength(1);
+    expect(submittedComments[0]).toMatchObject({
+      file: "a.ts",
+      severity: "High",
+    });
+
+    const checkRunOptions = mockGithubHelper.finalizeCheckRun.mock.calls[0][5];
+    expect(checkRunOptions.annotations).toHaveLength(1);
+    expect(checkRunOptions.annotations[0]).toMatchObject({
+      path: "a.ts",
+      annotationLevel: "failure",
+    });
+
+    expect(mockLoggingHelper.setReviewOutputs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        issues_count: 1,
+        high_issues_count: 1,
+        warning_issues_count: 0,
+        info_issues_count: 0,
+      })
+    );
+
+    expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
+      "review_submitted",
+      expect.objectContaining({ commentCount: 1 })
+    );
+    expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
+      "review_completed",
+      expect.objectContaining({
+        issuesCount: 1,
+        highIssues: 1,
+        warningIssues: 0,
+        infoIssues: 0,
+      })
+    );
+  });
+
+  it("keeps the LLM verdict unchanged in quiet mode even when findings are suppressed", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, strictness: "quiet", failOn: "any" },
+    });
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "comment",
+        summary: "Only warnings",
+        newComments: [
+          {
+            file: "b.ts",
+            line: 2,
+            severity: "Warning",
+            confidence: "Medium",
+            message: "Meh",
+            promptForAgents: "",
+          },
+        ],
+      },
+      sessionId: "s1",
+    });
+    await loadIndex();
+
+    expect(mockSubmissionHelper.submitReview.mock.calls[0][6]).toHaveLength(0);
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      42,
+      "failure",
+      expect.objectContaining({
+        summary: "Review verdict: comment",
+      })
+    );
+  });
+
+  it("quiet mode does not trip a block_on warning gate on suppressed findings", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, strictness: "quiet", blockOn: "Warning" },
+    });
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "block",
+        summary: "warnings only",
+        newComments: [
+          {
+            file: "b.ts",
+            line: 2,
+            severity: "Warning",
+            confidence: "Medium",
+            message: "Meh",
+            promptForAgents: "",
+          },
+        ],
+      },
+      sessionId: "s1",
+    });
+    await loadIndex();
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      42,
+      "success",
+      expect.objectContaining({
+        summary: expect.stringContaining("No findings at or above warning"),
+      })
+    );
+  });
+
+  it("quiet mode still trips a block_on high gate on reported High findings", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, strictness: "quiet", blockOn: "High" },
+    });
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "comment",
+        summary: "one high",
+        newComments: [
+          {
+            file: "a.ts",
+            line: 1,
+            severity: "High",
+            confidence: "High",
+            message: "Bug",
+            promptForAgents: "",
+          },
+          {
+            file: "b.ts",
+            line: 2,
+            severity: "Warning",
+            confidence: "Medium",
+            message: "Meh",
+            promptForAgents: "",
+          },
+        ],
+      },
+      sessionId: "s1",
+    });
+    await loadIndex();
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      42,
+      "failure",
+      expect.objectContaining({
+        summary: expect.stringContaining("Findings at or above high"),
+      })
     );
   });
 });

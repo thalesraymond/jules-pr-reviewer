@@ -41,6 +41,8 @@ src/
 ├── filtering.ts   # List-input parsing and diff path filtering
 ├── ignore.ts      # PR skip policy (title keywords, authors, label allow/deny)
 ├── severity.ts    # Severity ordering and gating (min_severity_to_report, block_on)
+├── pathRules.ts   # Per-path rules (discovery, glob matching, loading)
+├── strictness.ts  # Strictness profiles (quiet / chill / assertive)
 └── types.ts       # Shared type definitions (FailOn, Verdict, ReviewResult, etc.)
 
 tests/
@@ -51,7 +53,9 @@ tests/
 ├── session.test.ts    # Tests for the Jules session lifecycle
 ├── prompt.test.ts     # Tests for prompt building
 ├── ignore.test.ts     # Tests for the PR skip policy
-└── severity.test.ts   # Tests for severity ordering and gating
+├── severity.test.ts   # Tests for severity ordering and gating
+├── pathRules.test.ts  # Tests for per-path rules
+└── strictness.test.ts # Tests for strictness profiles
 ```
 
 ## Verification Commands

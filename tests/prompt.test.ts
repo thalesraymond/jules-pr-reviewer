@@ -455,6 +455,96 @@ describe("buildReviewPrompt (prompt mode)", () => {
     expect(prompt).toContain("# Large PR — coverage");
     expect(prompt).toContain("per-file coverage could not be computed");
   });
+
+  it("renders the quiet strictness profile section when strictness is quiet", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      openThreads: [],
+      strictness: "quiet",
+    });
+
+    expect(prompt).toContain("# Trusted: Strictness profile (quiet)");
+    expect(prompt).toContain("ONLY High-severity");
+    expect(prompt).toContain("When in doubt, leave the comment out");
+    expect(prompt).not.toContain("# Trusted: Strictness profile (assertive)");
+  });
+
+  it("renders the assertive strictness profile section when strictness is assertive", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      openThreads: [],
+      strictness: "assertive",
+    });
+
+    expect(prompt).toContain("# Trusted: Strictness profile (assertive)");
+    expect(prompt).toContain("Hunt aggressively");
+    expect(prompt).not.toContain("# Trusted: Strictness profile (quiet)");
+  });
+
+  it("renders no strictness section for chill", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      openThreads: [],
+      strictness: "chill",
+    });
+
+    expect(prompt).not.toContain("# Trusted: Strictness profile");
+  });
+
+  it("chill output is byte-identical to the strictness-less default", () => {
+    const defaultPrompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      openThreads: [],
+    });
+    const chillPrompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      openThreads: [],
+      strictness: "chill",
+    });
+
+    expect(chillPrompt).toBe(defaultPrompt);
+  });
+
+  it("labels the strictness section as trusted, not UNTRUSTED", () => {
+    const prompt = buildReviewPrompt({
+      mode: "prompt",
+      repoFullName: "owner/repo",
+      prNumber: 123,
+      prTitle: "My PR",
+      prBody: "desc",
+      diff: "+ const a = 1;",
+      openThreads: [],
+      strictness: "assertive",
+    });
+
+    expect(prompt).toContain("# Trusted: Strictness profile (assertive)");
+    expect(prompt).not.toContain("# UNTRUSTED: Strictness");
+  });
 });
 
 describe("buildReviewPrompt (agentic mode)", () => {
@@ -650,5 +740,21 @@ describe("buildReviewPrompt (agentic mode)", () => {
 
     expect(prompt).toContain("# Trusted: Open Review Comments");
     expect(prompt).toContain("[Index 0] File: src/index.ts, Line: 10");
+  });
+
+  it("renders the strictness profile section in agentic mode", () => {
+    const prompt = buildReviewPrompt({
+      mode: "agentic",
+      repoFullName: "owner/repo",
+      prNumber: 1,
+      prTitle: "feat: add",
+      prBody: "desc",
+      baseSha: "aaa111",
+      headSha: "bbb222",
+      openThreads: [],
+      strictness: "quiet",
+    });
+
+    expect(prompt).toContain("# Trusted: Strictness profile (quiet)");
   });
 });

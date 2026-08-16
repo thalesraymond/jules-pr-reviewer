@@ -42326,12 +42326,33 @@ function wrapPermissionError(err, needed, op) {
 }
 
 ;// CONCATENATED MODULE: ./src/prompt.ts
+const STRICTNESS_SECTIONS = {
+    quiet: `# Trusted: Strictness profile (quiet)
+Review conservatively. Prefer a short, high-signal review over completeness.
+- Report ONLY High-severity findings that you are confident about.
+- Do NOT report Warning-severity findings.
+- Do NOT report Info-severity findings (style nits, naming, cosmetic issues) at all.
+- When in doubt, leave the comment out.
+`,
+    assertive: `# Trusted: Strictness profile (assertive)
+Hunt aggressively for issues beyond the obvious.
+- Report all correctness, security, and reliability findings, including low-confidence suspicions — always tag confidence honestly.
+- Proactively report style, naming, duplication, dead code, and readability issues as Info-severity findings.
+- Scrutinize edge cases, error paths, and non-obvious side effects even when the happy path looks correct.
+- Do not self-censor: when a finding might matter, surface it and let severity and confidence express the doubt.
+`,
+};
+function buildStrictnessSection(strictness) {
+    const section = STRICTNESS_SECTIONS[strictness];
+    return section ? `\n${section}` : "";
+}
 function buildReviewPrompt(args) {
-    const { mode, repoFullName, prNumber, prTitle, prBody, extraInstructions, rulesFromFile, perPathRules = [], openThreads, dedupe = true, } = args;
+    const { mode, repoFullName, prNumber, prTitle, prBody, extraInstructions, rulesFromFile, perPathRules = [], openThreads, dedupe = true, strictness = "chill", } = args;
     const threadsContext = buildThreadsContext(openThreads, dedupe);
     const diffSection = buildDiffSection(args);
     const largePrSection = buildLargePrSection(args);
     const rulesSection = buildRulesSection(rulesFromFile, perPathRules);
+    const strictnessSection = buildStrictnessSection(strictness);
     const readOnlyBullet = mode === "agentic"
         ? "- You MUST NOT modify, create, or delete any files in the repository. You are a read-only reviewer.\n"
         : "";
@@ -42379,7 +42400,7 @@ Focus ONLY on lines changed in the diff. Evaluate for:
 - High: High-confidence correctness/security flaws, data loss risks, broken auth, obvious bugs.
 - Warning: Meaningful concerns worth addressing but not blocking.
 - Info: Small readability or consistency notes. Use sparingly.
-
+${strictnessSection}
 # Confidence score
 Provide a confidence score for each comment: Low, Medium, or High.
 
@@ -45313,22 +45334,42 @@ function buildPostedCoverageNote(coverage) {
     return `> **Large PR:** reviewed ${coverage.reviewedFiles} of ${coverage.totalFiles} changed files${partialNote}.${excludedNote}`;
 }
 
+;// CONCATENATED MODULE: ./src/strictness.ts
+
+const MIN_SURFACING_SEVERITY = {
+    quiet: "High",
+    chill: "Info",
+    assertive: "Info",
+};
+function filterCommentsByStrictness(comments, strictness) {
+    return filterCommentsBySeverity(comments, MIN_SURFACING_SEVERITY[strictness]);
+}
+
 ;// CONCATENATED MODULE: ./src/config.ts
 
 
 const VALID_FAIL_ON = ["never", "blocking", "any"];
+const VALID_STRICTNESS_LEVELS = [
+    "quiet",
+    "chill",
+    "assertive",
+];
 const VALID_DIFF_MODES = ["prompt", "agentic"];
 const VALID_LARGE_PR_STRATEGIES = [
     "truncate",
     "prioritize",
 ];
 const DEFAULT_DIFF_MODE = "prompt";
+const DEFAULT_STRICTNESS = "chill";
 const DEFAULT_TIMEOUT_MINUTES = 30;
 const DEFAULT_LARGE_PR_THRESHOLD = 80_000;
 const DEFAULT_LARGE_PR_STRATEGY = "prioritize";
 const DEFAULT_MIN_SEVERITY_TO_REPORT = "Info";
 function isFailOn(value) {
     return VALID_FAIL_ON.some((v) => v === value);
+}
+function isStrictness(value) {
+    return VALID_STRICTNESS_LEVELS.some((v) => v === value);
 }
 function isDiffMode(value) {
     return VALID_DIFF_MODES.some((v) => v === value);
@@ -45358,6 +45399,13 @@ function loadConfig(io) {
         return {
             ok: false,
             error: `Invalid fail_on: "${failOnRaw}". Must be one of: ${VALID_FAIL_ON.join(", ")}.`,
+        };
+    }
+    const strictnessRaw = io.getInput("strictness") || DEFAULT_STRICTNESS;
+    if (!isStrictness(strictnessRaw)) {
+        return {
+            ok: false,
+            error: `Invalid strictness: "${strictnessRaw}". Must be one of: ${VALID_STRICTNESS_LEVELS.join(", ")}.`,
         };
     }
     const diffModeRaw = io.getInput("diff_mode") || DEFAULT_DIFF_MODE;
@@ -45411,6 +45459,7 @@ function loadConfig(io) {
             apiKey,
             token,
             failOn: failOnRaw,
+            strictness: strictnessRaw,
             diffMode: diffModeRaw,
             skipDrafts,
             skipForks,
@@ -45531,6 +45580,7 @@ async function loadPerPathRules(octokit, owner, repo, rulesDir, baseSha, changed
 }
 
 ;// CONCATENATED MODULE: ./src/index.ts
+
 
 
 
@@ -45694,6 +45744,7 @@ async function run() {
                 perPathRules,
                 openThreads,
                 dedupe: config.dedupe,
+                strictness: config.strictness,
                 largePrCoverage,
             });
             const agentic = await runAgenticReview(config.apiKey, agenticPrompt, { github: `${owner}/${repo}`, baseBranch: pr.head.ref }, config.timeoutMinutes, changedFiles);
@@ -45722,6 +45773,7 @@ async function run() {
                 perPathRules,
                 openThreads,
                 dedupe: config.dedupe,
+                strictness: config.strictness,
             });
             const julesApiCallStart = Date.now();
             const promptResult = await runJulesReview(config.apiKey, prompt, { github: `${owner}/${repo}`, baseBranch: pr.base.ref }, config.timeoutMinutes);
@@ -45747,7 +45799,7 @@ async function run() {
             return;
         }
         const { verdict, summary, resolvedCommentIds, newComments, unparseable } = reviewResult;
-        const reportedComments = filterCommentsBySeverity(newComments || [], config.minSeverityToReport);
+        const reportedComments = filterCommentsByStrictness(filterCommentsBySeverity(newComments || [], config.minSeverityToReport), config.strictness);
         // Resolve threads that the LLM identified as fixed
         if (resolvedCommentIds && resolvedCommentIds.length > 0) {
             const threadIdsToResolve = openThreads
