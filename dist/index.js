@@ -37131,7 +37131,16 @@ function timeoutExitSummary(timeoutMinutes) {
     return `Jules did not return a valid review within ${timeoutMinutes} minutes. Try increasing timeout_minutes or re-run the workflow.`;
 }
 
+;// CONCATENATED MODULE: ./src/utils.ts
+function sleep(ms) {
+    if (ms < 0) {
+        return Promise.reject(new Error("sleep delay must be a non-negative number"));
+    }
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 ;// CONCATENATED MODULE: ./src/resilience.ts
+
 
 /**
  * Whether a GitHub API error is transient and worth retrying. 5xx, 429, and
@@ -37154,7 +37163,7 @@ async function withRetry(operation, options) {
             if (attempt >= maxRetries || (shouldRetry && !shouldRetry(error))) {
                 throw error;
             }
-            await new Promise((resolve) => setTimeout(resolve, delay));
+            await sleep(delay);
             attempt++;
             delay = Math.min(delay * 2, maxDelayMs);
         }
@@ -38339,7 +38348,7 @@ async function* streamActivities(sessionId, apiClient, pollingInterval, platform
     }
   }
 }
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const dist_sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function pollSession(sessionId, apiClient, predicateFn, pollingInterval, platform, timeoutMs) {
   const startTime = Date.now();
   while (true) {
@@ -38355,7 +38364,7 @@ async function pollSession(sessionId, apiClient, predicateFn, pollingInterval, p
         `Polling for session ${sessionId} timed out after ${timeoutMs}ms`
       );
     }
-    await sleep(pollingInterval);
+    await dist_sleep(pollingInterval);
   }
 }
 async function pollUntilCompletion(sessionId, apiClient, pollingInterval, platform, timeoutMs) {
@@ -42016,6 +42025,7 @@ function setReviewOutputs(outputs) {
 
 
 
+
 const PARSE_FAILURE_REVIEW = {
     summary: "Jules returned an invalid response that could not be parsed. No valid code review comments are present.",
     verdict: "block",
@@ -42097,7 +42107,7 @@ async function waitUntilSessionReady(session) {
                 throw new Error(`Jules session.info() failed: ${msg}`, { cause: err });
             }
             info(`Session not yet ready (attempt ${i + 1}/${maxAttempts})…`);
-            await new Promise((r) => setTimeout(r, delay));
+            await sleep(delay);
             delay = Math.min(delay * 1.5, 15000);
         }
     }
@@ -42127,7 +42137,7 @@ async function pollForReview(session, timeoutMs) {
                 throw wrapped;
             info(`hydrate/history error (attempt ${attempt}): ${getErrorMessage(err)}`);
         }
-        await new Promise((r) => setTimeout(r, 20_000));
+        await sleep(20_000);
     }
     return "";
 }
