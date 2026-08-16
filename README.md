@@ -150,9 +150,14 @@ The workflow's `extra_instructions` is appended after the rules file content. Us
 | `jules_api_key`      | —                               | **Required.** Key from jules.google.com.                          |
 | `github_token`       | —                               | **Required.** `${{ secrets.GITHUB_TOKEN }}`.                      |
 | `fail_on`            | `blocking`                      | `never` \| `blocking` \| `any`. Controls check run conclusion.  |
+| `min_severity_to_report` | `info`                      | Findings below this severity (`info` \| `warning` \| `high`) are not posted, annotated, or counted. |
+| `block_on`           | unset                           | Severity at which a reported finding fails the check run (`high` \| `warning` \| `info`). Overrides `fail_on` when set. |
 | `skip_drafts`        | `true`                          | Skip review on draft PRs.                                         |
 | `skip_forks`         | `true`                          | Skip PRs from forks (diff can contain prompt-injection payloads). |
 | `bypass_label`       | `jules-override`                | If the PR has this label, skip the review.                        |
+| `ignore_title_keywords` | `''`                         | List (JSON array or comma/newline-separated) of case-insensitive title substrings. If the title contains any, the review is skipped. |
+| `ignore_authors`     | `''`                            | List of GitHub usernames whose PRs are skipped.                   |
+| `review_labels`      | `''`                            | Allow/deny label filter; `-`-prefixed entries are deny labels. Only enforced when the event payload includes PR labels. |
 | `status_context`     | `jules/review`                  | Check run name.                                                   |
 | `extra_instructions` | `''`                            | Markdown appended to the prompt.                                  |
 | `rules_file`         | `.github/jules-review-rules.md` | Path in repo to load as extra rules. Set empty to disable.        |
@@ -163,6 +168,52 @@ The workflow's `extra_instructions` is appended after the rules file content. Us
 | `diff_mode`          | `prompt`                        | Review pipeline: `prompt` (embed the diff in the prompt) or `agentic` (Jules inspects the PR branch directly). |
 | `large_pr_threshold` | `80000`                         | Diff size (characters) above which the large-PR strategy kicks in. |
 | `large_pr_strategy`  | `prioritize`                    | How to handle diffs over `large_pr_threshold`: `prioritize` (review the highest-churn files that fit in the prompt budget and report which files were not covered) or `truncate` (keep the first N characters, legacy behaviour). |
+
+## Skipping & filtering reviews
+
+Beyond `skip_drafts`, `skip_forks`, and `bypass_label`, five inputs control *whether* a review runs and *what* it reports. All of them are off by default — an unset input behaves exactly like the previous release.
+
+### Skipping entire PRs
+
+All three skip filters run before any API call, so skipped PRs never create a check run or a Jules session:
+
+```yaml
+- uses: thalesraymond/jules-pr-reviewer@v1
+  with:
+    jules_api_key: ${{ secrets.JULES_API_KEY }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    ignore_title_keywords: '["wip", "dependabot"]'   # or: "wip, dependabot"
+    ignore_authors: "renovate[bot], octocat"
+    review_labels: '["security", "-wip"]'
+```
+
+- **`ignore_title_keywords`** — list of **case-insensitive substrings**. If the PR title contains any of them (anywhere), the review is skipped. Note this is substring matching: `wip` also matches `swipe` or `WIP: ...`.
+- **`ignore_authors`** — list of GitHub logins, matched case-insensitively against the PR author. `dependabot[bot]` is the login to use for Dependabot PRs.
+- **`review_labels`** — allow/deny label policy in one input:
+  - Plain entries are **allow** labels: the PR must have at least one of them to be reviewed.
+  - Entries prefixed with `-` are **deny** labels: the PR must have none of them.
+  - Mixing is supported: `["security", "-wip"]` means "review only security PRs that are not WIP".
+  - Labels are matched case-insensitively.
+
+### The `review_labels` limitation: labels are not guaranteed in `pull_request` payloads
+
+The action only reads labels from the event payload — it never fetches them from the API. On `pull_request` events, GitHub does not reliably include PR labels in the payload. When the payload carries **no** label data, the filter cannot be evaluated, so the action logs a warning and **runs the review anyway** — it never fails (or silently skips) on un-evaluable label data, because a label-ordered workflow should not be able to kill all reviews. When the payload *does* include labels (even an empty list), the allow/deny policy is enforced exactly.
+
+### Severity gating: report and block per severity
+
+Two orthogonal knobs replace the all-or-nothing `fail_on` verdict mapping:
+
+- **`min_severity_to_report`** (`info` default | `warning` | `high`) — findings below this level are dropped at the reporting boundary: no inline comment, no check-run annotation, no entry in `issues_count` / `high|warning|info_issues_count`. The LLM's prose summary is left untouched.
+- **`block_on`** (`high` | `warning` | `info`, unset by default) — the check run fails when a **reported** finding is at or above this severity. When set, it overrides `fail_on`; when unset, the legacy `fail_on` verdict mapping applies unchanged.
+
+"Block only on High, ignore Info" is then one line each:
+
+```yaml
+    min_severity_to_report: high
+    block_on: high
+```
+
+Info and Warning findings never surface, and a `comment` verdict (which only ever reports Warning/Info findings) no longer fails the check.
 
 ## Outputs
 
@@ -262,6 +313,8 @@ Jules also generates a summary and a final verdict line:
 | `blocking` _(default)_ | success | success     | **failure** |
 | `any`                  | success | **failure** | **failure** |
 
+Setting `block_on` replaces this verdict-based mapping with a finding-based one: the check run fails iff a *reported* finding is at or above the given severity (regardless of the verdict). This is the mechanism behind "block only on High, ignore Info" — see [Skipping & filtering reviews](#skipping--filtering-reviews). The `verdict` output always remains the LLM's verdict.
+
 The **workflow job itself always passes** if the action ran successfully — the check run is what gates merge. Job failures indicate the action broke, not that the review found issues.
 
 ## Inner Workings & Architecture
@@ -318,7 +371,7 @@ Every failure also emits a structured `review_failed` log entry (`::structured::
 ## Notes
 
 - **Latency**: typical review is 40s–5min.
-- **Cost**: each PR open/push creates one Jules session. Rate-limit via `bypass_label`, label-gated workflow triggers, or `paths:` filters.
+- **Cost**: each PR open/push creates one Jules session. Rate-limit via `bypass_label`, `ignore_title_keywords`, `ignore_authors`, `review_labels`, label-gated workflow triggers, or `paths:` filters.
 - **Drafts**: skipped by default; mark `ready_for_review` to trigger.
 - **Large diffs**: diffs over `large_pr_threshold` (default 80,000 chars) are reviewed with the `prioritize` strategy — the highest-churn files that fit in the prompt budget are selected and the posted review states how many of the changed files were covered and which were not. Set `large_pr_strategy: truncate` to restore the legacy behaviour of silently keeping the first N characters.
 

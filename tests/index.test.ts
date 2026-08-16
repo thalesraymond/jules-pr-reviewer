@@ -18,6 +18,7 @@ describe("index.ts", () => {
   let mockSetSecret: any;
   let mockGetBooleanInput: any;
   let mockInfo: any;
+  let mockWarning: any;
   let mockOctokit: any;
 
   const makeDiffSection = (path: string, contentChars: number): string => {
@@ -74,6 +75,11 @@ describe("index.ts", () => {
     dedupe: true,
     largePrThreshold: 80000,
     largePrStrategy: "prioritize",
+    ignoreTitleKeywords: undefined,
+    ignoreAuthors: undefined,
+    reviewLabels: undefined,
+    minSeverityToReport: "Info",
+    blockOn: undefined,
   };
 
   beforeEach(async () => {
@@ -85,6 +91,7 @@ describe("index.ts", () => {
     mockSetFailed = vi.spyOn(core, "setFailed");
     mockSetSecret = vi.spyOn(core, "setSecret");
     mockInfo = vi.spyOn(core, "info");
+    mockWarning = vi.spyOn(core, "warning");
 
     // Default inputs
     mockGetInput.mockImplementation((name: string) => {
@@ -253,6 +260,136 @@ describe("index.ts", () => {
     expect(mockInfo).toHaveBeenCalledWith(
       'Bypass label "skip-review" present — skipping review.'
     );
+  });
+
+  it("skips when the PR title matches an ignore_title_keywords entry", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, ignoreTitleKeywords: "wip, do not review" },
+    });
+    (github as any).context.payload.pull_request.title = "WIP: feature draft";
+    await loadIndex();
+    expect(mockInfo).toHaveBeenCalledWith(
+      expect.stringContaining("ignore_title_keywords")
+    );
+    expect(mockGithubHelper.createCheckRun).not.toHaveBeenCalled();
+    expect(mockLoggingHelper.setReviewOutputs).toHaveBeenCalledWith({
+      verdict: "skipped",
+      issues_count: 0,
+      high_issues_count: 0,
+      warning_issues_count: 0,
+      info_issues_count: 0,
+    });
+  });
+
+  it("reviews when the PR title does not match ignore_title_keywords", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, ignoreTitleKeywords: "wip" },
+    });
+    (github as any).context.payload.pull_request.title = "Add login flow";
+    await loadIndex();
+    expect(mockGithubHelper.createCheckRun).toHaveBeenCalled();
+    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips when the PR author is in ignore_authors", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, ignoreAuthors: "octocat, bot[bot]" },
+    });
+    (github as any).context.payload.pull_request.user = {
+      login: "OctoCat",
+    };
+    await loadIndex();
+    expect(mockInfo).toHaveBeenCalledWith(
+      expect.stringContaining("ignore_authors")
+    );
+    expect(mockGithubHelper.createCheckRun).not.toHaveBeenCalled();
+  });
+
+  it("reviews when the PR author is not in ignore_authors", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, ignoreAuthors: "bot[bot]" },
+    });
+    (github as any).context.payload.pull_request.user = {
+      login: "octocat",
+    };
+    await loadIndex();
+    expect(mockGithubHelper.createCheckRun).toHaveBeenCalled();
+    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips when a deny review_label is present", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, reviewLabels: '["-wip"]' },
+    });
+    (github as any).context.payload.pull_request.labels = [{ name: "WIP" }];
+    await loadIndex();
+    expect(mockInfo).toHaveBeenCalledWith(
+      expect.stringContaining("which is denied by review_labels")
+    );
+    expect(mockGithubHelper.createCheckRun).not.toHaveBeenCalled();
+  });
+
+  it("skips when the PR has none of the allowed review_labels", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, reviewLabels: '["security"]' },
+    });
+    (github as any).context.payload.pull_request.labels = [{ name: "docs" }];
+    await loadIndex();
+    expect(mockInfo).toHaveBeenCalledWith(
+      expect.stringContaining("none of the allowed review_labels")
+    );
+    expect(mockGithubHelper.createCheckRun).not.toHaveBeenCalled();
+  });
+
+  it("reviews when the PR has an allowed review_label and no deny labels", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, reviewLabels: '["security", "-wip"]' },
+    });
+    (github as any).context.payload.pull_request.labels = [
+      { name: "security" },
+    ];
+    await loadIndex();
+    expect(mockGithubHelper.createCheckRun).toHaveBeenCalled();
+    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
+  });
+
+  it("reviews when only deny review_labels are configured and none are present", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, reviewLabels: '["-wip"]' },
+    });
+    (github as any).context.payload.pull_request.labels = [];
+    await loadIndex();
+    expect(mockGithubHelper.createCheckRun).toHaveBeenCalled();
+    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns and continues when review_labels cannot be evaluated (labels missing from payload)", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, reviewLabels: '["security"]' },
+    });
+    (github as any).context.payload.pull_request.labels = undefined;
+    await loadIndex();
+    expect(mockWarning).toHaveBeenCalledWith(
+      expect.stringContaining("review_labels cannot be evaluated")
+    );
+    expect(mockGithubHelper.createCheckRun).toHaveBeenCalled();
+    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
+    expect(mockLoggingHelper.setReviewOutputs).not.toHaveBeenCalledWith({
+      verdict: "skipped",
+      issues_count: 0,
+      high_issues_count: 0,
+      warning_issues_count: 0,
+      info_issues_count: 0,
+    });
   });
 
   it("uses ctx.payload.before for diff on synchronize event", async () => {
@@ -1217,6 +1354,215 @@ index 789..abc 100644
       info_issues_count: 0,
     });
   });
+
+  it("drops findings below min_severity_to_report from posting, annotations, counts, and logs", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, minSeverityToReport: "Warning" },
+    });
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "comment",
+        summary: "ok",
+        newComments: [
+          {
+            file: "a.ts",
+            line: 1,
+            severity: "High",
+            confidence: "High",
+            message: "High issue",
+            promptForAgents: "",
+          },
+          {
+            file: "b.ts",
+            line: 2,
+            severity: "Warning",
+            confidence: "Medium",
+            message: "Warning issue",
+            promptForAgents: "",
+          },
+          {
+            file: "c.ts",
+            line: 3,
+            severity: "Info",
+            confidence: "Low",
+            message: "Info note",
+            promptForAgents: "",
+          },
+        ],
+      },
+      sessionId: "s1",
+    });
+    await loadIndex();
+
+    const submittedComments =
+      mockSubmissionHelper.submitReview.mock.calls[0][6];
+    expect(submittedComments.map((c: any) => c.file)).toEqual(["a.ts", "b.ts"]);
+
+    const annotationCall = mockGithubHelper.finalizeCheckRun.mock.calls.find(
+      (c: any) => c[5]?.annotations
+    );
+    expect(annotationCall).toBeDefined();
+    expect(annotationCall[5].annotations.map((a: any) => a.path)).toEqual([
+      "a.ts",
+      "b.ts",
+    ]);
+
+    expect(mockLoggingHelper.setReviewOutputs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        verdict: "comment",
+        issues_count: 2,
+        high_issues_count: 1,
+        warning_issues_count: 1,
+        info_issues_count: 0,
+      })
+    );
+    expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
+      "review_completed",
+      expect.objectContaining({
+        issuesCount: 2,
+        highIssues: 1,
+        warningIssues: 1,
+        infoIssues: 0,
+      })
+    );
+    expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
+      "review_submitted",
+      expect.objectContaining({ commentCount: 2 })
+    );
+  });
+
+  it("keeps all findings when min_severity_to_report is unset (default Info)", async () => {
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "comment",
+        summary: "ok",
+        newComments: [
+          {
+            file: "a.ts",
+            line: 1,
+            severity: "High",
+            confidence: "High",
+            message: "High issue",
+            promptForAgents: "",
+          },
+          {
+            file: "c.ts",
+            line: 3,
+            severity: "Info",
+            confidence: "Low",
+            message: "Info note",
+            promptForAgents: "",
+          },
+        ],
+      },
+      sessionId: "s1",
+    });
+    await loadIndex();
+    const submittedComments =
+      mockSubmissionHelper.submitReview.mock.calls[0][6];
+    expect(submittedComments).toHaveLength(2);
+    expect(mockLoggingHelper.setReviewOutputs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        issues_count: 2,
+        info_issues_count: 1,
+      })
+    );
+  });
+
+  it("fails the check run when block_on is set and a finding reaches the severity", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, blockOn: "High", failOn: "never" },
+    });
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "block",
+        summary: "bad",
+        newComments: [
+          {
+            file: "a.ts",
+            line: 1,
+            severity: "High",
+            confidence: "High",
+            message: "High issue",
+            promptForAgents: "",
+          },
+        ],
+      },
+      sessionId: "s1",
+    });
+    await loadIndex();
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      42,
+      "failure",
+      expect.objectContaining({
+        summary: expect.stringContaining("high severity"),
+      })
+    );
+  });
+
+  it("does not fail the check run when block_on is set but no finding reaches the severity", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, blockOn: "High", failOn: "any" },
+    });
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "comment",
+        summary: "warnings only",
+        newComments: [
+          {
+            file: "b.ts",
+            line: 2,
+            severity: "Warning",
+            confidence: "Medium",
+            message: "Warning issue",
+            promptForAgents: "",
+          },
+        ],
+      },
+      sessionId: "s1",
+    });
+    await loadIndex();
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      42,
+      "success",
+      expect.objectContaining({
+        summary: expect.stringContaining("No findings at or above high"),
+      })
+    );
+  });
+
+  it("uses fail_on when block_on is unset even for a comment verdict with fail_on any", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, failOn: "any" },
+    });
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "comment",
+        summary: "found things",
+        newComments: [],
+      },
+      sessionId: "s1",
+    });
+    await loadIndex();
+    expect(mockGithubHelper.finalizeCheckRun).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      42,
+      "failure",
+      expect.objectContaining({ summary: "Review verdict: comment" })
+    );
+  });
 });
 
 describe("conclusionFromVerdict", () => {
@@ -1239,6 +1585,51 @@ describe("conclusionFromVerdict", () => {
     const result = conclusionFromVerdict("approve", "blocking");
     expect(result.conclusion).toBe("success");
     expect(result.description).toContain("complete (verdict: approve)");
+  });
+});
+
+describe("conclusionFromFindings", () => {
+  let conclusionFromFindings: (
+    comments: Array<{ severity: string }>,
+    blockOn: string
+  ) => { conclusion: string; description: string };
+
+  const finding = (severity: string) => ({
+    file: "a.ts",
+    line: 1,
+    severity,
+    confidence: "High",
+    message: "msg",
+    promptForAgents: "",
+  });
+
+  beforeEach(async () => {
+    const mod = await import("../src/index.js");
+    conclusionFromFindings = mod.conclusionFromFindings;
+  });
+
+  it("fails when a finding is at or above block_on severity", () => {
+    expect(
+      conclusionFromFindings([finding("Warning"), finding("High")], "High")
+    ).toEqual({
+      conclusion: "failure",
+      description: "Findings at or above high severity found",
+    });
+    expect(conclusionFromFindings([finding("Info")], "Info")).toEqual({
+      conclusion: "failure",
+      description: "Findings at or above info severity found",
+    });
+  });
+
+  it("succeeds when no finding reaches block_on severity", () => {
+    expect(conclusionFromFindings([finding("Info")], "High")).toEqual({
+      conclusion: "success",
+      description: "No findings at or above high severity",
+    });
+    expect(conclusionFromFindings([], "Warning")).toEqual({
+      conclusion: "success",
+      description: "No findings at or above warning severity",
+    });
   });
 });
 

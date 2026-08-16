@@ -29315,6 +29315,7 @@ var __webpack_exports__ = {};
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
   P: () => (/* binding */ buildAnnotations),
+  k5: () => (/* binding */ conclusionFromFindings),
   tr: () => (/* binding */ conclusionFromVerdict),
   xv: () => (/* binding */ truncate)
 });
@@ -44981,7 +44982,7 @@ minimatch.unescape = unescape_unescape;
 //# sourceMappingURL=index.js.map
 ;// CONCATENATED MODULE: ./src/filtering.ts
 
-function parseIgnoredPaths(input) {
+function parseListInput(input) {
     if (!input || !input.trim()) {
         return [];
     }
@@ -45006,6 +45007,9 @@ function parseIgnoredPaths(input) {
         }
     }
     return splitList(trimmed);
+}
+function parseIgnoredPaths(input) {
+    return parseListInput(input);
 }
 function extractChangedFilePaths(diff) {
     if (!diff) {
@@ -45073,6 +45077,87 @@ function shouldIgnorePath(filePath, ignoredPatterns) {
         }
     }
     return false;
+}
+
+;// CONCATENATED MODULE: ./src/ignore.ts
+function shouldIgnoreTitle(title, keywords) {
+    if (!title || !keywords || keywords.length === 0) {
+        return false;
+    }
+    const lowered = title.toLowerCase();
+    return keywords.some((k) => lowered.includes(k.toLowerCase()));
+}
+function shouldIgnoreAuthor(login, authors) {
+    if (!login || !authors || authors.length === 0) {
+        return false;
+    }
+    const lowered = login.toLowerCase();
+    return authors.some((a) => a.toLowerCase() === lowered);
+}
+function evaluateLabelPolicy(prLabels, configuredLabels) {
+    if (!configuredLabels || configuredLabels.length === 0) {
+        return { evaluable: false, skip: false };
+    }
+    if (!Array.isArray(prLabels)) {
+        return {
+            evaluable: false,
+            skip: false,
+            reason: "review_labels cannot be evaluated: the event payload did not include PR labels (labels are not guaranteed in pull_request payloads). Continuing the review.",
+        };
+    }
+    const denyLabels = configuredLabels
+        .filter((l) => l.startsWith("-"))
+        .map((l) => l.slice(1).toLowerCase())
+        .filter((l) => l.length > 0);
+    const allowLabels = configuredLabels
+        .filter((l) => !l.startsWith("-"))
+        .map((l) => l.toLowerCase())
+        .filter((l) => l.length > 0);
+    const prLabelNames = prLabels.map((l) => l.name.toLowerCase());
+    const denied = denyLabels.find((l) => prLabelNames.includes(l));
+    if (denied) {
+        return {
+            evaluable: true,
+            skip: true,
+            reason: `PR has label "${denied}" which is denied by review_labels — skipping review.`,
+        };
+    }
+    if (allowLabels.length > 0 &&
+        !allowLabels.some((l) => prLabelNames.includes(l))) {
+        return {
+            evaluable: true,
+            skip: true,
+            reason: `PR has none of the allowed review_labels (allowed: ${allowLabels.join(", ")}) — skipping review.`,
+        };
+    }
+    return { evaluable: true, skip: false };
+}
+
+;// CONCATENATED MODULE: ./src/severity.ts
+const SEVERITY_RANK = {
+    Info: 0,
+    Warning: 1,
+    High: 2,
+};
+const SEVERITY_GATES = [
+    ["high", "High"],
+    ["warning", "Warning"],
+    ["info", "Info"],
+];
+const VALID_SEVERITY_GATES = SEVERITY_GATES.map(([gate]) => gate);
+function parseSeverityGate(value) {
+    const gate = value.toLowerCase();
+    const pair = SEVERITY_GATES.find(([g]) => g === gate);
+    return pair ? pair[1] : undefined;
+}
+function severityAtLeast(severity, minimum) {
+    return SEVERITY_RANK[severity] >= SEVERITY_RANK[minimum];
+}
+function filterCommentsBySeverity(comments, minimum) {
+    return comments.filter((c) => severityAtLeast(c.severity, minimum));
+}
+function hasFindingsAtOrAbove(comments, severity) {
+    return comments.some((c) => severityAtLeast(c.severity, severity));
 }
 
 ;// CONCATENATED MODULE: ./src/coverage.ts
@@ -45193,6 +45278,7 @@ function buildPostedCoverageNote(coverage) {
 
 ;// CONCATENATED MODULE: ./src/config.ts
 
+
 const VALID_FAIL_ON = ["never", "blocking", "any"];
 const VALID_DIFF_MODES = ["prompt", "agentic"];
 const VALID_LARGE_PR_STRATEGIES = [
@@ -45203,6 +45289,7 @@ const DEFAULT_DIFF_MODE = "prompt";
 const DEFAULT_TIMEOUT_MINUTES = 30;
 const DEFAULT_LARGE_PR_THRESHOLD = 80_000;
 const DEFAULT_LARGE_PR_STRATEGY = "prioritize";
+const DEFAULT_MIN_SEVERITY_TO_REPORT = "Info";
 function isFailOn(value) {
     return VALID_FAIL_ON.some((v) => v === value);
 }
@@ -45250,6 +45337,24 @@ function loadConfig(io) {
             error: `Invalid large_pr_strategy: "${largePrStrategyRaw}". Must be one of: ${VALID_LARGE_PR_STRATEGIES.join(", ")}.`,
         };
     }
+    const minSeverityRaw = io.getInput("min_severity_to_report");
+    const minSeverityToReport = minSeverityRaw === ""
+        ? DEFAULT_MIN_SEVERITY_TO_REPORT
+        : parseSeverityGate(minSeverityRaw);
+    if (!minSeverityToReport) {
+        return {
+            ok: false,
+            error: `Invalid min_severity_to_report: "${minSeverityRaw}". Must be one of: ${VALID_SEVERITY_GATES.join(", ")}.`,
+        };
+    }
+    const blockOnRaw = io.getInput("block_on");
+    const blockOn = blockOnRaw === "" ? undefined : parseSeverityGate(blockOnRaw);
+    if (blockOnRaw !== "" && !blockOn) {
+        return {
+            ok: false,
+            error: `Invalid block_on: "${blockOnRaw}". Must be one of: ${VALID_SEVERITY_GATES.join(", ")}.`,
+        };
+    }
     let skipDrafts;
     let skipForks;
     let enableSuggestions;
@@ -45284,6 +45389,11 @@ function loadConfig(io) {
             largePrThreshold: Math.max(1, parseInt(io.getInput("large_pr_threshold") ||
                 String(DEFAULT_LARGE_PR_THRESHOLD), 10) || DEFAULT_LARGE_PR_THRESHOLD),
             largePrStrategy: largePrStrategyRaw,
+            ignoreTitleKeywords: normalizeOptional(io.getInput("ignore_title_keywords")),
+            ignoreAuthors: normalizeOptional(io.getInput("ignore_authors")),
+            reviewLabels: normalizeOptional(io.getInput("review_labels")),
+            minSeverityToReport,
+            blockOn,
         },
     };
 }
@@ -45300,7 +45410,20 @@ function loadConfig(io) {
 
 
 
+
+
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
+const SKIPPED_OUTPUTS = {
+    verdict: "skipped",
+    issues_count: 0,
+    high_issues_count: 0,
+    warning_issues_count: 0,
+    info_issues_count: 0,
+};
+function skipReview(message) {
+    info(message);
+    setReviewOutputs(SKIPPED_OUTPUTS);
+}
 function failWithConfigError(reason) {
     logStructured("review_failed", {
         reason,
@@ -45348,37 +45471,38 @@ async function run() {
     // ⚡ Bolt: Optimize bypass label check to stop iterating early and prevent wasteful `.map` array allocation
     const hasBypassLabel = (pr.labels || []).some((l) => l.name === config.bypassLabel);
     if (isDraft && config.skipDrafts) {
-        info("Skipping draft PR.");
-        setReviewOutputs({
-            verdict: "skipped",
-            issues_count: 0,
-            high_issues_count: 0,
-            warning_issues_count: 0,
-            info_issues_count: 0,
-        });
+        skipReview("Skipping draft PR.");
         return;
     }
     if (isFork && config.skipForks) {
-        info("Skipping fork PR (skip_forks=true).");
-        setReviewOutputs({
-            verdict: "skipped",
-            issues_count: 0,
-            high_issues_count: 0,
-            warning_issues_count: 0,
-            info_issues_count: 0,
-        });
+        skipReview("Skipping fork PR (skip_forks=true).");
         return;
     }
     if (hasBypassLabel) {
-        info(`Bypass label "${config.bypassLabel}" present — skipping review.`);
-        setReviewOutputs({
-            verdict: "skipped",
-            issues_count: 0,
-            high_issues_count: 0,
-            warning_issues_count: 0,
-            info_issues_count: 0,
-        });
+        skipReview(`Bypass label "${config.bypassLabel}" present — skipping review.`);
         return;
+    }
+    const ignoreTitleKeywords = parseListInput(config.ignoreTitleKeywords);
+    if (shouldIgnoreTitle(pr.title || "", ignoreTitleKeywords)) {
+        skipReview("PR title matches an ignore_title_keywords entry — skipping review.");
+        return;
+    }
+    const ignoreAuthors = parseListInput(config.ignoreAuthors);
+    if (shouldIgnoreAuthor(pr.user?.login, ignoreAuthors)) {
+        skipReview(`PR author "${pr.user?.login}" is in ignore_authors — skipping review.`);
+        return;
+    }
+    const reviewLabels = parseListInput(config.reviewLabels);
+    if (reviewLabels.length > 0) {
+        const labelDecision = evaluateLabelPolicy(pr.labels, reviewLabels);
+        if (!labelDecision.evaluable) {
+            warning(labelDecision.reason ??
+                "review_labels cannot be evaluated for this event — continuing the review.");
+        }
+        else if (labelDecision.skip) {
+            skipReview(labelDecision.reason ?? "review_labels matched — skipping review.");
+            return;
+        }
     }
     // ⚡ Bolt: Delay instantiating the Octokit client until after early returns (draft/fork/bypass) to save memory
     const octokit = getOctokit(config.token);
@@ -45485,6 +45609,7 @@ async function run() {
             return;
         }
         const { verdict, summary, resolvedCommentIds, newComments, unparseable } = reviewResult;
+        const reportedComments = filterCommentsBySeverity(newComments || [], config.minSeverityToReport);
         // Resolve threads that the LLM identified as fixed
         if (resolvedCommentIds && resolvedCommentIds.length > 0) {
             const threadIdsToResolve = openThreads
@@ -45497,7 +45622,7 @@ async function run() {
         // Prepare body for the PR review
         const coverageNote = buildPostedCoverageNote(reviewCoverage);
         const finalBody = `${COMMENT_MARKER}\n## 🤖 Jules Review\n\n${summary}${coverageNote ? `\n\n${coverageNote}` : ""}\n\n---\n_Session: \`${sessionId}\`_`;
-        const commentsForReview = (newComments || []).map((c) => {
+        const commentsForReview = reportedComments.map((c) => {
             const copy = { ...c };
             if (!config.enableSuggestions) {
                 delete copy.suggestion;
@@ -45509,28 +45634,30 @@ async function run() {
         logStructured("review_submitted", {
             verdict,
             sessionId,
-            commentCount: commentsForReview.length,
+            commentCount: reportedComments.length,
         });
         const { conclusion, description } = unparseable
             ? {
                 conclusion: "failure",
                 description: "Jules returned a response that could not be parsed as a review.",
             }
-            : conclusionFromVerdict(verdict, config.failOn);
-        const annotations = buildAnnotations(newComments || []);
+            : config.blockOn
+                ? conclusionFromFindings(reportedComments, config.blockOn)
+                : conclusionFromVerdict(verdict, config.failOn);
+        const annotations = buildAnnotations(reportedComments);
         await finalizeCheckRun(octokit, owner, repo, checkRunId, conclusion, {
             title: "Jules Review",
             summary: description,
             ...(annotations.length > 0 ? { annotations } : {}),
         });
-        // Compute issue counts from newComments
-        const highCount = (newComments || []).filter((c) => c.severity === "High").length;
-        const warningCount = (newComments || []).filter((c) => c.severity === "Warning").length;
-        const infoCount = (newComments || []).filter((c) => c.severity === "Info").length;
+        // Compute issue counts from reportedComments
+        const highCount = reportedComments.filter((c) => c.severity === "High").length;
+        const warningCount = reportedComments.filter((c) => c.severity === "Warning").length;
+        const infoCount = reportedComments.filter((c) => c.severity === "Info").length;
         const reviewDuration = Date.now() - reviewStartTime;
         setReviewOutputs({
             verdict: verdict,
-            issues_count: (newComments || []).length,
+            issues_count: reportedComments.length,
             high_issues_count: highCount,
             warning_issues_count: warningCount,
             info_issues_count: infoCount,
@@ -45538,7 +45665,7 @@ async function run() {
         });
         logStructured("review_completed", {
             verdict,
-            issuesCount: (newComments || []).length,
+            issuesCount: reportedComments.length,
             highIssues: highCount,
             warningIssues: warningCount,
             infoIssues: infoCount,
@@ -45608,6 +45735,17 @@ function conclusionFromVerdict(verdict, failOn) {
             description: `Review complete (verdict: ${verdict})`,
         };
 }
+function conclusionFromFindings(comments, blockOn) {
+    return hasFindingsAtOrAbove(comments, blockOn)
+        ? {
+            conclusion: "failure",
+            description: `Findings at or above ${blockOn.toLowerCase()} severity found`,
+        }
+        : {
+            conclusion: "success",
+            description: `No findings at or above ${blockOn.toLowerCase()} severity`,
+        };
+}
 const MAX_ANNOTATIONS = 50;
 function severityToAnnotationLevel(severity) {
     switch (severity) {
@@ -45633,8 +45771,9 @@ run().catch((err) => {
 });
 
 var __webpack_exports__buildAnnotations = __webpack_exports__.P;
+var __webpack_exports__conclusionFromFindings = __webpack_exports__.k5;
 var __webpack_exports__conclusionFromVerdict = __webpack_exports__.tr;
 var __webpack_exports__truncate = __webpack_exports__.xv;
-export { __webpack_exports__buildAnnotations as buildAnnotations, __webpack_exports__conclusionFromVerdict as conclusionFromVerdict, __webpack_exports__truncate as truncate };
+export { __webpack_exports__buildAnnotations as buildAnnotations, __webpack_exports__conclusionFromFindings as conclusionFromFindings, __webpack_exports__conclusionFromVerdict as conclusionFromVerdict, __webpack_exports__truncate as truncate };
 
 //# sourceMappingURL=index.js.map

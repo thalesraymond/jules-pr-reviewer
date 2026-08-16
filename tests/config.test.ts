@@ -18,6 +18,11 @@ const DEFAULT_INPUTS: Record<string, string> = {
   dedupe: "true",
   large_pr_threshold: "80000",
   large_pr_strategy: "prioritize",
+  ignore_title_keywords: "",
+  ignore_authors: "",
+  review_labels: "",
+  min_severity_to_report: "",
+  block_on: "",
 };
 
 function makeIo(overrides: Record<string, string> = {}): {
@@ -100,6 +105,11 @@ describe("loadConfig", () => {
       dedupe: false,
       largePrThreshold: 80000,
       largePrStrategy: "prioritize",
+      ignoreTitleKeywords: undefined,
+      ignoreAuthors: undefined,
+      reviewLabels: undefined,
+      minSeverityToReport: "Info",
+      blockOn: undefined,
     });
     expect(secrets).toEqual(["test-api-key", "test-token"]);
     expect(process.env.JULES_API_KEY).toBe("test-api-key");
@@ -125,9 +135,14 @@ describe("loadConfig", () => {
     expect(config.dedupe).toBe(true);
     expect(config.largePrThreshold).toBe(80000);
     expect(config.largePrStrategy).toBe("prioritize");
+    expect(config.minSeverityToReport).toBe("Info");
+    expect(config.blockOn).toBeUndefined();
     expect(config.extraInstructions).toBeUndefined();
     expect(config.rulesFilePath).toBeUndefined();
     expect(config.ignoredPaths).toBeUndefined();
+    expect(config.ignoreTitleKeywords).toBeUndefined();
+    expect(config.ignoreAuthors).toBeUndefined();
+    expect(config.reviewLabels).toBeUndefined();
   });
 
   it("falls back to prompt mode and 30 minutes when inputs are empty strings", () => {
@@ -334,5 +349,73 @@ describe("loadConfig", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toContain('Invalid large_pr_strategy: "chunk"');
+  });
+
+  it("preserves ignore list inputs as raw strings", () => {
+    const { io } = makeIo({
+      ignore_title_keywords: '["WIP", "dependabot"]',
+      ignore_authors: "octocat\nbot[bot]",
+      review_labels: '["security", "-wip"]',
+    });
+
+    const result = loadConfig(io);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const config = expectConfig(result);
+    expect(config.ignoreTitleKeywords).toBe('["WIP", "dependabot"]');
+    expect(config.ignoreAuthors).toBe("octocat\nbot[bot]");
+    expect(config.reviewLabels).toBe('["security", "-wip"]');
+  });
+
+  it("parses min_severity_to_report as a Severity value", () => {
+    const high = loadConfig(makeIo({ min_severity_to_report: "high" }).io);
+    const warning = loadConfig(
+      makeIo({ min_severity_to_report: "warning" }).io
+    );
+    const info = loadConfig(makeIo({ min_severity_to_report: "Info" }).io);
+
+    expect(high.ok).toBe(true);
+    expect(warning.ok).toBe(true);
+    expect(info.ok).toBe(true);
+    if (!high.ok || !warning.ok || !info.ok) return;
+    expect(expectConfig(high).minSeverityToReport).toBe("High");
+    expect(expectConfig(warning).minSeverityToReport).toBe("Warning");
+    expect(expectConfig(info).minSeverityToReport).toBe("Info");
+  });
+
+  it("returns ok:false when min_severity_to_report is invalid", () => {
+    const { io } = makeIo({ min_severity_to_report: "critical" });
+
+    const result = loadConfig(io);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      'Invalid min_severity_to_report: "critical"'
+    );
+    expect(result.error).toContain("high, warning, info");
+  });
+
+  it("parses block_on as a Severity value and leaves it unset when empty", () => {
+    const set = loadConfig(makeIo({ block_on: "high" }).io);
+    const unset = loadConfig(makeIo({ block_on: "" }).io);
+
+    expect(set.ok).toBe(true);
+    expect(unset.ok).toBe(true);
+    if (!set.ok || !unset.ok) return;
+    expect(expectConfig(set).blockOn).toBe("High");
+    expect(expectConfig(unset).blockOn).toBeUndefined();
+  });
+
+  it("returns ok:false when block_on is invalid", () => {
+    const { io } = makeIo({ block_on: "sometimes" });
+
+    const result = loadConfig(io);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain('Invalid block_on: "sometimes"');
+    expect(result.error).toContain("high, warning, info");
   });
 });

@@ -1,5 +1,6 @@
-import { DiffMode, FailOn, LargePrStrategy } from "./types.js";
+import { DiffMode, FailOn, LargePrStrategy, Severity } from "./types.js";
 import { getErrorMessage } from "./errors.js";
+import { parseSeverityGate, VALID_SEVERITY_GATES } from "./severity.js";
 
 export interface InputReader {
   getInput(name: string, options?: { required?: boolean }): string;
@@ -24,6 +25,11 @@ export interface Config {
   dedupe: boolean;
   largePrThreshold: number;
   largePrStrategy: LargePrStrategy;
+  ignoreTitleKeywords?: string;
+  ignoreAuthors?: string;
+  reviewLabels?: string;
+  minSeverityToReport: Severity;
+  blockOn?: Severity;
 }
 
 export type ConfigResult =
@@ -39,6 +45,7 @@ const DEFAULT_DIFF_MODE: DiffMode = "prompt";
 const DEFAULT_TIMEOUT_MINUTES = 30;
 const DEFAULT_LARGE_PR_THRESHOLD = 80_000;
 const DEFAULT_LARGE_PR_STRATEGY: LargePrStrategy = "prioritize";
+const DEFAULT_MIN_SEVERITY_TO_REPORT: Severity = "Info";
 
 function isFailOn(value: string): value is FailOn {
   return VALID_FAIL_ON.some((v) => v === value);
@@ -96,6 +103,27 @@ export function loadConfig(io: InputReader): ConfigResult {
     };
   }
 
+  const minSeverityRaw = io.getInput("min_severity_to_report");
+  const minSeverityToReport =
+    minSeverityRaw === ""
+      ? DEFAULT_MIN_SEVERITY_TO_REPORT
+      : parseSeverityGate(minSeverityRaw);
+  if (!minSeverityToReport) {
+    return {
+      ok: false,
+      error: `Invalid min_severity_to_report: "${minSeverityRaw}". Must be one of: ${VALID_SEVERITY_GATES.join(", ")}.`,
+    };
+  }
+
+  const blockOnRaw = io.getInput("block_on");
+  const blockOn = blockOnRaw === "" ? undefined : parseSeverityGate(blockOnRaw);
+  if (blockOnRaw !== "" && !blockOn) {
+    return {
+      ok: false,
+      error: `Invalid block_on: "${blockOnRaw}". Must be one of: ${VALID_SEVERITY_GATES.join(", ")}.`,
+    };
+  }
+
   let skipDrafts: boolean;
   let skipForks: boolean;
   let enableSuggestions: boolean;
@@ -139,6 +167,13 @@ export function loadConfig(io: InputReader): ConfigResult {
         ) || DEFAULT_LARGE_PR_THRESHOLD
       ),
       largePrStrategy: largePrStrategyRaw,
+      ignoreTitleKeywords: normalizeOptional(
+        io.getInput("ignore_title_keywords")
+      ),
+      ignoreAuthors: normalizeOptional(io.getInput("ignore_authors")),
+      reviewLabels: normalizeOptional(io.getInput("review_labels")),
+      minSeverityToReport,
+      blockOn,
     },
   };
 }
