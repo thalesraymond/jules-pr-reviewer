@@ -2,6 +2,7 @@ export type FailOn = "never" | "blocking" | "any";
 export type Verdict = "approve" | "comment" | "block";
 export type DiffMode = "prompt" | "agentic";
 export type LargePrStrategy = "truncate" | "prioritize";
+export type Severity = "High" | "Warning" | "Info";
 
 export interface OpenThread {
   index: number;
@@ -53,7 +54,7 @@ export interface ReviewCoverage {
 export interface ReviewComment {
   file: string;
   line: number;
-  severity: "Info" | "Warning" | "High";
+  severity: Severity;
   confidence: "Low" | "Medium" | "High";
   message: string;
   promptForAgents: string;

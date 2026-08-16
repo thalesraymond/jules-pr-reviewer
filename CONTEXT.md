@@ -2,13 +2,17 @@
 
 ## Domain modules
 
-**Config module** (`src/config.ts`) — loads and validates action inputs. Exports `loadConfig` which reads from an injected input-reader and returns a `ConfigResult` (`ok`/`error`), never throwing. Hides input reads, defaults (mirrored from `action.yml`), validation, empty-string normalization (`rules_file`, `extra_instructions`, `ignored_paths`), and the secret envelope (`setSecret` masking plus the `process.env` wiring that `logging.ts`'s scrubber redacts against).
+**Config module** (`src/config.ts`) — loads and validates action inputs. Exports `loadConfig` which reads from an injected input-reader and returns a `ConfigResult` (`ok`/`error`), never throwing. Hides input reads, defaults (mirrored from `action.yml`), validation (including the `min_severity_to_report`/`block_on` severity gates), empty-string normalization (`rules_file`, `extra_instructions`, `ignored_paths`, `ignore_title_keywords`, `ignore_authors`, `review_labels`), and the secret envelope (`setSecret` masking plus the `process.env` wiring that `logging.ts`'s scrubber redacts against).
 
 **Resilience module** (`src/resilience.ts`) — handles transient and permanent failures in external API calls. Exports `withRetry` (exponential backoff for transient errors), `withFallback` (switch to alternative operation on permanent failure), and `isRetryableGithubError` (classify a GitHub API error as transient — `5xx`/`429`/rate-limit — so auth and permission errors fail fast instead of burning retries).
 
 **Validation module** (`src/validation.ts`) — parses and validates LLM responses. Exports `parseReviewResponse` which extracts JSON from markdown and validates the review structure in one call.
 
-**Filtering module** (`src/filtering.ts`) — narrows the diff scope based on ignored paths. Exports `parseIgnoredPaths` (parse config input) and `filterDiff` (apply path filters). The per-path matching logic (`shouldIgnorePath`) is hidden as an implementation detail.
+**Filtering module** (`src/filtering.ts`) — narrows the diff scope based on ignored paths. Exports `parseListInput` (generic list parsing shared by every list input — JSON array or comma/newline-separated), `parseIgnoredPaths` (parse config input), and `filterDiff` (apply path filters). The per-path matching logic (`shouldIgnorePath`) is hidden as an implementation detail.
+
+**Ignore module** (`src/ignore.ts`) — PR-level skip policy. Exports `shouldIgnoreTitle` (case-insensitive substring keywords), `shouldIgnoreAuthor` (login list), and `evaluateLabelPolicy` (allow/deny labels with a `-` deny prefix; only evaluable when the event payload carries PR labels, otherwise warn-and-continue).
+
+**Severity module** (`src/severity.ts`) — severity ordering and gating. Exports `parseSeverityGate` (config value → `Severity`), `filterCommentsBySeverity` (drop findings below `min_severity_to_report`), and `hasFindingsAtOrAbove` (finding-based `block_on` blocking).
 
 **Coverage module** (`src/coverage.ts`) — large-PR handling. Exports `preparePromptDiff` (select a subset of the diff within a char budget — greedy pack by churn for `prioritize`, original-order cut for `truncate` — plus a coverage report of included/partial/excluded files), `splitDiffSections` (parse `diff --git` boundaries), and `buildPostedCoverageNote` (deterministic coverage line appended to the posted review).
 
@@ -29,3 +33,5 @@
 **Incremental diff** — on synchronize events, the diff between the previous head and the new head, not the full PR diff.
 
 **ReviewCoverage** — the large-PR coverage report: whether the PR is large, how many files were reviewed, and which files were excluded (prompt mode) so the review can state explicit coverage instead of silently truncating the diff.
+
+**Skip decision** — a PR-level early return driven by the ignore inputs: title keyword match, author match, or label allow/deny policy. Skip decisions run before any GitHub/Jules API call, so skipped PRs never create a check run or session.

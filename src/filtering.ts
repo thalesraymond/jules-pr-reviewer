@@ -1,6 +1,6 @@
 import { minimatch } from "minimatch";
 
-export function parseIgnoredPaths(input?: string): string[] {
+export function parseListInput(input?: string): string[] {
   if (!input || !input.trim()) {
     return [];
   }
@@ -28,6 +28,10 @@ export function parseIgnoredPaths(input?: string): string[] {
   }
 
   return splitList(trimmed);
+}
+
+export function parseIgnoredPaths(input?: string): string[] {
+  return parseListInput(input);
 }
 
 export function extractChangedFilePaths(diff: string): string[] {

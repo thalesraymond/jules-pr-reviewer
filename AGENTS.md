@@ -38,6 +38,9 @@ src/
 ├── jules.ts       # Review mode wrappers (prompt-mode retry, agentic-mode fallback)
 ├── session.ts     # Jules session lifecycle (create, readiness, polling, response parsing, archive)
 ├── prompt.ts      # Prompt builder for the review request
+├── filtering.ts   # List-input parsing and diff path filtering
+├── ignore.ts      # PR skip policy (title keywords, authors, label allow/deny)
+├── severity.ts    # Severity ordering and gating (min_severity_to_report, block_on)
 └── types.ts       # Shared type definitions (FailOn, Verdict, ReviewResult, etc.)
 
 tests/
@@ -46,7 +49,9 @@ tests/
 ├── submission.test.ts # Tests for review submission pipeline
 ├── jules.test.ts      # Tests for review mode wrappers
 ├── session.test.ts    # Tests for the Jules session lifecycle
-└── prompt.test.ts     # Tests for prompt building
+├── prompt.test.ts     # Tests for prompt building
+├── ignore.test.ts     # Tests for the PR skip policy
+└── severity.test.ts   # Tests for severity ordering and gating
 ```
 
 ## Verification Commands

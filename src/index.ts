@@ -3,9 +3,11 @@ import * as github from "@actions/github";
 import {
   FailOn,
   Verdict,
+  Severity,
   ReviewComment,
   ReviewResult,
   ReviewCoverage,
+  ReviewOutputs,
   CheckRunAnnotation,
 } from "./types.js";
 import {
@@ -24,10 +26,17 @@ import {
 } from "./jules.js";
 import { buildReviewPrompt } from "./prompt.js";
 import {
+  parseListInput,
   parseIgnoredPaths,
   filterDiff,
   extractChangedFilePaths,
 } from "./filtering.js";
+import {
+  shouldIgnoreTitle,
+  shouldIgnoreAuthor,
+  evaluateLabelPolicy,
+} from "./ignore.js";
+import { filterCommentsBySeverity, hasFindingsAtOrAbove } from "./severity.js";
 import { preparePromptDiff, buildPostedCoverageNote } from "./coverage.js";
 import {
   getErrorMessage,
@@ -38,6 +47,19 @@ import { loadConfig } from "./config.js";
 import { logStructured, setReviewOutputs } from "./logging.js";
 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
+
+const SKIPPED_OUTPUTS: ReviewOutputs = {
+  verdict: "skipped",
+  issues_count: 0,
+  high_issues_count: 0,
+  warning_issues_count: 0,
+  info_issues_count: 0,
+};
+
+function skipReview(message: string): void {
+  core.info(message);
+  setReviewOutputs(SKIPPED_OUTPUTS);
+}
 
 function failWithConfigError(reason: string): void {
   logStructured("review_failed", {
@@ -100,39 +122,50 @@ async function run(): Promise<void> {
   );
 
   if (isDraft && config.skipDrafts) {
-    core.info("Skipping draft PR.");
-    setReviewOutputs({
-      verdict: "skipped",
-      issues_count: 0,
-      high_issues_count: 0,
-      warning_issues_count: 0,
-      info_issues_count: 0,
-    });
+    skipReview("Skipping draft PR.");
     return;
   }
   if (isFork && config.skipForks) {
-    core.info("Skipping fork PR (skip_forks=true).");
-    setReviewOutputs({
-      verdict: "skipped",
-      issues_count: 0,
-      high_issues_count: 0,
-      warning_issues_count: 0,
-      info_issues_count: 0,
-    });
+    skipReview("Skipping fork PR (skip_forks=true).");
     return;
   }
   if (hasBypassLabel) {
-    core.info(
+    skipReview(
       `Bypass label "${config.bypassLabel}" present — skipping review.`
     );
-    setReviewOutputs({
-      verdict: "skipped",
-      issues_count: 0,
-      high_issues_count: 0,
-      warning_issues_count: 0,
-      info_issues_count: 0,
-    });
     return;
+  }
+
+  const ignoreTitleKeywords = parseListInput(config.ignoreTitleKeywords);
+  if (shouldIgnoreTitle(pr.title || "", ignoreTitleKeywords)) {
+    skipReview(
+      "PR title matches an ignore_title_keywords entry — skipping review."
+    );
+    return;
+  }
+
+  const ignoreAuthors = parseListInput(config.ignoreAuthors);
+  if (shouldIgnoreAuthor(pr.user?.login, ignoreAuthors)) {
+    skipReview(
+      `PR author "${pr.user?.login}" is in ignore_authors — skipping review.`
+    );
+    return;
+  }
+
+  const reviewLabels = parseListInput(config.reviewLabels);
+  if (reviewLabels.length > 0) {
+    const labelDecision = evaluateLabelPolicy(pr.labels, reviewLabels);
+    if (!labelDecision.evaluable) {
+      core.warning(
+        labelDecision.reason ??
+          "review_labels cannot be evaluated for this event — continuing the review."
+      );
+    } else if (labelDecision.skip) {
+      skipReview(
+        labelDecision.reason ?? "review_labels matched — skipping review."
+      );
+      return;
+    }
   }
 
   // ⚡ Bolt: Delay instantiating the Octokit client until after early returns (draft/fork/bypass) to save memory
@@ -285,6 +318,10 @@ async function run(): Promise<void> {
 
     const { verdict, summary, resolvedCommentIds, newComments, unparseable } =
       reviewResult;
+    const reportedComments = filterCommentsBySeverity(
+      newComments || [],
+      config.minSeverityToReport
+    );
 
     // Resolve threads that the LLM identified as fixed
     if (resolvedCommentIds && resolvedCommentIds.length > 0) {
@@ -303,7 +340,7 @@ async function run(): Promise<void> {
       coverageNote ? `\n\n${coverageNote}` : ""
     }\n\n---\n_Session: \`${sessionId}\`_`;
 
-    const commentsForReview: ReviewComment[] = (newComments || []).map((c) => {
+    const commentsForReview: ReviewComment[] = reportedComments.map((c) => {
       const copy = { ...c };
       if (!config.enableSuggestions) {
         delete copy.suggestion;
@@ -325,7 +362,7 @@ async function run(): Promise<void> {
     logStructured("review_submitted", {
       verdict,
       sessionId,
-      commentCount: commentsForReview.length,
+      commentCount: reportedComments.length,
     });
 
     const { conclusion, description } = unparseable
@@ -334,29 +371,31 @@ async function run(): Promise<void> {
           description:
             "Jules returned a response that could not be parsed as a review.",
         }
-      : conclusionFromVerdict(verdict, config.failOn);
-    const annotations = buildAnnotations(newComments || []);
+      : config.blockOn
+        ? conclusionFromFindings(reportedComments, config.blockOn)
+        : conclusionFromVerdict(verdict, config.failOn);
+    const annotations = buildAnnotations(reportedComments);
     await finalizeCheckRun(octokit, owner, repo, checkRunId!, conclusion, {
       title: "Jules Review",
       summary: description,
       ...(annotations.length > 0 ? { annotations } : {}),
     });
 
-    // Compute issue counts from newComments
-    const highCount = (newComments || []).filter(
+    // Compute issue counts from reportedComments
+    const highCount = reportedComments.filter(
       (c) => c.severity === "High"
     ).length;
-    const warningCount = (newComments || []).filter(
+    const warningCount = reportedComments.filter(
       (c) => c.severity === "Warning"
     ).length;
-    const infoCount = (newComments || []).filter(
+    const infoCount = reportedComments.filter(
       (c) => c.severity === "Info"
     ).length;
 
     const reviewDuration = Date.now() - reviewStartTime;
     setReviewOutputs({
       verdict: verdict as "approve" | "comment" | "block",
-      issues_count: (newComments || []).length,
+      issues_count: reportedComments.length,
       high_issues_count: highCount,
       warning_issues_count: warningCount,
       info_issues_count: infoCount,
@@ -365,7 +404,7 @@ async function run(): Promise<void> {
 
     logStructured("review_completed", {
       verdict,
-      issuesCount: (newComments || []).length,
+      issuesCount: reportedComments.length,
       highIssues: highCount,
       warningIssues: warningCount,
       infoIssues: infoCount,
@@ -442,6 +481,21 @@ export function conclusionFromVerdict(
     : {
         conclusion: "success",
         description: `Review complete (verdict: ${verdict})`,
+      };
+}
+
+export function conclusionFromFindings(
+  comments: ReviewComment[],
+  blockOn: Severity
+): { conclusion: "success" | "failure"; description: string } {
+  return hasFindingsAtOrAbove(comments, blockOn)
+    ? {
+        conclusion: "failure",
+        description: `Findings at or above ${blockOn.toLowerCase()} severity found`,
+      }
+    : {
+        conclusion: "success",
+        description: `No findings at or above ${blockOn.toLowerCase()} severity`,
       };
 }
 

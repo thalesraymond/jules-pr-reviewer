@@ -17,6 +17,14 @@ inputs:
     description: "When to fail the check run: never | blocking | any. Default blocking."
     required: false
     default: "blocking"
+  min_severity_to_report:
+    description: "Minimum severity of findings to post, annotate, and count: info (all, default) | warning | high. Findings below this level are not reported."
+    required: false
+    default: "info"
+  block_on:
+    description: "Fail the check run when a reported finding is at or above this severity: high | warning | info. When set, overrides fail_on (which maps the LLM verdict); when unset, fail_on is used unchanged."
+    required: false
+    default: ""
   skip_drafts:
     description: "Skip review on draft PRs."
     required: false
@@ -29,6 +37,18 @@ inputs:
     description: "Label that, when applied to a PR, skips the review entirely."
     required: false
     default: "jules-override"
+  ignore_title_keywords:
+    description: "JSON array or comma/newline-separated list of case-insensitive title substrings. If the PR title contains any of them, the review is skipped entirely."
+    required: false
+    default: ""
+  ignore_authors:
+    description: "JSON array or comma/newline-separated list of GitHub usernames. PRs authored by these users are skipped entirely."
+    required: false
+    default: ""
+  review_labels:
+    description: "Allow/deny label filter. Plain entries are allow labels (the PR must have at least one); entries prefixed with '-' are deny labels (the PR must have none). Only enforced when the event payload includes PR labels; otherwise a warning is logged and the review proceeds."
+    required: false
+    default: ""
   status_context:
     description: "Check run name."
     required: false

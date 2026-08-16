@@ -1,27 +1,46 @@
 import { describe, it, expect } from "vitest";
-import { parseIgnoredPaths, filterDiff } from "../src/filtering.js";
+import {
+  parseListInput,
+  parseIgnoredPaths,
+  filterDiff,
+} from "../src/filtering.js";
 
-describe("parseIgnoredPaths", () => {
+describe("parseListInput", () => {
   it("returns empty array for empty or undefined input", () => {
-    expect(parseIgnoredPaths()).toEqual([]);
-    expect(parseIgnoredPaths("")).toEqual([]);
-    expect(parseIgnoredPaths("   ")).toEqual([]);
+    expect(parseListInput()).toEqual([]);
+    expect(parseListInput("")).toEqual([]);
+    expect(parseListInput("   ")).toEqual([]);
   });
 
   it("parses valid JSON array strings", () => {
-    expect(parseIgnoredPaths('["dist/**", "*.lock"]')).toEqual([
-      "dist/**",
-      "*.lock",
+    expect(parseListInput('["wip", "dependabot"]')).toEqual([
+      "wip",
+      "dependabot",
     ]);
   });
 
   it("filters out non-string items or empty strings in JSON array", () => {
-    expect(
-      parseIgnoredPaths('["dist/**", 123, "", null, "  *.lock "]')
-    ).toEqual(["dist/**", "*.lock"]);
+    expect(parseListInput('["wip", 123, "", null, "  bot "]')).toEqual([
+      "wip",
+      "bot",
+    ]);
   });
 
   it("falls back to comma or newline separated values if not valid JSON", () => {
+    expect(parseListInput("wip, bot\nno-review")).toEqual([
+      "wip",
+      "bot",
+      "no-review",
+    ]);
+  });
+});
+
+describe("parseIgnoredPaths", () => {
+  it("delegates to parseListInput", () => {
+    expect(parseIgnoredPaths('["dist/**", "*.lock"]')).toEqual([
+      "dist/**",
+      "*.lock",
+    ]);
     expect(parseIgnoredPaths("dist/**, *.lock\nbuild/*")).toEqual([
       "dist/**",
       "*.lock",
