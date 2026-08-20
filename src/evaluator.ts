@@ -227,14 +227,18 @@ function computeMetrics(
   ComparisonResult,
   "matchedComments" | "unmatchedComments" | "unmatchedExpected"
 > {
-  const precision =
-    truePositives + falsePositives === 0
-      ? 0
-      : truePositives / (truePositives + falsePositives);
-  const recall =
-    truePositives + falseNegatives === 0
-      ? 0
-      : truePositives / (truePositives + falseNegatives);
+  const noActual = truePositives + falsePositives === 0;
+  const noExpected = truePositives + falseNegatives === 0;
+  const precision = noActual
+    ? noExpected
+      ? 1
+      : 0
+    : truePositives / (truePositives + falsePositives);
+  const recall = noExpected
+    ? noActual
+      ? 1
+      : 0
+    : truePositives / (truePositives + falseNegatives);
   const f1 =
     precision + recall === 0
       ? 0

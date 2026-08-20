@@ -559,7 +559,7 @@ Use `tags` to group cases (e.g. `security`, `false-positive`, `known-bug`) and `
 
 ### Harness output
 
-The printed report lists matched findings, false positives, and false negatives per case, plus aggregate precision, recall, and F1. The harness exits with code `2` when the aggregate F1 is below `1.0`, making it suitable as a CI quality gate.
+The printed report lists matched findings, false positives, and false negatives per case, plus aggregate precision, recall, and F1. Downstream CI steps can parse the optional `--json` output to gate on a target F1 threshold.
 
 ## License
 
