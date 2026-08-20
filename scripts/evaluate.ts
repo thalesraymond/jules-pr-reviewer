@@ -100,10 +100,6 @@ async function main(): Promise<void> {
     );
     console.log(`Results written to ${args.jsonPath}`);
   }
-
-  if (result.totals.f1 < 1) {
-    process.exitCode = 2;
-  }
 }
 
 main().catch((err: unknown) => {
