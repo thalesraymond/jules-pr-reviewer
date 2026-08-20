@@ -350,11 +350,26 @@ async function run(): Promise<void> {
       }
     }
 
+    // Compute issue counts before building the review body
+    const highCount = reportedComments.filter(
+      (c) => c.severity === "High"
+    ).length;
+    const warningCount = reportedComments.filter(
+      (c) => c.severity === "Warning"
+    ).length;
+    const infoCount = reportedComments.filter(
+      (c) => c.severity === "Info"
+    ).length;
+
     // Prepare body for the PR review
     const coverageNote = buildPostedCoverageNote(reviewCoverage);
+    const countsLine =
+      reportedComments.length === 0
+        ? "No findings reported."
+        : `**Findings:** ${reportedComments.length} (${highCount} High, ${warningCount} Warning, ${infoCount} Info)`;
     const finalBody = `${COMMENT_MARKER}\n## 🤖 Jules Review\n\n${summary}${
       coverageNote ? `\n\n${coverageNote}` : ""
-    }\n\n---\n_Session: \`${sessionId}\`_`;
+    }\n\n${countsLine}\n\n---\n_Session: \`${sessionId}\`_`;
 
     const commentsForReview: ReviewComment[] = reportedComments.map((c) => {
       const copy = { ...c };
@@ -365,6 +380,9 @@ async function run(): Promise<void> {
       return copy;
     });
 
+    const reviewEvent: "COMMENT" | "APPROVE" =
+      config.enableApprove && verdict === "approve" ? "APPROVE" : "COMMENT";
+
     await submitReview(
       octokit,
       owner,
@@ -372,7 +390,8 @@ async function run(): Promise<void> {
       prNumber,
       headSha,
       finalBody,
-      commentsForReview
+      commentsForReview,
+      reviewEvent
     );
 
     logStructured("review_submitted", {
@@ -396,17 +415,6 @@ async function run(): Promise<void> {
       summary: description,
       ...(annotations.length > 0 ? { annotations } : {}),
     });
-
-    // Compute issue counts from reportedComments
-    const highCount = reportedComments.filter(
-      (c) => c.severity === "High"
-    ).length;
-    const warningCount = reportedComments.filter(
-      (c) => c.severity === "Warning"
-    ).length;
-    const infoCount = reportedComments.filter(
-      (c) => c.severity === "Info"
-    ).length;
 
     const reviewDuration = Date.now() - reviewStartTime;
     setReviewOutputs({

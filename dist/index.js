@@ -37442,14 +37442,14 @@ function isUnprocessableEntity(error) {
     return (error?.status === 422 ||
         getErrorMessage(error).includes("Unprocessable Entity"));
 }
-async function submitReview(octokit, owner, repo, prNumber, headSha, summary, comments) {
+async function submitReview(octokit, owner, repo, prNumber, headSha, summary, comments, reviewEvent = "COMMENT") {
     const submitWithComments = (includeSuggestions) => async () => {
         await octokit.rest.pulls.createReview({
             owner,
             repo,
             pull_number: prNumber,
             commit_id: headSha,
-            event: "COMMENT",
+            event: reviewEvent,
             body: summary,
             comments: comments.map((c) => buildApiComment(c, includeSuggestions)),
         });
@@ -37461,7 +37461,7 @@ async function submitReview(octokit, owner, repo, prNumber, headSha, summary, co
             repo,
             pull_number: prNumber,
             commit_id: headSha,
-            event: "COMMENT",
+            event: reviewEvent,
             body: summary,
             comments: [],
         });
@@ -45443,11 +45443,13 @@ function loadConfig(io) {
     let skipDrafts;
     let skipForks;
     let enableSuggestions;
+    let enableApprove;
     let dedupe;
     try {
         skipDrafts = io.getBooleanInput("skip_drafts");
         skipForks = io.getBooleanInput("skip_forks");
         enableSuggestions = io.getBooleanInput("enable_suggestions");
+        enableApprove = io.getBooleanInput("enable_approve");
         dedupe = io.getBooleanInput("dedupe");
     }
     catch (err) {
@@ -45472,6 +45474,7 @@ function loadConfig(io) {
             timeoutMinutes: Math.max(1, parseInt(io.getInput("timeout_minutes") || "30", 10) ||
                 DEFAULT_TIMEOUT_MINUTES),
             enableSuggestions,
+            enableApprove,
             dedupe,
             largePrThreshold: Math.max(1, parseInt(io.getInput("large_pr_threshold") ||
                 String(DEFAULT_LARGE_PR_THRESHOLD), 10) || DEFAULT_LARGE_PR_THRESHOLD),
@@ -45809,9 +45812,16 @@ async function run() {
                 await resolveThreads(octokit, threadIdsToResolve);
             }
         }
+        // Compute issue counts before building the review body
+        const highCount = reportedComments.filter((c) => c.severity === "High").length;
+        const warningCount = reportedComments.filter((c) => c.severity === "Warning").length;
+        const infoCount = reportedComments.filter((c) => c.severity === "Info").length;
         // Prepare body for the PR review
         const coverageNote = buildPostedCoverageNote(reviewCoverage);
-        const finalBody = `${COMMENT_MARKER}\n## 🤖 Jules Review\n\n${summary}${coverageNote ? `\n\n${coverageNote}` : ""}\n\n---\n_Session: \`${sessionId}\`_`;
+        const countsLine = reportedComments.length === 0
+            ? "No findings reported."
+            : `**Findings:** ${reportedComments.length} (${highCount} High, ${warningCount} Warning, ${infoCount} Info)`;
+        const finalBody = `${COMMENT_MARKER}\n## 🤖 Jules Review\n\n${summary}${coverageNote ? `\n\n${coverageNote}` : ""}\n\n${countsLine}\n\n---\n_Session: \`${sessionId}\`_`;
         const commentsForReview = reportedComments.map((c) => {
             const copy = { ...c };
             if (!config.enableSuggestions) {
@@ -45820,7 +45830,8 @@ async function run() {
             }
             return copy;
         });
-        await submitReview(octokit, owner, repo, prNumber, headSha, finalBody, commentsForReview);
+        const reviewEvent = config.enableApprove && verdict === "approve" ? "APPROVE" : "COMMENT";
+        await submitReview(octokit, owner, repo, prNumber, headSha, finalBody, commentsForReview, reviewEvent);
         logStructured("review_submitted", {
             verdict,
             sessionId,
@@ -45840,10 +45851,6 @@ async function run() {
             summary: description,
             ...(annotations.length > 0 ? { annotations } : {}),
         });
-        // Compute issue counts from reportedComments
-        const highCount = reportedComments.filter((c) => c.severity === "High").length;
-        const warningCount = reportedComments.filter((c) => c.severity === "Warning").length;
-        const infoCount = reportedComments.filter((c) => c.severity === "Info").length;
         const reviewDuration = Date.now() - reviewStartTime;
         setReviewOutputs({
             verdict: verdict,

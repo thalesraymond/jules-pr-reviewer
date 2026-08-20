@@ -219,6 +219,7 @@ The workflow's `extra_instructions` is appended after the rules file content. Gl
 | `ignored_paths`      | `[]`                            | JSON array **or** comma/newline-separated list of paths/globs to exclude from diff (e.g. `["dist/**", "*.lock"]` or `dist/**, *.lock`). |
 | `timeout_minutes`    | `30`                            | How long to wait for Jules to return a review.                    |
 | `enable_suggestions` | `false`                         | Enable GitHub-native one-click suggested changes in review comments. |
+| `enable_approve`     | `false`                         | When `true` and the review verdict is `approve`, post a GitHub PR approval (`event: APPROVE`) instead of a comment. Never approves on `comment` or `block` verdicts. Requires `pull-requests: write`. |
 | `dedupe`             | `true`                          | Don't re-report previously posted, still-open findings on subsequent reviews. Set to `false` to allow Jules to re-review and re-report prior findings. |
 | `diff_mode`          | `prompt`                        | Review pipeline: `prompt` (embed the diff in the prompt) or `agentic` (Jules inspects the PR branch directly). |
 | `large_pr_threshold` | `80000`                         | Diff size (characters) above which the large-PR strategy kicks in. |
@@ -316,6 +317,27 @@ Opt-in to include GitHub-native one-click suggested changes in Jules' review com
 ```
 
 > Suggestions are emitted only for `High` or `Medium` confidence comments. If GitHub rejects a suggestion (for example, because it falls outside a diff hunk), the action automatically retries without suggestions and falls back to the existing summary-only review as a last resort.
+
+### Auto-approving clean PRs
+
+You can opt in to automatic GitHub approvals when Jules returns a clean `approve` verdict:
+
+```yaml
+- uses: thalesraymond/jules-pr-reviewer@v1
+  with:
+    jules_api_key: ${{ secrets.JULES_API_KEY }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    enable_approve: true
+```
+
+When `enable_approve: true`:
+
+- An `approve` verdict posts `event: APPROVE` to the PR instead of a `COMMENT` review.
+- The approval body still contains the Jules summary, verdict counts, and session link.
+- `comment` and `block` verdicts always post `event: COMMENT` so findings remain visible.
+- The workflow token must have `pull-requests: write` (already required for posting comments).
+
+If you also gate merges on the `jules/review` check run, combine `enable_approve: true` with `fail_on` or `block_on` and branch protection. For example, `fail_on: blocking` keeps the check green on a clean `approve` while still blocking PRs with a `block` verdict.
 
 ### Agentic diff mode
 
@@ -490,6 +512,54 @@ To build the action into the `dist` folder:
 ```bash
 pnpm run build
 ```
+
+## Quality evaluation
+
+The repository includes a small, deterministic evaluator harness for regression-testing prompt and pipeline changes. Curated PR fixtures live in [`eval/cases/`](./eval/cases/) and declare a synthetic diff plus the findings a human reviewer would expect.
+
+Run the harness in deterministic `mock` mode (the default and CI-safe mode):
+
+```bash
+pnpm evaluate:mock
+```
+
+This loads every `*.json` fixture in `eval/cases/`, parses the configured mock Jules response, and scores emitted comments against the expected findings by `file:line` and severity. The output is a markdown report with per-case and aggregate precision/recall/F1 metrics.
+
+### Live mode
+
+The harness also accepts a `live` mode that creates real Jules sessions, but it is **intentionally stubbed and off by default** because it burns billable sessions:
+
+```bash
+pnpm evaluate:live   # requires explicit opt-in and JULES_API_KEY
+```
+
+Live mode will fail with a clear message until it is wired to the real Jules runner and you provide credentials.
+
+### Adding fixtures
+
+Each fixture is a JSON file with the following shape:
+
+```json
+{
+  "prNumber": 101,
+  "owner": "eval-fixtures",
+  "repo": "vulnerable-app",
+  "title": "Add user lookup endpoint",
+  "body": "Adds a simple /user endpoint for internal tooling.",
+  "diff": "diff --git a/src/db.js...",
+  "expectedFindings": [
+    { "file": "src/db.js", "line": 4, "severity": "High", "message": "SQL injection" }
+  ],
+  "mockResponse": "```json\n{ ... }\n```",
+  "tags": ["security", "known-bug"]
+}
+```
+
+Use `tags` to group cases (e.g. `security`, `false-positive`, `known-bug`) and `mockResponse` to supply the exact Jules-style JSON the reviewer is expected to emit for that fixture.
+
+### Harness output
+
+The printed report lists matched findings, false positives, and false negatives per case, plus aggregate precision, recall, and F1. Downstream CI steps can parse the optional `--json` output to gate on a target F1 threshold.
 
 ## License
 

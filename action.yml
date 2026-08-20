@@ -81,6 +81,10 @@ inputs:
     description: "Enable GitHub-native one-click suggested changes in review comments. Default false."
     required: false
     default: "false"
+  enable_approve:
+    description: "When true and the review verdict is approve, post a GitHub PR approval (event: APPROVE) instead of a comment. Default false. Requires pull-requests: write."
+    required: false
+    default: "false"
   dedupe:
     description: "Avoid re-reporting previously posted, still-open findings on subsequent reviews. Set to false to let Jules re-review and re-report prior findings."
     required: false

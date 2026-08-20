@@ -20,6 +20,7 @@ const DEFAULT_INPUTS: Record<string, string> = {
   ignored_paths: "[]",
   timeout_minutes: "30",
   enable_suggestions: "false",
+  enable_approve: "false",
   dedupe: "true",
   large_pr_threshold: "80000",
   large_pr_strategy: "prioritize",
@@ -138,6 +139,7 @@ describe("loadConfig", () => {
       ignoredPaths: '["dist/**", "*.lock"]',
       timeoutMinutes: 45,
       enableSuggestions: true,
+      enableApprove: false,
       dedupe: false,
       largePrThreshold: 80000,
       largePrStrategy: "prioritize",
@@ -169,6 +171,7 @@ describe("loadConfig", () => {
     expect(config.statusContext).toBe("jules/review");
     expect(config.timeoutMinutes).toBe(30);
     expect(config.enableSuggestions).toBe(false);
+    expect(config.enableApprove).toBe(false);
     expect(config.dedupe).toBe(true);
     expect(config.largePrThreshold).toBe(80000);
     expect(config.largePrStrategy).toBe("prioritize");
@@ -324,6 +327,7 @@ describe("loadConfig", () => {
       ignoredPaths: "[]",
       timeoutMinutes: 30,
       enableSuggestions: false,
+      enableApprove: false,
       dedupe: true,
       largePrThreshold: 80000,
       largePrStrategy: "prioritize",
@@ -363,6 +367,26 @@ describe("loadConfig", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toContain("enable_suggestions");
+  });
+
+  it("parses enable_approve as true when set", () => {
+    const { io } = makeIo({ enable_approve: "true" });
+
+    const result = loadConfig(io);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(expectConfig(result).enableApprove).toBe(true);
+  });
+
+  it("returns ok:false when enable_approve is not a boolean", () => {
+    const { io } = makeIo({ enable_approve: "1" });
+
+    const result = loadConfig(io);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("enable_approve");
   });
 
   it("parses dedupe as false when dedupe is false", () => {

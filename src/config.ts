@@ -30,6 +30,7 @@ export interface Config {
   ignoredPaths?: string;
   timeoutMinutes: number;
   enableSuggestions: boolean;
+  enableApprove: boolean;
   dedupe: boolean;
   largePrThreshold: number;
   largePrStrategy: LargePrStrategy;
@@ -154,11 +155,13 @@ export function loadConfig(io: InputReader): ConfigResult {
   let skipDrafts: boolean;
   let skipForks: boolean;
   let enableSuggestions: boolean;
+  let enableApprove: boolean;
   let dedupe: boolean;
   try {
     skipDrafts = io.getBooleanInput("skip_drafts");
     skipForks = io.getBooleanInput("skip_forks");
     enableSuggestions = io.getBooleanInput("enable_suggestions");
+    enableApprove = io.getBooleanInput("enable_approve");
     dedupe = io.getBooleanInput("dedupe");
   } catch (err) {
     return { ok: false, error: getErrorMessage(err) };
@@ -186,6 +189,7 @@ export function loadConfig(io: InputReader): ConfigResult {
           DEFAULT_TIMEOUT_MINUTES
       ),
       enableSuggestions,
+      enableApprove,
       dedupe,
       largePrThreshold: Math.max(
         1,

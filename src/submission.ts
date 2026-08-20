@@ -121,7 +121,8 @@ export async function submitReview(
   prNumber: number,
   headSha: string,
   summary: string,
-  comments: ReviewComment[]
+  comments: ReviewComment[],
+  reviewEvent: "COMMENT" | "APPROVE" = "COMMENT"
 ): Promise<void> {
   const submitWithComments = (includeSuggestions: boolean) => async () => {
     await octokit.rest.pulls.createReview({
@@ -129,7 +130,7 @@ export async function submitReview(
       repo,
       pull_number: prNumber,
       commit_id: headSha,
-      event: "COMMENT",
+      event: reviewEvent,
       body: summary,
       comments: comments.map((c) => buildApiComment(c, includeSuggestions)),
     });
@@ -144,7 +145,7 @@ export async function submitReview(
       repo,
       pull_number: prNumber,
       commit_id: headSha,
-      event: "COMMENT",
+      event: reviewEvent,
       body: summary,
       comments: [],
     });
