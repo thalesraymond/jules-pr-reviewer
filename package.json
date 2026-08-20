@@ -12,6 +12,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "evaluate:mock": "tsx scripts/evaluate.ts --mode mock --cases eval/cases",
+    "evaluate:live": "tsx scripts/evaluate.ts --mode live --cases eval/cases",
     "prepare": "husky",
     "commit": "git add . && cz"
   },
@@ -45,6 +47,7 @@
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
     "prettier": "^3.9.6",
+    "tsx": "^4.23.12",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.67.0",
     "vitest": "^4.1.10"

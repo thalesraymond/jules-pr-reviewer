@@ -1,0 +1,18 @@
+{
+  "prNumber": 103,
+  "owner": "eval-fixtures",
+  "repo": "import-app",
+  "title": "Add analytics module",
+  "body": "Adds a new analytics module without wiring it up yet.",
+  "diff": "diff --git a/src/analytics.js b/src/analytics.js\nnew file mode 100644\nindex 0000000..abcdef0\n--- /dev/null\n+++ b/src/analytics.js\n@@ -0,0 +1,3 @@\n+export function track(event) {\n+  console.log(event);\n+}\n",
+  "expectedFindings": [
+    {
+      "file": "src/analytics.js",
+      "line": 2,
+      "severity": "Info",
+      "message": "console.log"
+    }
+  ],
+  "mockResponse": "```json\n{\n  \"summary\": \"Adds analytics but misses the new import in src/index.js.\",\n  \"verdict\": \"comment\",\n  \"resolvedCommentIds\": [],\n  \"newComments\": [\n    {\n      \"file\": \"src/index.js\",\n      \"line\": 1,\n      \"severity\": \"Warning\",\n      \"confidence\": \"Medium\",\n      \"message\": \"Missing import for the new analytics module.\",\n      \"promptForAgents\": \"Import and register the analytics module.\"\n    }\n  ]\n}\n```",
+  "tags": ["false-positive", "false-negative"]
+}

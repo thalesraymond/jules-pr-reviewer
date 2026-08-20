@@ -1,0 +1,11 @@
+{
+  "prNumber": 102,
+  "owner": "eval-fixtures",
+  "repo": "style-app",
+  "title": "Refactor helper names for clarity",
+  "body": "Renames internal helpers to match project conventions.",
+  "diff": "diff --git a/src/helpers.js b/src/helpers.js\nindex abcdef0..1234567 100644\n--- a/src/helpers.js\n+++ b/src/helpers.js\n@@ -1,5 +1,5 @@\n-export const doStuff = () => {\n+export const processUserData = () => {\n   return 42;\n };\n",
+  "expectedFindings": [],
+  "mockResponse": "```json\n{\n  \"summary\": \"No issues found.\",\n  \"verdict\": \"approve\",\n  \"resolvedCommentIds\": [],\n  \"newComments\": []\n}\n```",
+  "tags": ["false-positive", "naming"]
+}
