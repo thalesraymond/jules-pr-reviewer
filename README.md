@@ -219,6 +219,7 @@ The workflow's `extra_instructions` is appended after the rules file content. Gl
 | `ignored_paths`      | `[]`                            | JSON array **or** comma/newline-separated list of paths/globs to exclude from diff (e.g. `["dist/**", "*.lock"]` or `dist/**, *.lock`). |
 | `timeout_minutes`    | `30`                            | How long to wait for Jules to return a review.                    |
 | `enable_suggestions` | `false`                         | Enable GitHub-native one-click suggested changes in review comments. |
+| `enable_approve`     | `false`                         | When `true` and the review verdict is `approve`, post a GitHub PR approval (`event: APPROVE`) instead of a comment. Never approves on `comment` or `block` verdicts. Requires `pull-requests: write`. |
 | `dedupe`             | `true`                          | Don't re-report previously posted, still-open findings on subsequent reviews. Set to `false` to allow Jules to re-review and re-report prior findings. |
 | `diff_mode`          | `prompt`                        | Review pipeline: `prompt` (embed the diff in the prompt) or `agentic` (Jules inspects the PR branch directly). |
 | `large_pr_threshold` | `80000`                         | Diff size (characters) above which the large-PR strategy kicks in. |
@@ -316,6 +317,27 @@ Opt-in to include GitHub-native one-click suggested changes in Jules' review com
 ```
 
 > Suggestions are emitted only for `High` or `Medium` confidence comments. If GitHub rejects a suggestion (for example, because it falls outside a diff hunk), the action automatically retries without suggestions and falls back to the existing summary-only review as a last resort.
+
+### Auto-approving clean PRs
+
+You can opt in to automatic GitHub approvals when Jules returns a clean `approve` verdict:
+
+```yaml
+- uses: thalesraymond/jules-pr-reviewer@v1
+  with:
+    jules_api_key: ${{ secrets.JULES_API_KEY }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    enable_approve: true
+```
+
+When `enable_approve: true`:
+
+- An `approve` verdict posts `event: APPROVE` to the PR instead of a `COMMENT` review.
+- The approval body still contains the Jules summary, verdict counts, and session link.
+- `comment` and `block` verdicts always post `event: COMMENT` so findings remain visible.
+- The workflow token must have `pull-requests: write` (already required for posting comments).
+
+If you also gate merges on the `jules/review` check run, combine `enable_approve: true` with `fail_on` or `block_on` and branch protection. For example, `fail_on: blocking` keeps the check green on a clean `approve` while still blocking PRs with a `block` verdict.
 
 ### Agentic diff mode
 

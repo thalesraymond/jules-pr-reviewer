@@ -37442,14 +37442,14 @@ function isUnprocessableEntity(error) {
     return (error?.status === 422 ||
         getErrorMessage(error).includes("Unprocessable Entity"));
 }
-async function submitReview(octokit, owner, repo, prNumber, headSha, summary, comments) {
+async function submitReview(octokit, owner, repo, prNumber, headSha, summary, comments, reviewEvent = "COMMENT") {
     const submitWithComments = (includeSuggestions) => async () => {
         await octokit.rest.pulls.createReview({
             owner,
             repo,
             pull_number: prNumber,
             commit_id: headSha,
-            event: "COMMENT",
+            event: reviewEvent,
             body: summary,
             comments: comments.map((c) => buildApiComment(c, includeSuggestions)),
         });
@@ -37461,7 +37461,7 @@ async function submitReview(octokit, owner, repo, prNumber, headSha, summary, co
             repo,
             pull_number: prNumber,
             commit_id: headSha,
-            event: "COMMENT",
+            event: reviewEvent,
             body: summary,
             comments: [],
         });
@@ -45443,11 +45443,13 @@ function loadConfig(io) {
     let skipDrafts;
     let skipForks;
     let enableSuggestions;
+    let enableApprove;
     let dedupe;
     try {
         skipDrafts = io.getBooleanInput("skip_drafts");
         skipForks = io.getBooleanInput("skip_forks");
         enableSuggestions = io.getBooleanInput("enable_suggestions");
+        enableApprove = io.getBooleanInput("enable_approve");
         dedupe = io.getBooleanInput("dedupe");
     }
     catch (err) {
@@ -45472,6 +45474,7 @@ function loadConfig(io) {
             timeoutMinutes: Math.max(1, parseInt(io.getInput("timeout_minutes") || "30", 10) ||
                 DEFAULT_TIMEOUT_MINUTES),
             enableSuggestions,
+            enableApprove,
             dedupe,
             largePrThreshold: Math.max(1, parseInt(io.getInput("large_pr_threshold") ||
                 String(DEFAULT_LARGE_PR_THRESHOLD), 10) || DEFAULT_LARGE_PR_THRESHOLD),
@@ -45820,7 +45823,8 @@ async function run() {
             }
             return copy;
         });
-        await submitReview(octokit, owner, repo, prNumber, headSha, finalBody, commentsForReview);
+        const reviewEvent = config.enableApprove && verdict === "approve" ? "APPROVE" : "COMMENT";
+        await submitReview(octokit, owner, repo, prNumber, headSha, finalBody, commentsForReview, reviewEvent);
         logStructured("review_submitted", {
             verdict,
             sessionId,
