@@ -365,6 +365,9 @@ async function run(): Promise<void> {
       return copy;
     });
 
+    const reviewEvent: "COMMENT" | "APPROVE" =
+      config.enableApprove && verdict === "approve" ? "APPROVE" : "COMMENT";
+
     await submitReview(
       octokit,
       owner,
@@ -372,7 +375,8 @@ async function run(): Promise<void> {
       prNumber,
       headSha,
       finalBody,
-      commentsForReview
+      commentsForReview,
+      reviewEvent
     );
 
     logStructured("review_submitted", {

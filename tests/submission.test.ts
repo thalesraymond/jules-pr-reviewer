@@ -10,6 +10,26 @@ beforeEach(() => {
 });
 
 describe("submission.ts", () => {
+  it("submitReview defaults to COMMENT event", async () => {
+    const octokit = {
+      rest: { pulls: { createReview: vi.fn().mockResolvedValue({}) } },
+    } as any;
+    await submitReview(octokit, "owner", "repo", 1, "headSHA", "Summary text", [
+      {
+        file: "a.ts",
+        line: 10,
+        severity: "High",
+        confidence: "High",
+        message: "Msg",
+        promptForAgents: "Fix this issue by doing X",
+      },
+    ]);
+
+    expect(octokit.rest.pulls.createReview).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "COMMENT" })
+    );
+  });
+
   it("submitReview sends proper payload", async () => {
     const octokit = {
       rest: { pulls: { createReview: vi.fn().mockResolvedValue({}) } },
@@ -69,6 +89,26 @@ describe("submission.ts", () => {
         },
       ],
     });
+  });
+
+  it("submitReview uses APPROVE event when requested", async () => {
+    const octokit = {
+      rest: { pulls: { createReview: vi.fn().mockResolvedValue({}) } },
+    } as any;
+    await submitReview(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      "Summary text",
+      [],
+      "APPROVE"
+    );
+
+    expect(octokit.rest.pulls.createReview).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "APPROVE" })
+    );
   });
 
   it("submitReview falls back to summary-only review on 422 error", async () => {
@@ -358,5 +398,62 @@ describe("submission.ts", () => {
     expect(
       octokit.rest.pulls.createReview.mock.calls[2][0].comments
     ).toHaveLength(0);
+  });
+
+  it("summary-only fallback preserves APPROVE event", async () => {
+    const error422 = new Error("Unprocessable Entity");
+    error422.status = 422;
+    const createReview = vi
+      .fn()
+      .mockRejectedValueOnce(error422)
+      .mockResolvedValueOnce({});
+    const octokit = { rest: { pulls: { createReview } } } as any;
+
+    await submitReview(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      "Summary text",
+      [
+        {
+          file: "a.ts",
+          line: 10,
+          severity: "High",
+          confidence: "High",
+          message: "Msg",
+          promptForAgents: "",
+        },
+      ],
+      "APPROVE"
+    );
+
+    expect(octokit.rest.pulls.createReview).toHaveBeenCalledTimes(2);
+    expect(octokit.rest.pulls.createReview).toHaveBeenNthCalledWith(1, {
+      owner: "owner",
+      repo: "repo",
+      pull_number: 1,
+      commit_id: "headSHA",
+      event: "APPROVE",
+      body: "Summary text",
+      comments: [
+        {
+          path: "a.ts",
+          line: 10,
+          side: "RIGHT",
+          body: "<!-- jules-inline-comment -->\n**Severity:** 🚨 High | **Confidence:** 🟢 High\n\nMsg",
+        },
+      ],
+    });
+    expect(octokit.rest.pulls.createReview).toHaveBeenNthCalledWith(2, {
+      owner: "owner",
+      repo: "repo",
+      pull_number: 1,
+      commit_id: "headSHA",
+      event: "APPROVE",
+      body: "Summary text",
+      comments: [],
+    });
   });
 });

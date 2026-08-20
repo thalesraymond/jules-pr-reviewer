@@ -77,6 +77,7 @@ describe("index.ts", () => {
     ignoredPaths: undefined,
     timeoutMinutes: 30,
     enableSuggestions: false,
+    enableApprove: false,
     dedupe: true,
     largePrThreshold: 80000,
     largePrStrategy: "prioritize",
@@ -796,7 +797,8 @@ index 789..abc 100644
       1,
       "headSHA",
       expect.stringContaining("prompt-session"),
-      expect.anything()
+      expect.anything(),
+      "COMMENT"
     );
   });
 
@@ -904,6 +906,120 @@ index 789..abc 100644
     );
   });
 
+  it("passes APPROVE to submitReview when enable_approve is true and verdict is approve", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, enableApprove: true },
+    });
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: { verdict: "approve", summary: "ok", newComments: [] },
+      sessionId: "s1",
+    });
+    await loadIndex();
+    expect(mockSubmissionHelper.submitReview).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      expect.anything(),
+      expect.anything(),
+      "APPROVE"
+    );
+  });
+
+  it("passes COMMENT to submitReview when enable_approve is true but verdict is comment", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, enableApprove: true },
+    });
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "comment",
+        summary: "ok",
+        newComments: [
+          {
+            file: "a.ts",
+            line: 1,
+            severity: "Warning",
+            confidence: "High",
+            message: "Issue",
+            promptForAgents: "",
+          },
+        ],
+      },
+      sessionId: "s1",
+    });
+    await loadIndex();
+    expect(mockSubmissionHelper.submitReview).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      expect.anything(),
+      expect.anything(),
+      "COMMENT"
+    );
+  });
+
+  it("passes COMMENT to submitReview when enable_approve is true but verdict is block", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, enableApprove: true },
+    });
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "block",
+        summary: "bad",
+        newComments: [
+          {
+            file: "a.ts",
+            line: 1,
+            severity: "High",
+            confidence: "High",
+            message: "Issue",
+            promptForAgents: "",
+          },
+        ],
+      },
+      sessionId: "s1",
+    });
+    await loadIndex();
+    expect(mockSubmissionHelper.submitReview).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      expect.anything(),
+      expect.anything(),
+      "COMMENT"
+    );
+  });
+
+  it("passes COMMENT to submitReview when enable_approve is false even if verdict is approve", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, enableApprove: false },
+    });
+    mockJulesHelper.runJulesReview.mockResolvedValue({
+      reviewResult: { verdict: "approve", summary: "ok", newComments: [] },
+      sessionId: "s1",
+    });
+    await loadIndex();
+    expect(mockSubmissionHelper.submitReview).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      expect.anything(),
+      expect.anything(),
+      "COMMENT"
+    );
+  });
+
   it("submits review and sets check run conclusion based on verdict", async () => {
     mockConfigHelper.loadConfig.mockReturnValue({
       ok: true,
@@ -1007,7 +1123,8 @@ index 789..abc 100644
           message: "Msg",
           promptForAgents: "",
         }),
-      ])
+      ]),
+      "COMMENT"
     );
     const submittedComments =
       mockSubmissionHelper.submitReview.mock.calls[0][6];
