@@ -1,0 +1,18 @@
+{
+  "prNumber": 101,
+  "owner": "eval-fixtures",
+  "repo": "vulnerable-app",
+  "title": "Add user lookup endpoint",
+  "body": "Adds a simple /user endpoint for internal tooling.",
+  "diff": "diff --git a/src/db.js b/src/db.js\nnew file mode 100644\nindex 0000000..1234567\n--- /dev/null\n+++ b/src/db.js\n@@ -0,0 +1,6 @@\n+const db = require('./connection');\n+\n+exports.lookupUser = (id) => {\n+  const query = `SELECT * FROM users WHERE id = ${id}`;\n+  return db.raw(query);\n+};\n",
+  "expectedFindings": [
+    {
+      "file": "src/db.js",
+      "line": 4,
+      "severity": "High",
+      "message": "SQL injection"
+    }
+  ],
+  "mockResponse": "```json\n{\n  \"summary\": \"Introduces a SQL injection vulnerability in user lookup.\",\n  \"verdict\": \"block\",\n  \"resolvedCommentIds\": [],\n  \"newComments\": [\n    {\n      \"file\": \"src/db.js\",\n      \"line\": 4,\n      \"severity\": \"High\",\n      \"confidence\": \"High\",\n      \"message\": \"SQL injection: the id parameter is interpolated directly into the query. Use parameterized queries.\",\n      \"promptForAgents\": \"Replace string interpolation with parameterized queries.\"\n    }\n  ]\n}\n```",
+  "tags": ["security", "known-bug"]
+}

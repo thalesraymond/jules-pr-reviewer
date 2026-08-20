@@ -513,6 +513,54 @@ To build the action into the `dist` folder:
 pnpm run build
 ```
 
+## Quality evaluation
+
+The repository includes a small, deterministic evaluator harness for regression-testing prompt and pipeline changes. Curated PR fixtures live in [`eval/cases/`](./eval/cases/) and declare a synthetic diff plus the findings a human reviewer would expect.
+
+Run the harness in deterministic `mock` mode (the default and CI-safe mode):
+
+```bash
+pnpm evaluate:mock
+```
+
+This loads every `*.json` fixture in `eval/cases/`, parses the configured mock Jules response, and scores emitted comments against the expected findings by `file:line` and severity. The output is a markdown report with per-case and aggregate precision/recall/F1 metrics.
+
+### Live mode
+
+The harness also accepts a `live` mode that creates real Jules sessions, but it is **intentionally stubbed and off by default** because it burns billable sessions:
+
+```bash
+pnpm evaluate:live   # requires explicit opt-in and JULES_API_KEY
+```
+
+Live mode will fail with a clear message until it is wired to the real Jules runner and you provide credentials.
+
+### Adding fixtures
+
+Each fixture is a JSON file with the following shape:
+
+```json
+{
+  "prNumber": 101,
+  "owner": "eval-fixtures",
+  "repo": "vulnerable-app",
+  "title": "Add user lookup endpoint",
+  "body": "Adds a simple /user endpoint for internal tooling.",
+  "diff": "diff --git a/src/db.js...",
+  "expectedFindings": [
+    { "file": "src/db.js", "line": 4, "severity": "High", "message": "SQL injection" }
+  ],
+  "mockResponse": "```json\n{ ... }\n```",
+  "tags": ["security", "known-bug"]
+}
+```
+
+Use `tags` to group cases (e.g. `security`, `false-positive`, `known-bug`) and `mockResponse` to supply the exact Jules-style JSON the reviewer is expected to emit for that fixture.
+
+### Harness output
+
+The printed report lists matched findings, false positives, and false negatives per case, plus aggregate precision, recall, and F1. The harness exits with code `2` when the aggregate F1 is below `1.0`, making it suitable as a CI quality gate.
+
 ## License
 
 MIT
