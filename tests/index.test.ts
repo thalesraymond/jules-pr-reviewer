@@ -179,6 +179,17 @@ describe("index.ts", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   };
 
+  it("explicitly masks secrets in the entrypoint before loading config", async () => {
+    vi.doUnmock("../src/config.js");
+    await loadIndex();
+
+    expect(mockGetInput).toHaveBeenCalledWith("jules_api_key");
+    expect(mockGetInput).toHaveBeenCalledWith("github_token");
+
+    expect(mockSetSecret).toHaveBeenCalledWith("dummy_key");
+    expect(mockSetSecret).toHaveBeenCalledWith("dummy_token");
+  });
+
   it("loads config through the real loadConfig against @actions/core", async () => {
     vi.doUnmock("../src/config.js");
     await loadIndex();

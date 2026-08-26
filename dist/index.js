@@ -45620,6 +45620,13 @@ function failWithConfigError(reason) {
 }
 async function run() {
     const reviewStartTime = Date.now();
+    try {
+        setSecret(getInput("jules_api_key"));
+        setSecret(getInput("github_token"));
+    }
+    catch {
+        // Ignore if not present, loadConfig will fail appropriately.
+    }
     const configResult = loadConfig(core_namespaceObject);
     if (!configResult.ok) {
         failWithConfigError(configResult.error);
