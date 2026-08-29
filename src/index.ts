@@ -75,6 +75,13 @@ function failWithConfigError(reason: string): void {
 async function run(): Promise<void> {
   const reviewStartTime = Date.now();
 
+  try {
+    core.setSecret(core.getInput("jules_api_key"));
+    core.setSecret(core.getInput("github_token"));
+  } catch {
+    // Ignore if not present, loadConfig will fail appropriately.
+  }
+
   const configResult = loadConfig(core);
   if (!configResult.ok) {
     failWithConfigError(configResult.error);
