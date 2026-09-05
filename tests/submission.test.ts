@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as core from "@actions/core";
-import { submitReview } from "../src/submission.js";
+import { submitReview, buildAnnotations } from "../src/submission.js";
 
 vi.mock("@actions/core");
 
@@ -455,5 +455,78 @@ describe("submission.ts", () => {
       body: "Summary text",
       comments: [],
     });
+  });
+});
+
+describe("buildAnnotations", () => {
+  it("maps review comments to annotations", () => {
+    const comments = [
+      {
+        file: "src/a.ts",
+        line: 10,
+        severity: "High" as const,
+        confidence: "High" as const,
+        message: "Bug here",
+        promptForAgents: "",
+      },
+      {
+        file: "src/b.ts",
+        line: 20,
+        startLine: 15,
+        severity: "Warning" as const,
+        confidence: "Medium" as const,
+        message: "Consider refactoring",
+        promptForAgents: "",
+      },
+      {
+        file: "src/c.ts",
+        line: 30,
+        severity: "Info" as const,
+        confidence: "Low" as const,
+        message: "Nit",
+        promptForAgents: "",
+      },
+    ];
+    const annotations = buildAnnotations(comments);
+    expect(annotations).toEqual([
+      {
+        path: "src/a.ts",
+        startLine: 10,
+        endLine: 10,
+        annotationLevel: "failure",
+        message: "Bug here",
+      },
+      {
+        path: "src/b.ts",
+        startLine: 15,
+        endLine: 20,
+        annotationLevel: "warning",
+        message: "Consider refactoring",
+      },
+      {
+        path: "src/c.ts",
+        startLine: 30,
+        endLine: 30,
+        annotationLevel: "notice",
+        message: "Nit",
+      },
+    ]);
+  });
+
+  it("limits annotations to 50", () => {
+    const comments = Array.from({ length: 60 }, (_, i) => ({
+      file: `src/f${i}.ts`,
+      line: i + 1,
+      severity: "Info" as const,
+      confidence: "High" as const,
+      message: `Note ${i}`,
+      promptForAgents: "",
+    }));
+    const annotations = buildAnnotations(comments);
+    expect(annotations).toHaveLength(50);
+  });
+
+  it("returns empty array for empty comments", () => {
+    expect(buildAnnotations([])).toEqual([]);
   });
 });

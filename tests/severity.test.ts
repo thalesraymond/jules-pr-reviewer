@@ -4,6 +4,8 @@ import {
   severityAtLeast,
   filterCommentsBySeverity,
   hasFindingsAtOrAbove,
+  conclusionFromVerdict,
+  conclusionFromFindings,
 } from "../src/severity.js";
 import { ReviewComment } from "../src/types.js";
 
@@ -85,5 +87,79 @@ describe("hasFindingsAtOrAbove", () => {
       hasFindingsAtOrAbove([comment("Info"), comment("Warning")], "High")
     ).toBe(false);
     expect(hasFindingsAtOrAbove([], "High")).toBe(false);
+  });
+});
+
+describe("conclusionFromVerdict", () => {
+  it("returns failure conclusion with Invalid review verdict when verdict is invalid", () => {
+    const result = conclusionFromVerdict(
+      "invalid-verdict" as "approve",
+      "blocking"
+    );
+    expect(result).toEqual({
+      conclusion: "failure",
+      description: "Invalid review verdict",
+    });
+  });
+
+  it("succeeds when fail_on is never", () => {
+    const result = conclusionFromVerdict("comment", "never");
+    expect(result.conclusion).toBe("success");
+    expect(result.description).toContain("complete (verdict: comment)");
+  });
+
+  it("succeeds for approve when fail_on is any", () => {
+    const result = conclusionFromVerdict("approve", "any");
+    expect(result).toEqual({
+      conclusion: "success",
+      description: "Approved",
+    });
+  });
+
+  it("fails for comment when fail_on is any", () => {
+    const result = conclusionFromVerdict("comment", "any");
+    expect(result).toEqual({
+      conclusion: "failure",
+      description: "Review verdict: comment",
+    });
+  });
+
+  it("succeeds for comment when fail_on is blocking", () => {
+    const result = conclusionFromVerdict("comment", "blocking");
+    expect(result.conclusion).toBe("success");
+  });
+
+  it("fails for block when fail_on is blocking", () => {
+    const result = conclusionFromVerdict("block", "blocking");
+    expect(result).toEqual({
+      conclusion: "failure",
+      description: "Blocking issues found",
+    });
+  });
+});
+
+describe("conclusionFromFindings", () => {
+  it("fails when a finding is at or above block_on severity", () => {
+    expect(
+      conclusionFromFindings([comment("Warning"), comment("High")], "High")
+    ).toEqual({
+      conclusion: "failure",
+      description: "Findings at or above high severity found",
+    });
+    expect(conclusionFromFindings([comment("Info")], "Info")).toEqual({
+      conclusion: "failure",
+      description: "Findings at or above info severity found",
+    });
+  });
+
+  it("succeeds when no finding reaches block_on severity", () => {
+    expect(conclusionFromFindings([comment("Info")], "High")).toEqual({
+      conclusion: "success",
+      description: "No findings at or above high severity",
+    });
+    expect(conclusionFromFindings([], "Warning")).toEqual({
+      conclusion: "success",
+      description: "No findings at or above warning severity",
+    });
   });
 });

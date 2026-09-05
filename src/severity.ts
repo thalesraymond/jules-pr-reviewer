@@ -1,4 +1,4 @@
-import { Severity, ReviewComment } from "./types.js";
+import { Severity, ReviewComment, Verdict, FailOn } from "./types.js";
 
 const SEVERITY_RANK: Record<Severity, number> = {
   Info: 0,
@@ -43,4 +43,49 @@ export function hasFindingsAtOrAbove(
   severity: Severity
 ): boolean {
   return comments.some((c) => severityAtLeast(c.severity, severity));
+}
+
+export function conclusionFromVerdict(
+  verdict: Verdict,
+  failOn: FailOn
+): { conclusion: "success" | "failure"; description: string } {
+  if (!["approve", "comment", "block"].includes(verdict)) {
+    return {
+      conclusion: "failure",
+      description: "Invalid review verdict",
+    };
+  }
+
+  if (failOn === "never") {
+    return {
+      conclusion: "success",
+      description: `Review complete (verdict: ${verdict})`,
+    };
+  }
+  if (failOn === "any") {
+    return verdict === "approve"
+      ? { conclusion: "success", description: "Approved" }
+      : { conclusion: "failure", description: `Review verdict: ${verdict}` };
+  }
+  return verdict === "block"
+    ? { conclusion: "failure", description: "Blocking issues found" }
+    : {
+        conclusion: "success",
+        description: `Review complete (verdict: ${verdict})`,
+      };
+}
+
+export function conclusionFromFindings(
+  comments: ReviewComment[],
+  blockOn: Severity
+): { conclusion: "success" | "failure"; description: string } {
+  return hasFindingsAtOrAbove(comments, blockOn)
+    ? {
+        conclusion: "failure",
+        description: `Findings at or above ${blockOn.toLowerCase()} severity found`,
+      }
+    : {
+        conclusion: "success",
+        description: `No findings at or above ${blockOn.toLowerCase()} severity`,
+      };
 }
