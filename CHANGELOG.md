@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.7.0...v1.7.1) (2026-09-05)
+
+
+### Bug Fixes
+
+* mask sensitive action inputs early in entrypoint ([#146](https://github.com/thalesraymond/jules-pr-reviewer/issues/146)) ([d81c012](https://github.com/thalesraymond/jules-pr-reviewer/commit/d81c012fd0175c31843279c62310b9d0cd4bc5ff))
+
 ## [1.7.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.6.0...v1.7.0) (2026-08-20)
 
 
