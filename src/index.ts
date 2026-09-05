@@ -1,54 +1,19 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import {
-  FailOn,
-  Verdict,
-  Severity,
-  ReviewComment,
-  ReviewResult,
-  ReviewCoverage,
-  ReviewOutputs,
-  CheckRunAnnotation,
-} from "./types.js";
-import {
-  fetchDiff,
-  loadRulesFromBase,
-  fetchOpenThreads,
-  resolveThreads,
-  createCheckRun,
-  finalizeCheckRun,
-} from "./github.js";
-import { submitReview } from "./submission.js";
-import {
-  runJulesReview,
-  runAgenticReview,
-  wrapPermissionError,
-} from "./jules.js";
-import { buildReviewPrompt } from "./prompt.js";
-import {
-  parseListInput,
-  parseIgnoredPaths,
-  filterDiff,
-  extractChangedFilePaths,
-} from "./filtering.js";
-import {
-  shouldIgnoreTitle,
-  shouldIgnoreAuthor,
-  evaluateLabelPolicy,
-} from "./ignore.js";
-import { filterCommentsBySeverity, hasFindingsAtOrAbove } from "./severity.js";
-import { preparePromptDiff, buildPostedCoverageNote } from "./coverage.js";
-import { filterCommentsByStrictness } from "./strictness.js";
+import { ReviewOutputs } from "./types.js";
+import { createCheckRun, finalizeCheckRun } from "./github.js";
+import { wrapPermissionError } from "./jules.js";
+import { evaluateSkipPolicy } from "./skipPolicy.js";
+import { prepareDiff } from "./prepareDiff.js";
+import { executeReview } from "./executeReview.js";
+import { submitResults } from "./submitResults.js";
 import {
   getErrorMessage,
   classifyFailure,
   timeoutExitSummary,
 } from "./errors.js";
 import { loadConfig } from "./config.js";
-import { loadPerPathRules } from "./pathRules.js";
 import { logStructured, setReviewOutputs } from "./logging.js";
-
-const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
 
 const SKIPPED_OUTPUTS: ReviewOutputs = {
   verdict: "skipped",
@@ -114,8 +79,6 @@ async function run(): Promise<void> {
   const prNumber = pr.number;
   const headSha: string = pr.head.sha;
   const baseSha: string = pr.base.sha;
-  const isDraft: boolean = !!pr.draft;
-  const isFork: boolean = pr.head.repo?.full_name !== `${owner}/${repo}`;
 
   // Emit review_started
   logStructured("review_started", {
@@ -125,56 +88,13 @@ async function run(): Promise<void> {
     headSha,
   });
 
-  // ⚡ Bolt: Optimize bypass label check to stop iterating early and prevent wasteful `.map` array allocation
-  const hasBypassLabel = (pr.labels || []).some(
-    (l: { name: string }) => l.name === config.bypassLabel
-  );
-
-  if (isDraft && config.skipDrafts) {
-    skipReview("Skipping draft PR.");
+  const skipDecision = evaluateSkipPolicy(pr, config, `${owner}/${repo}`);
+  if (skipDecision.skip) {
+    skipReview(skipDecision.reason ?? "Skipping review.");
     return;
   }
-  if (isFork && config.skipForks) {
-    skipReview("Skipping fork PR (skip_forks=true).");
-    return;
-  }
-  if (hasBypassLabel) {
-    skipReview(
-      `Bypass label "${config.bypassLabel}" present — skipping review.`
-    );
-    return;
-  }
-
-  const ignoreTitleKeywords = parseListInput(config.ignoreTitleKeywords);
-  if (shouldIgnoreTitle(pr.title || "", ignoreTitleKeywords)) {
-    skipReview(
-      "PR title matches an ignore_title_keywords entry — skipping review."
-    );
-    return;
-  }
-
-  const ignoreAuthors = parseListInput(config.ignoreAuthors);
-  if (shouldIgnoreAuthor(pr.user?.login, ignoreAuthors)) {
-    skipReview(
-      `PR author "${pr.user?.login}" is in ignore_authors — skipping review.`
-    );
-    return;
-  }
-
-  const reviewLabels = parseListInput(config.reviewLabels);
-  if (reviewLabels.length > 0) {
-    const labelDecision = evaluateLabelPolicy(pr.labels, reviewLabels);
-    if (!labelDecision.evaluable) {
-      core.warning(
-        labelDecision.reason ??
-          "review_labels cannot be evaluated for this event — continuing the review."
-      );
-    } else if (labelDecision.skip) {
-      skipReview(
-        labelDecision.reason ?? "review_labels matched — skipping review."
-      );
-      return;
-    }
+  if (skipDecision.warning) {
+    core.warning(skipDecision.warning);
   }
 
   // ⚡ Bolt: Delay instantiating the Octokit client until after early returns (draft/fork/bypass) to save memory
@@ -211,116 +131,64 @@ async function run(): Promise<void> {
       config.diffMode === "agentic" ? baseSha : baseShaForDiff;
 
     // ⚡ Bolt: Execute independent GitHub API calls concurrently to reduce overall latency
-    const [diff, rulesFromFile, openThreads] = await Promise.all([
-      fetchDiff(octokit, owner, repo, pr, diffBaseForMode, headSha),
-      config.rulesFilePath
-        ? loadRulesFromBase(octokit, owner, repo, config.rulesFilePath, baseSha)
-        : Promise.resolve(undefined),
-      fetchOpenThreads(octokit, owner, repo, prNumber),
-    ]);
-
-    const filteredDiff = filterDiff(
-      diff,
-      parseIgnoredPaths(config.ignoredPaths)
+    const {
+      diff: filteredDiff,
+      changedFiles,
+      rulesFromFile,
+      perPathRules,
+      openThreads,
+    } = await prepareDiff(
+      octokit,
+      owner,
+      repo,
+      prNumber,
+      diffBaseForMode,
+      baseSha,
+      headSha,
+      {
+        ignoredPaths: config.ignoredPaths,
+        rulesFilePath: config.rulesFilePath,
+        rulesDirectory: config.rulesDirectory,
+      }
     );
-    const changedFiles = extractChangedFilePaths(filteredDiff);
-    const perPathRules = config.rulesDirectory
-      ? await loadPerPathRules(
-          octokit,
-          owner,
-          repo,
-          config.rulesDirectory,
-          baseSha,
-          changedFiles
-        )
-      : [];
 
-    let reviewResult: ReviewResult | null = null;
-    let sessionId = "";
-    let reviewCoverage: ReviewCoverage | undefined;
-
-    if (config.diffMode === "agentic") {
-      const isLarge = filteredDiff.length > config.largePrThreshold;
-      const largePrCoverage: ReviewCoverage | undefined = isLarge
-        ? { isLarge: true, totalFiles: new Set(changedFiles).size }
-        : undefined;
-
-      const agenticPrompt = buildReviewPrompt({
-        mode: "agentic",
-        repoFullName: `${owner}/${repo}`,
+    const { reviewResult, sessionId, reviewCoverage, julesApiDuration } =
+      await executeReview(
+        config.apiKey,
         prNumber,
-        prTitle: pr.title || "",
-        prBody: pr.body || "",
+        {
+          title: pr.title,
+          body: pr.body,
+          head: pr.head,
+          base: pr.base,
+        },
+        {
+          diff: filteredDiff,
+          changedFiles,
+          rulesFromFile,
+          perPathRules,
+          openThreads,
+        },
+        `${owner}/${repo}`,
         baseSha,
         headSha,
-        ignoredPaths: config.ignoredPaths,
-        extraInstructions: config.extraInstructions,
-        rulesFromFile,
-        perPathRules,
-        openThreads,
-        dedupe: config.dedupe,
-        strictness: config.strictness,
-        largePrCoverage,
-      });
-
-      const agentic = await runAgenticReview(
-        config.apiKey,
-        agenticPrompt,
-        { github: `${owner}/${repo}`, baseBranch: pr.head.ref },
-        config.timeoutMinutes,
-        changedFiles
-      );
-      sessionId = agentic.sessionId;
-
-      if (!agentic.fallback) {
-        reviewResult = agentic.reviewResult;
-        if (reviewResult?.changedFiles) {
-          core.info(
-            `Jules reported reviewing ${reviewResult.changedFiles.length} files: ${JSON.stringify(reviewResult.changedFiles)}`
-          );
+        {
+          diffMode: config.diffMode,
+          ignoredPaths: config.ignoredPaths,
+          extraInstructions: config.extraInstructions,
+          dedupe: config.dedupe,
+          strictness: config.strictness,
+          largePrThreshold: config.largePrThreshold,
+          largePrStrategy: config.largePrStrategy,
+          timeoutMinutes: config.timeoutMinutes,
         }
-      }
-    }
-
-    if (reviewResult === null) {
-      const prepared = preparePromptDiff(
-        filteredDiff,
-        config.largePrThreshold,
-        config.largePrStrategy
       );
-      reviewCoverage = prepared.coverage;
 
-      const prompt = buildReviewPrompt({
-        mode: "prompt",
-        repoFullName: `${owner}/${repo}`,
-        prNumber,
-        prTitle: pr.title || "",
-        prBody: pr.body || "",
-        diff: prepared.diff,
-        diffTruncatedNote: prepared.diffTruncatedNote,
-        largePrCoverage: prepared.coverage,
-        extraInstructions: config.extraInstructions,
-        rulesFromFile,
-        perPathRules,
-        openThreads,
-        dedupe: config.dedupe,
-        strictness: config.strictness,
-      });
-
-      const julesApiCallStart = Date.now();
-      const promptResult = await runJulesReview(
-        config.apiKey,
-        prompt,
-        { github: `${owner}/${repo}`, baseBranch: pr.base.ref },
-        config.timeoutMinutes
-      );
-      const julesApiDuration = Date.now() - julesApiCallStart;
+    if (julesApiDuration !== undefined) {
       logStructured("jules_api_called", {
         success: true,
         duration: julesApiDuration,
       });
-      reviewResult = promptResult.reviewResult;
-      sessionId = promptResult.sessionId;
     }
 
     if (!reviewResult) {
@@ -339,120 +207,28 @@ async function run(): Promise<void> {
       return;
     }
 
-    const { verdict, summary, resolvedCommentIds, newComments, unparseable } =
-      reviewResult;
-    const reportedComments = filterCommentsByStrictness(
-      filterCommentsBySeverity(newComments || [], config.minSeverityToReport),
-      config.strictness
-    );
-
-    // Resolve threads that the LLM identified as fixed
-    if (resolvedCommentIds && resolvedCommentIds.length > 0) {
-      const threadIdsToResolve = openThreads
-        .filter((t) => resolvedCommentIds.includes(t.index))
-        .map((t) => t.threadId);
-
-      if (threadIdsToResolve.length > 0) {
-        await resolveThreads(octokit, threadIdsToResolve);
-      }
-    }
-
-    // Compute issue counts before building the review body
-    const highCount = reportedComments.filter(
-      (c) => c.severity === "High"
-    ).length;
-    const warningCount = reportedComments.filter(
-      (c) => c.severity === "Warning"
-    ).length;
-    const infoCount = reportedComments.filter(
-      (c) => c.severity === "Info"
-    ).length;
-
-    // Prepare body for the PR review
-    const coverageNote = buildPostedCoverageNote(reviewCoverage);
-    const countsLine =
-      reportedComments.length === 0
-        ? "No findings reported."
-        : `**Findings:** ${reportedComments.length} (${highCount} High, ${warningCount} Warning, ${infoCount} Info)`;
-    const finalBody = `${COMMENT_MARKER}\n## 🤖 Jules Review\n\n${summary}${
-      coverageNote ? `\n\n${coverageNote}` : ""
-    }\n\n${countsLine}\n\n---\n_Session: \`${sessionId}\`_`;
-
-    const commentsForReview: ReviewComment[] = reportedComments.map((c) => {
-      const copy = { ...c };
-      if (!config.enableSuggestions) {
-        delete copy.suggestion;
-        delete copy.startLine;
-      }
-      return copy;
-    });
-
-    const reviewEvent: "COMMENT" | "APPROVE" =
-      config.enableApprove && verdict === "approve" ? "APPROVE" : "COMMENT";
-
-    await submitReview(
+    await submitResults(
       octokit,
       owner,
       repo,
       prNumber,
       headSha,
-      finalBody,
-      commentsForReview,
-      reviewEvent
+      checkRunId!,
+      reviewResult,
+      reviewCoverage,
+      openThreads,
+      sessionId,
+      {
+        enableSuggestions: config.enableSuggestions,
+        enableApprove: config.enableApprove,
+        minSeverityToReport: config.minSeverityToReport,
+        strictness: config.strictness,
+        blockOn: config.blockOn,
+        failOn: config.failOn,
+        statusContext: config.statusContext,
+      },
+      reviewStartTime
     );
-
-    logStructured("review_submitted", {
-      verdict,
-      sessionId,
-      commentCount: reportedComments.length,
-    });
-
-    const { conclusion, description } = unparseable
-      ? {
-          conclusion: "failure" as const,
-          description:
-            "Jules returned a response that could not be parsed as a review.",
-        }
-      : config.blockOn
-        ? conclusionFromFindings(reportedComments, config.blockOn)
-        : conclusionFromVerdict(verdict, config.failOn);
-    const annotations = buildAnnotations(reportedComments);
-    await finalizeCheckRun(octokit, owner, repo, checkRunId!, conclusion, {
-      title: "Jules Review",
-      summary: description,
-      ...(annotations.length > 0 ? { annotations } : {}),
-    });
-
-    const reviewDuration = Date.now() - reviewStartTime;
-    setReviewOutputs({
-      verdict: verdict as "approve" | "comment" | "block",
-      issues_count: reportedComments.length,
-      high_issues_count: highCount,
-      warning_issues_count: warningCount,
-      info_issues_count: infoCount,
-      session_id: sessionId,
-    });
-
-    logStructured("review_completed", {
-      verdict,
-      issuesCount: reportedComments.length,
-      highIssues: highCount,
-      warningIssues: warningCount,
-      infoIssues: infoCount,
-      sessionId,
-      duration: reviewDuration,
-      ...(reviewCoverage
-        ? {
-            coverage: {
-              reviewedFiles: reviewCoverage.reviewedFiles,
-              totalFiles: reviewCoverage.totalFiles,
-              excludedCount: (reviewCoverage.excludedFiles ?? []).length,
-            },
-          }
-        : {}),
-    });
-
-    core.info(`Verdict: ${verdict}. Check run conclusion: ${conclusion}.`);
   } catch (err) {
     const failure = classifyFailure(err);
     core.error(`Review failed: ${failure.message}`);
@@ -479,82 +255,6 @@ async function run(): Promise<void> {
     }
     core.setFailed(`Jules PR review failed: ${failure.message}`);
   }
-}
-
-export function truncate(s: string, max: number): string {
-  return s.length <= max ? s : s.slice(0, max - 1) + "…";
-}
-
-export function conclusionFromVerdict(
-  verdict: Verdict,
-  failOn: FailOn
-): { conclusion: "success" | "failure"; description: string } {
-  if (!["approve", "comment", "block"].includes(verdict)) {
-    return {
-      conclusion: "failure",
-      description: "Invalid review verdict",
-    };
-  }
-
-  if (failOn === "never") {
-    return {
-      conclusion: "success",
-      description: `Review complete (verdict: ${verdict})`,
-    };
-  }
-  if (failOn === "any") {
-    return verdict === "approve"
-      ? { conclusion: "success", description: "Approved" }
-      : { conclusion: "failure", description: `Review verdict: ${verdict}` };
-  }
-  return verdict === "block"
-    ? { conclusion: "failure", description: "Blocking issues found" }
-    : {
-        conclusion: "success",
-        description: `Review complete (verdict: ${verdict})`,
-      };
-}
-
-export function conclusionFromFindings(
-  comments: ReviewComment[],
-  blockOn: Severity
-): { conclusion: "success" | "failure"; description: string } {
-  return hasFindingsAtOrAbove(comments, blockOn)
-    ? {
-        conclusion: "failure",
-        description: `Findings at or above ${blockOn.toLowerCase()} severity found`,
-      }
-    : {
-        conclusion: "success",
-        description: `No findings at or above ${blockOn.toLowerCase()} severity`,
-      };
-}
-
-const MAX_ANNOTATIONS = 50;
-
-function severityToAnnotationLevel(
-  severity: ReviewComment["severity"]
-): CheckRunAnnotation["annotationLevel"] {
-  switch (severity) {
-    case "High":
-      return "failure";
-    case "Warning":
-      return "warning";
-    case "Info":
-      return "notice";
-  }
-}
-
-export function buildAnnotations(
-  comments: ReviewComment[]
-): CheckRunAnnotation[] {
-  return comments.slice(0, MAX_ANNOTATIONS).map((c) => ({
-    path: c.file,
-    startLine: c.startLine ?? c.line,
-    endLine: c.line,
-    annotationLevel: severityToAnnotationLevel(c.severity),
-    message: c.message,
-  }));
 }
 
 run().catch((err) => {

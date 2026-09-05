@@ -1,5 +1,5 @@
 import * as core from "@actions/core";
-import { ReviewComment } from "./types.js";
+import { ReviewComment, CheckRunAnnotation } from "./types.js";
 import { withFallback } from "./resilience.js";
 import { getErrorMessage } from "./errors.js";
 
@@ -175,4 +175,31 @@ export async function submitReview(
       isUnprocessableEntity
     );
   }
+}
+
+const MAX_ANNOTATIONS = 50;
+
+function severityToAnnotationLevel(
+  severity: ReviewComment["severity"]
+): CheckRunAnnotation["annotationLevel"] {
+  switch (severity) {
+    case "High":
+      return "failure";
+    case "Warning":
+      return "warning";
+    case "Info":
+      return "notice";
+  }
+}
+
+export function buildAnnotations(
+  comments: ReviewComment[]
+): CheckRunAnnotation[] {
+  return comments.slice(0, MAX_ANNOTATIONS).map((c) => ({
+    path: c.file,
+    startLine: c.startLine ?? c.line,
+    endLine: c.line,
+    annotationLevel: severityToAnnotationLevel(c.severity),
+    message: c.message,
+  }));
 }

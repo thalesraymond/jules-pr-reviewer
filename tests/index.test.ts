@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import { QuotaExceededError, AuthError } from "../src/errors.js";
+import { buildAnnotations } from "../src/submission.js";
 
 // Mock dependencies
 vi.mock("@actions/core");
@@ -41,6 +42,7 @@ describe("index.ts", () => {
 
   const mockSubmissionHelper = {
     submitReview: vi.fn(),
+    buildAnnotations,
   };
 
   const mockJulesHelper = {
@@ -1990,183 +1992,5 @@ index 789..abc 100644
         summary: expect.stringContaining("Findings at or above high"),
       })
     );
-  });
-});
-
-describe("conclusionFromVerdict", () => {
-  let conclusionFromVerdict: any;
-
-  beforeEach(async () => {
-    const mod = await import("../src/index.js");
-    conclusionFromVerdict = mod.conclusionFromVerdict;
-  });
-
-  it("returns failure conclusion with Invalid review verdict when verdict is invalid", () => {
-    const result = conclusionFromVerdict("invalid-verdict", "blocking");
-    expect(result).toEqual({
-      conclusion: "failure",
-      description: "Invalid review verdict",
-    });
-  });
-
-  it("handles valid verdicts normally", () => {
-    const result = conclusionFromVerdict("approve", "blocking");
-    expect(result.conclusion).toBe("success");
-    expect(result.description).toContain("complete (verdict: approve)");
-  });
-});
-
-describe("conclusionFromFindings", () => {
-  let conclusionFromFindings: (
-    comments: Array<{ severity: string }>,
-    blockOn: string
-  ) => { conclusion: string; description: string };
-
-  const finding = (severity: string) => ({
-    file: "a.ts",
-    line: 1,
-    severity,
-    confidence: "High",
-    message: "msg",
-    promptForAgents: "",
-  });
-
-  beforeEach(async () => {
-    const mod = await import("../src/index.js");
-    conclusionFromFindings = mod.conclusionFromFindings;
-  });
-
-  it("fails when a finding is at or above block_on severity", () => {
-    expect(
-      conclusionFromFindings([finding("Warning"), finding("High")], "High")
-    ).toEqual({
-      conclusion: "failure",
-      description: "Findings at or above high severity found",
-    });
-    expect(conclusionFromFindings([finding("Info")], "Info")).toEqual({
-      conclusion: "failure",
-      description: "Findings at or above info severity found",
-    });
-  });
-
-  it("succeeds when no finding reaches block_on severity", () => {
-    expect(conclusionFromFindings([finding("Info")], "High")).toEqual({
-      conclusion: "success",
-      description: "No findings at or above high severity",
-    });
-    expect(conclusionFromFindings([], "Warning")).toEqual({
-      conclusion: "success",
-      description: "No findings at or above warning severity",
-    });
-  });
-});
-
-describe("buildAnnotations", () => {
-  let buildAnnotations: any;
-
-  beforeEach(async () => {
-    const mod = await import("../src/index.js");
-    buildAnnotations = mod.buildAnnotations;
-  });
-
-  it("maps review comments to annotations", () => {
-    const comments = [
-      {
-        file: "src/a.ts",
-        line: 10,
-        severity: "High" as const,
-        confidence: "High" as const,
-        message: "Bug here",
-        promptForAgents: "",
-      },
-      {
-        file: "src/b.ts",
-        line: 20,
-        startLine: 15,
-        severity: "Warning" as const,
-        confidence: "Medium" as const,
-        message: "Consider refactoring",
-        promptForAgents: "",
-      },
-      {
-        file: "src/c.ts",
-        line: 30,
-        severity: "Info" as const,
-        confidence: "Low" as const,
-        message: "Nit",
-        promptForAgents: "",
-      },
-    ];
-    const annotations = buildAnnotations(comments);
-    expect(annotations).toEqual([
-      {
-        path: "src/a.ts",
-        startLine: 10,
-        endLine: 10,
-        annotationLevel: "failure",
-        message: "Bug here",
-      },
-      {
-        path: "src/b.ts",
-        startLine: 15,
-        endLine: 20,
-        annotationLevel: "warning",
-        message: "Consider refactoring",
-      },
-      {
-        path: "src/c.ts",
-        startLine: 30,
-        endLine: 30,
-        annotationLevel: "notice",
-        message: "Nit",
-      },
-    ]);
-  });
-
-  it("limits annotations to 50", () => {
-    const comments = Array.from({ length: 60 }, (_, i) => ({
-      file: `src/f${i}.ts`,
-      line: i + 1,
-      severity: "Info" as const,
-      confidence: "High" as const,
-      message: `Note ${i}`,
-      promptForAgents: "",
-    }));
-    const annotations = buildAnnotations(comments);
-    expect(annotations).toHaveLength(50);
-  });
-
-  it("returns empty array for empty comments", () => {
-    expect(buildAnnotations([])).toEqual([]);
-  });
-});
-
-describe("truncate", () => {
-  let truncate: any;
-
-  beforeEach(async () => {
-    const mod = await import("../src/index.js");
-    truncate = mod.truncate;
-  });
-
-  it("returns original string if length is exactly max", () => {
-    expect(truncate("hello", 5)).toBe("hello");
-  });
-
-  it("returns original string if length is less than max", () => {
-    expect(truncate("hi", 5)).toBe("hi");
-  });
-
-  it("truncates string and appends ellipsis if length exceeds max", () => {
-    expect(truncate("hello world", 5)).toBe("hell…");
-  });
-
-  it("handles empty string", () => {
-    expect(truncate("", 5)).toBe("");
-  });
-
-  it("handles max of 1", () => {
-    expect(truncate("a", 1)).toBe("a");
-    expect(truncate("ab", 1)).toBe("…");
   });
 });

@@ -32,30 +32,38 @@ This is a **GitHub Action** (`jules-pr-reviewer`) that uses the [Google Jules SD
 
 ```
 src/
-├── index.ts       # Action entry point — input parsing, orchestration, status reporting
-├── github.ts      # GitHub API helpers (diff fetching, thread management, status)
-├── submission.ts  # Review submission pipeline (formatting, sanitization, fallback ladder)
-├── jules.ts       # Review mode wrappers (prompt-mode retry, agentic-mode fallback)
-├── session.ts     # Jules session lifecycle (create, readiness, polling, response parsing, archive)
-├── prompt.ts      # Prompt builder for the review request
-├── filtering.ts   # List-input parsing and diff path filtering
-├── ignore.ts      # PR skip policy (title keywords, authors, label allow/deny)
-├── severity.ts    # Severity ordering and gating (min_severity_to_report, block_on)
-├── pathRules.ts   # Per-path rules (discovery, glob matching, loading)
-├── strictness.ts  # Strictness profiles (quiet / chill / assertive)
-└── types.ts       # Shared type definitions (FailOn, Verdict, ReviewResult, etc.)
+├── index.ts         # Action entry point — input parsing, orchestration, status reporting
+├── skipPolicy.ts    # PR-level skip policy (draft/fork/bypass/title/author/label)
+├── prepareDiff.ts   # Diff preparation — fetch, filter, rules, open threads
+├── executeReview.ts # Review execution — prompt building + Jules API (prompt/agentic)
+├── submitResults.ts # Result submission — filtering, body, review post, check run finalization
+├── github.ts        # GitHub API helpers (diff fetching, thread management, status)
+├── submission.ts    # Review submission pipeline (formatting, sanitization, fallback ladder)
+├── jules.ts         # Review mode wrappers (prompt-mode retry, agentic-mode fallback)
+├── session.ts       # Jules session lifecycle (create, readiness, polling, response parsing, archive)
+├── prompt.ts        # Prompt builder for the review request
+├── filtering.ts     # List-input parsing and diff path filtering
+├── ignore.ts        # PR skip policy primitives (title keywords, authors, label allow/deny)
+├── severity.ts      # Severity ordering and gating (min_severity_to_report, block_on)
+├── pathRules.ts     # Per-path rules (discovery, glob matching, loading)
+├── strictness.ts    # Strictness profiles (quiet / chill / assertive)
+└── types.ts         # Shared type definitions (FailOn, Verdict, ReviewResult, etc.)
 
 tests/
-├── index.test.ts      # Tests for the action orchestrator
-├── github.test.ts     # Tests for GitHub API helpers
-├── submission.test.ts # Tests for review submission pipeline
-├── jules.test.ts      # Tests for review mode wrappers
-├── session.test.ts    # Tests for the Jules session lifecycle
-├── prompt.test.ts     # Tests for prompt building
-├── ignore.test.ts     # Tests for the PR skip policy
-├── severity.test.ts   # Tests for severity ordering and gating
-├── pathRules.test.ts  # Tests for per-path rules
-└── strictness.test.ts # Tests for strictness profiles
+├── index.test.ts         # Tests for the action orchestrator
+├── skipPolicy.test.ts    # Tests for PR-level skip policy
+├── prepareDiff.test.ts   # Tests for diff preparation
+├── executeReview.test.ts # Tests for review execution
+├── submitResults.test.ts # Tests for result submission
+├── github.test.ts        # Tests for GitHub API helpers
+├── submission.test.ts    # Tests for review submission pipeline
+├── jules.test.ts         # Tests for review mode wrappers
+├── session.test.ts       # Tests for the Jules session lifecycle
+├── prompt.test.ts        # Tests for prompt building
+├── ignore.test.ts        # Tests for the PR skip policy primitives
+├── severity.test.ts      # Tests for severity ordering and gating
+├── pathRules.test.ts     # Tests for per-path rules
+└── strictness.test.ts    # Tests for strictness profiles
 ```
 
 ## Verification Commands
