@@ -37130,6 +37130,16 @@ function sleep(ms) {
     }
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
+function chunkArray(array, size) {
+    if (size <= 0) {
+        throw new Error("chunk size must be greater than 0");
+    }
+    const result = [];
+    for (let i = 0; i < array.length; i += size) {
+        result.push(array.slice(i, i + size));
+    }
+    return result;
+}
 
 ;// CONCATENATED MODULE: ./src/resilience.ts
 
@@ -37174,6 +37184,7 @@ async function withFallback(primary, fallback, shouldFallback) {
 }
 
 ;// CONCATENATED MODULE: ./src/github.ts
+
 
 
 
@@ -37311,20 +37322,23 @@ async function fetchOpenThreads(octokit, owner, repo, prNumber) {
     return result;
 }
 async function resolveThreads(octokit, threadIds) {
-    for (const id of threadIds) {
-        try {
-            await withRetry(() => octokit.graphql(`
+    const chunks = chunkArray(threadIds, 5);
+    for (const chunk of chunks) {
+        await Promise.all(chunk.map(async (id) => {
+            try {
+                await withRetry(() => octokit.graphql(`
           mutation($id: ID!) {
             resolveReviewThread(input: {threadId: $id}) {
               thread { isResolved }
             }
           }
         `, { id }), GITHUB_RETRY_OPTIONS);
-            info(`Resolved thread ${id}`);
-        }
-        catch (e) {
-            warning(`Failed to resolve thread ${id}: ${e}`);
-        }
+                info(`Resolved thread ${id}`);
+            }
+            catch (e) {
+                warning(`Failed to resolve thread ${id}: ${e}`);
+            }
+        }));
     }
 }
 async function createCheckRun(octokit, owner, repo, name, headSha) {
