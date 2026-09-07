@@ -44861,8 +44861,9 @@ function evaluateLabelPolicy(prLabels, configuredLabels) {
         .filter((l) => !l.startsWith("-"))
         .map((l) => l.toLowerCase())
         .filter((l) => l.length > 0);
-    const prLabelNames = prLabels.map((l) => l.name.toLowerCase());
-    const denied = denyLabels.find((l) => prLabelNames.includes(l));
+    // ⚡ Bolt: Use .some() directly on prLabels to avoid intermediate array allocation
+    // and enable early termination on finding a match, rather than mapping the entire array first.
+    const denied = denyLabels.find((denyLabel) => prLabels.some((prLabel) => prLabel.name.toLowerCase() === denyLabel));
     if (denied) {
         return {
             evaluable: true,
@@ -44871,7 +44872,7 @@ function evaluateLabelPolicy(prLabels, configuredLabels) {
         };
     }
     if (allowLabels.length > 0 &&
-        !allowLabels.some((l) => prLabelNames.includes(l))) {
+        !allowLabels.some((allowLabel) => prLabels.some((prLabel) => prLabel.name.toLowerCase() === allowLabel))) {
         return {
             evaluable: true,
             skip: true,
@@ -44887,7 +44888,6 @@ function evaluateLabelPolicy(prLabels, configuredLabels) {
 function evaluateSkipPolicy(pr, config, ownerRepo) {
     const isDraft = pr.draft ?? false;
     const isFork = pr.head?.repo?.full_name !== ownerRepo;
-    const hasBypassLabel = (pr.labels ?? []).some((l) => l.name === config.bypassLabel && config.bypassLabel.length > 0);
     if (isDraft && config.skipDrafts) {
         return { skip: true, reason: "Skipping draft PR." };
     }
@@ -44897,6 +44897,9 @@ function evaluateSkipPolicy(pr, config, ownerRepo) {
             reason: "Skipping fork PR (skip_forks=true).",
         };
     }
+    // ⚡ Bolt: Move hasBypassLabel calculation after draft/fork early returns
+    // to avoid iterating the labels array when the PR is going to be skipped anyway.
+    const hasBypassLabel = (pr.labels ?? []).some((l) => l.name === config.bypassLabel && config.bypassLabel.length > 0);
     if (hasBypassLabel) {
         return {
             skip: true,

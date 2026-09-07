@@ -36,9 +36,6 @@ export function evaluateSkipPolicy(
 ): SkipDecision {
   const isDraft = pr.draft ?? false;
   const isFork = pr.head?.repo?.full_name !== ownerRepo;
-  const hasBypassLabel = (pr.labels ?? []).some(
-    (l) => l.name === config.bypassLabel && config.bypassLabel.length > 0
-  );
 
   if (isDraft && config.skipDrafts) {
     return { skip: true, reason: "Skipping draft PR." };
@@ -51,6 +48,11 @@ export function evaluateSkipPolicy(
     };
   }
 
+  // ⚡ Bolt: Move hasBypassLabel calculation after draft/fork early returns
+  // to avoid iterating the labels array when the PR is going to be skipped anyway.
+  const hasBypassLabel = (pr.labels ?? []).some(
+    (l) => l.name === config.bypassLabel && config.bypassLabel.length > 0
+  );
   if (hasBypassLabel) {
     return {
       skip: true,

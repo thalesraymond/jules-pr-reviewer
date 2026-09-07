@@ -52,9 +52,11 @@ export function evaluateLabelPolicy(
     .filter((l) => !l.startsWith("-"))
     .map((l) => l.toLowerCase())
     .filter((l) => l.length > 0);
-  const prLabelNames = prLabels.map((l) => l.name.toLowerCase());
-
-  const denied = denyLabels.find((l) => prLabelNames.includes(l));
+  // ⚡ Bolt: Use .some() directly on prLabels to avoid intermediate array allocation
+  // and enable early termination on finding a match, rather than mapping the entire array first.
+  const denied = denyLabels.find((denyLabel) =>
+    prLabels.some((prLabel) => prLabel.name.toLowerCase() === denyLabel)
+  );
   if (denied) {
     return {
       evaluable: true,
@@ -65,7 +67,9 @@ export function evaluateLabelPolicy(
 
   if (
     allowLabels.length > 0 &&
-    !allowLabels.some((l) => prLabelNames.includes(l))
+    !allowLabels.some((allowLabel) =>
+      prLabels.some((prLabel) => prLabel.name.toLowerCase() === allowLabel)
+    )
   ) {
     return {
       evaluable: true,
