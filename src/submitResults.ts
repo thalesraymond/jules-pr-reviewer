@@ -9,6 +9,7 @@ import {
 } from "./severity.js";
 import { filterCommentsByStrictness } from "./strictness.js";
 import { buildPostedCoverageNote } from "./coverage.js";
+import { formatDuration } from "./utils.js";
 import {
   ReviewResult,
   ReviewCoverage,
@@ -158,5 +159,7 @@ export async function submitResults(
       : {}),
   });
 
-  core.info(`Verdict: ${verdict}. Check run conclusion: ${conclusion}.`);
+  core.info(
+    `Verdict: ${verdict}. Check run conclusion: ${conclusion}. Review duration: ${formatDuration(reviewDuration)}.`
+  );
 }

@@ -37130,6 +37130,24 @@ function sleep(ms) {
     }
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
+function formatDuration(ms) {
+    if (ms < 0) {
+        throw new Error("Duration must be a non-negative number");
+    }
+    if (ms < 1000) {
+        return `${ms}ms`;
+    }
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    if (hours > 0) {
+        return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+    }
+    if (minutes > 0) {
+        return `${minutes}m ${seconds % 60}s`;
+    }
+    return `${seconds}s`;
+}
 
 ;// CONCATENATED MODULE: ./src/resilience.ts
 
@@ -45374,6 +45392,7 @@ function buildPostedCoverageNote(coverage) {
 
 
 
+
 async function executeReview(apiKey, prNumber, pr, prepared, ownerRepo, baseSha, headSha, config) {
     const commonPromptArgs = {
         repoFullName: ownerRepo,
@@ -45422,6 +45441,7 @@ async function executeReview(apiKey, prNumber, pr, prepared, ownerRepo, baseSha,
     const julesApiCallStart = Date.now();
     const promptResult = await runJulesReview(apiKey, prompt, { github: ownerRepo, baseBranch: pr.base.ref }, config.timeoutMinutes);
     const julesApiDuration = Date.now() - julesApiCallStart;
+    info(`Jules API call completed in ${formatDuration(julesApiDuration)}.`);
     logStructured("jules_api_called", {
         success: true,
         duration: julesApiDuration,
@@ -45642,6 +45662,7 @@ function filterCommentsByStrictness(comments, strictness) {
 
 
 
+
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
 async function submitResults(octokit, owner, repo, prNumber, headSha, checkRunId, reviewResult, reviewCoverage, openThreads, sessionId, config, reviewStartTime) {
     const { verdict, summary, resolvedCommentIds, newComments, unparseable } = reviewResult;
@@ -45719,7 +45740,7 @@ async function submitResults(octokit, owner, repo, prNumber, headSha, checkRunId
             }
             : {}),
     });
-    info(`Verdict: ${verdict}. Check run conclusion: ${conclusion}.`);
+    info(`Verdict: ${verdict}. Check run conclusion: ${conclusion}. Review duration: ${formatDuration(reviewDuration)}.`);
 }
 
 ;// CONCATENATED MODULE: ./src/config.ts
