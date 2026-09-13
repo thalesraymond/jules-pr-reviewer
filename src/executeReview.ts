@@ -3,6 +3,7 @@ import { buildReviewPrompt } from "./prompt.js";
 import { runJulesReview, runAgenticReview } from "./jules.js";
 import { preparePromptDiff } from "./coverage.js";
 import { logStructured } from "./logging.js";
+import { formatDuration } from "./utils.js";
 import {
   DiffMode,
   LargePrStrategy,
@@ -125,6 +126,7 @@ export async function executeReview(
     config.timeoutMinutes
   );
   const julesApiDuration = Date.now() - julesApiCallStart;
+  core.info(`Jules API call completed in ${formatDuration(julesApiDuration)}.`);
   logStructured("jules_api_called", {
     success: true,
     duration: julesApiDuration,
