@@ -41790,9 +41790,9 @@ function strictValidateReviewResult(parsed) {
         throw new Error("Invalid or missing review result object");
     }
     const raw = parsed;
-    const verdict = String(raw.verdict);
+    let verdict = String(raw.verdict);
     if (!["approve", "comment", "block"].includes(verdict)) {
-        throw new Error("Invalid or missing verdict in Jules response");
+        verdict = "block";
     }
     const summary = typeof raw.summary === "string" ? raw.summary : "No summary provided.";
     let resolvedCommentIds = [];

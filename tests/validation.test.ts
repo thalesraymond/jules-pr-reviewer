@@ -89,13 +89,11 @@ describe("parseReviewResponse", () => {
     expect(result).toEqual(payload);
   });
 
-  it("throws an error if verdict is missing or invalid", () => {
-    expect(() => parseReviewResponse("```json\n{}\n```")).toThrow(
-      "Invalid or missing verdict"
-    );
-    expect(() =>
-      parseReviewResponse('```json\n{"verdict":"invalid"}\n```')
-    ).toThrow("Invalid or missing verdict");
+  it("defaults to 'block' if verdict is missing or invalid", () => {
+    expect(parseReviewResponse("```json\n{}\n```").verdict).toBe("block");
+    expect(
+      parseReviewResponse('```json\n{"verdict":"invalid"}\n```').verdict
+    ).toBe("block");
     expect(() => parseReviewResponse("null")).toThrow(
       "Invalid or missing review result object"
     );
