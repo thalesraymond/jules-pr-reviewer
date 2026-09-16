@@ -87,9 +87,9 @@ function strictValidateReviewResult(parsed: unknown): ReviewResult {
 
   const raw = parsed as Record<string, unknown>;
 
-  const verdict = String(raw.verdict);
+  let verdict = String(raw.verdict);
   if (!["approve", "comment", "block"].includes(verdict)) {
-    throw new Error("Invalid or missing verdict in Jules response");
+    verdict = "block";
   }
 
   const summary =
