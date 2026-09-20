@@ -3,14 +3,13 @@ import { buildReviewPrompt } from "./prompt.js";
 import { runJulesReview, runAgenticReview } from "./jules.js";
 import { preparePromptDiff } from "./coverage.js";
 import { logStructured } from "./logging.js";
+import type { PreparedDiff } from "./prepareDiff.js";
 import {
   DiffMode,
   LargePrStrategy,
   ReviewResult,
   ReviewCoverage,
   Strictness,
-  PathRuleFile,
-  OpenThread,
 } from "./types.js";
 
 export type ExecuteReviewConfig = {
@@ -22,14 +21,6 @@ export type ExecuteReviewConfig = {
   largePrThreshold: number;
   largePrStrategy: LargePrStrategy;
   timeoutMinutes: number;
-};
-
-export type PreparedDiffForReview = {
-  diff: string;
-  changedFiles: string[];
-  rulesFromFile?: string;
-  perPathRules: PathRuleFile[];
-  openThreads: OpenThread[];
 };
 
 export type ReviewExecutionResult = {
@@ -48,7 +39,7 @@ export async function executeReview(
     head: { ref: string };
     base: { ref: string };
   },
-  prepared: PreparedDiffForReview,
+  prepared: PreparedDiff,
   ownerRepo: string,
   baseSha: string,
   headSha: string,
