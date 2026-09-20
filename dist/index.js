@@ -37130,6 +37130,21 @@ function sleep(ms) {
     }
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
+async function mapConcurrent(items, mapper, concurrency) {
+    if (concurrency <= 0) {
+        throw new Error("Concurrency must be greater than 0");
+    }
+    const results = new Array(items.length);
+    let currentIndex = 0;
+    const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+        while (currentIndex < items.length) {
+            const index = currentIndex++;
+            results[index] = await mapper(items[index], index);
+        }
+    });
+    await Promise.all(workers);
+    return results;
+}
 
 ;// CONCATENATED MODULE: ./src/resilience.ts
 
@@ -37174,6 +37189,7 @@ async function withFallback(primary, fallback, shouldFallback) {
 }
 
 ;// CONCATENATED MODULE: ./src/github.ts
+
 
 
 
@@ -37311,7 +37327,7 @@ async function fetchOpenThreads(octokit, owner, repo, prNumber) {
     return result;
 }
 async function resolveThreads(octokit, threadIds) {
-    for (const id of threadIds) {
+    await mapConcurrent(threadIds, async (id) => {
         try {
             await withRetry(() => octokit.graphql(`
           mutation($id: ID!) {
@@ -37325,7 +37341,7 @@ async function resolveThreads(octokit, threadIds) {
         catch (e) {
             warning(`Failed to resolve thread ${id}: ${e}`);
         }
-    }
+    }, 5);
 }
 async function createCheckRun(octokit, owner, repo, name, headSha) {
     const result = await withRetry(() => octokit.rest.checks.create({
@@ -44941,6 +44957,7 @@ function evaluateSkipPolicy(pr, config, ownerRepo) {
 
 
 
+
 function isRuleFile(relativePath) {
     return relativePath.endsWith(".md");
 }
@@ -45015,14 +45032,14 @@ async function loadPerPathRules(octokit, owner, repo, rulesDir, baseSha, changed
     if (matched.length === 0) {
         return [];
     }
-    const rules = [];
-    for (const candidate of matched) {
+    const mappedRules = await mapConcurrent(matched, async (candidate) => {
         const content = await loadRulesFromBase(octokit, owner, repo, candidate.path, baseSha);
         if (content === undefined) {
-            continue;
+            return undefined;
         }
-        rules.push({ path: candidate.path, glob: candidate.glob, content });
-    }
+        return { path: candidate.path, glob: candidate.glob, content };
+    }, 5);
+    const rules = mappedRules.filter((r) => r !== undefined);
     if (rules.length > 0) {
         info(`Matched ${rules.length} per-path rule file(s): ${rules
             .map((r) => r.path)

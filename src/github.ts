@@ -7,6 +7,7 @@ import {
   RetryOptions,
 } from "./resilience.js";
 import { getErrorMessage } from "./errors.js";
+import { mapConcurrent } from "./utils.js";
 
 const GITHUB_RETRY_OPTIONS: RetryOptions = {
   maxRetries: 3,
@@ -203,27 +204,31 @@ export async function resolveThreads(
   octokit: ReturnType<typeof github.getOctokit>,
   threadIds: string[]
 ): Promise<void> {
-  for (const id of threadIds) {
-    try {
-      await withRetry(
-        () =>
-          octokit.graphql(
-            `
+  await mapConcurrent(
+    threadIds,
+    async (id) => {
+      try {
+        await withRetry(
+          () =>
+            octokit.graphql(
+              `
           mutation($id: ID!) {
             resolveReviewThread(input: {threadId: $id}) {
               thread { isResolved }
             }
           }
         `,
-            { id }
-          ),
-        GITHUB_RETRY_OPTIONS
-      );
-      core.info(`Resolved thread ${id}`);
-    } catch (e) {
-      core.warning(`Failed to resolve thread ${id}: ${e}`);
-    }
-  }
+              { id }
+            ),
+          GITHUB_RETRY_OPTIONS
+        );
+        core.info(`Resolved thread ${id}`);
+      } catch (e) {
+        core.warning(`Failed to resolve thread ${id}: ${e}`);
+      }
+    },
+    5
+  );
 }
 
 export async function createCheckRun(

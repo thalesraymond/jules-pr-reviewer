@@ -3,6 +3,7 @@ import * as github from "@actions/github";
 import { minimatch } from "minimatch";
 import { PathRuleFile } from "./types.js";
 import { listFilesInDirectory, loadRulesFromBase } from "./github.js";
+import { mapConcurrent } from "./utils.js";
 
 export interface PathRuleCandidate {
   path: string;
@@ -116,20 +117,25 @@ export async function loadPerPathRules(
     return [];
   }
 
-  const rules: PathRuleFile[] = [];
-  for (const candidate of matched) {
-    const content = await loadRulesFromBase(
-      octokit,
-      owner,
-      repo,
-      candidate.path,
-      baseSha
-    );
-    if (content === undefined) {
-      continue;
-    }
-    rules.push({ path: candidate.path, glob: candidate.glob, content });
-  }
+  const mappedRules = await mapConcurrent(
+    matched,
+    async (candidate) => {
+      const content = await loadRulesFromBase(
+        octokit,
+        owner,
+        repo,
+        candidate.path,
+        baseSha
+      );
+      if (content === undefined) {
+        return undefined;
+      }
+      return { path: candidate.path, glob: candidate.glob, content };
+    },
+    5
+  );
+
+  const rules = mappedRules.filter((r): r is PathRuleFile => r !== undefined);
 
   if (rules.length > 0) {
     core.info(
