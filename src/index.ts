@@ -131,13 +131,7 @@ async function run(): Promise<void> {
       config.diffMode === "agentic" ? baseSha : baseShaForDiff;
 
     // ⚡ Bolt: Execute independent GitHub API calls concurrently to reduce overall latency
-    const {
-      diff: filteredDiff,
-      changedFiles,
-      rulesFromFile,
-      perPathRules,
-      openThreads,
-    } = await prepareDiff(
+    const preparedDiff = await prepareDiff(
       octokit,
       owner,
       repo,
@@ -162,13 +156,7 @@ async function run(): Promise<void> {
           head: pr.head,
           base: pr.base,
         },
-        {
-          diff: filteredDiff,
-          changedFiles,
-          rulesFromFile,
-          perPathRules,
-          openThreads,
-        },
+        preparedDiff,
         `${owner}/${repo}`,
         baseSha,
         headSha,
@@ -216,7 +204,7 @@ async function run(): Promise<void> {
       checkRunId!,
       reviewResult,
       reviewCoverage,
-      openThreads,
+      preparedDiff.openThreads,
       sessionId,
       {
         enableSuggestions: config.enableSuggestions,

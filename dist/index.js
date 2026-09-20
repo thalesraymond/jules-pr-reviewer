@@ -45969,7 +45969,7 @@ async function run() {
         // for the changed-file set regardless of synchronize events.
         const diffBaseForMode = config.diffMode === "agentic" ? baseSha : baseShaForDiff;
         // ⚡ Bolt: Execute independent GitHub API calls concurrently to reduce overall latency
-        const { diff: filteredDiff, changedFiles, rulesFromFile, perPathRules, openThreads, } = await prepareDiff(octokit, owner, repo, prNumber, diffBaseForMode, baseSha, headSha, {
+        const preparedDiff = await prepareDiff(octokit, owner, repo, prNumber, diffBaseForMode, baseSha, headSha, {
             ignoredPaths: config.ignoredPaths,
             rulesFilePath: config.rulesFilePath,
             rulesDirectory: config.rulesDirectory,
@@ -45979,13 +45979,7 @@ async function run() {
             body: pr.body,
             head: pr.head,
             base: pr.base,
-        }, {
-            diff: filteredDiff,
-            changedFiles,
-            rulesFromFile,
-            perPathRules,
-            openThreads,
-        }, `${owner}/${repo}`, baseSha, headSha, {
+        }, preparedDiff, `${owner}/${repo}`, baseSha, headSha, {
             diffMode: config.diffMode,
             ignoredPaths: config.ignoredPaths,
             extraInstructions: config.extraInstructions,
@@ -46014,7 +46008,7 @@ async function run() {
             setFailed(`Jules returned no review message within ${config.timeoutMinutes} minutes.`);
             return;
         }
-        await submitResults(octokit, owner, repo, prNumber, headSha, checkRunId, reviewResult, reviewCoverage, openThreads, sessionId, {
+        await submitResults(octokit, owner, repo, prNumber, headSha, checkRunId, reviewResult, reviewCoverage, preparedDiff.openThreads, sessionId, {
             enableSuggestions: config.enableSuggestions,
             enableApprove: config.enableApprove,
             minSeverityToReport: config.minSeverityToReport,

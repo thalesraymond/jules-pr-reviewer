@@ -64,6 +64,10 @@ describe("index.ts", () => {
     loadPerPathRules: vi.fn(),
   };
 
+  const mockPrepareDiff = vi.fn();
+  const mockExecuteReview = vi.fn();
+  const mockSubmitResults = vi.fn();
+
   const defaultConfig = {
     apiKey: "dummy_key",
     token: "dummy_token",
@@ -93,6 +97,9 @@ describe("index.ts", () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
+    vi.doUnmock("../src/prepareDiff.js");
+    vi.doUnmock("../src/executeReview.js");
+    vi.doUnmock("../src/submitResults.js");
 
     mockGetInput = vi.spyOn(core, "getInput");
     mockGetBooleanInput = vi.spyOn(core, "getBooleanInput");
@@ -190,6 +197,40 @@ describe("index.ts", () => {
 
     expect(mockSetSecret).toHaveBeenCalledWith("dummy_key");
     expect(mockSetSecret).toHaveBeenCalledWith("dummy_token");
+  });
+
+  it("forwards the prepared diff directly to the Execution module", async () => {
+    const preparedDiff = {
+      diff: "diff --git a/src/example.ts b/src/example.ts",
+      changedFiles: ["src/example.ts"],
+      rulesFromFile: "Review carefully.",
+      perPathRules: [],
+      openThreads: [],
+    };
+    mockPrepareDiff.mockResolvedValue(preparedDiff);
+    mockExecuteReview.mockResolvedValue({
+      reviewResult: {
+        verdict: "approve",
+        summary: "Good job",
+        newComments: [],
+      },
+      sessionId: "session-id",
+    });
+    mockSubmitResults.mockResolvedValue(undefined);
+    vi.doMock("../src/prepareDiff.js", () => ({
+      prepareDiff: mockPrepareDiff,
+    }));
+    vi.doMock("../src/executeReview.js", () => ({
+      executeReview: mockExecuteReview,
+    }));
+    vi.doMock("../src/submitResults.js", () => ({
+      submitResults: mockSubmitResults,
+    }));
+
+    await loadIndex();
+
+    expect(mockExecuteReview).toHaveBeenCalledTimes(1);
+    expect(mockExecuteReview.mock.calls[0][3]).toBe(preparedDiff);
   });
 
   it("loads config through the real loadConfig against @actions/core", async () => {
