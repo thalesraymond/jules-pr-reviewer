@@ -44763,14 +44763,12 @@ function extractChangedFilePaths(diff) {
     if (!diff) {
         return [];
     }
-    const sections = diff.split(/(?=^diff --git )/m);
     const paths = [];
-    for (const section of sections) {
-        const headerMatch = section.match(/^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/m);
-        if (!headerMatch)
-            continue;
-        const pathA = (headerMatch[1] ?? headerMatch[2]);
-        const pathB = (headerMatch[3] ?? headerMatch[4]);
+    const regex = /^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/gm;
+    let match;
+    while ((match = regex.exec(diff)) !== null) {
+        const pathA = (match[1] ?? match[2]);
+        const pathB = (match[3] ?? match[4]);
         const changed = pathA !== "dev/null" ? pathA : pathB;
         if (changed !== "dev/null") {
             paths.push(changed);
@@ -44782,22 +44780,30 @@ function filterDiff(diff, ignoredPatterns) {
     if (!diff || !ignoredPatterns || ignoredPatterns.length === 0) {
         return diff;
     }
-    const sections = diff.split(/(?=^diff --git )/m);
     const keptSections = [];
-    for (const section of sections) {
-        if (!section.trim())
-            continue;
-        const headerMatch = section.match(/^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/m);
-        if (headerMatch) {
-            const pathA = (headerMatch[1] ?? headerMatch[2]);
-            const pathB = (headerMatch[3] ?? headerMatch[4]);
-            const isPathAIgnored = pathA !== "dev/null" && shouldIgnorePath(pathA, ignoredPatterns);
-            const isPathBIgnored = pathB !== "dev/null" && shouldIgnorePath(pathB, ignoredPatterns);
-            if (isPathAIgnored || isPathBIgnored) {
-                continue;
+    const regex = /^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/gm;
+    let match;
+    let lastIndex = 0;
+    let ignoreCurrent = false;
+    while ((match = regex.exec(diff)) !== null) {
+        if (lastIndex > 0 || (lastIndex === 0 && match.index > 0)) {
+            if (!ignoreCurrent) {
+                const sectionStr = diff.substring(lastIndex, match.index);
+                if (sectionStr.trim())
+                    keptSections.push(sectionStr);
             }
         }
-        keptSections.push(section);
+        const pathA = (match[1] ?? match[2]);
+        const pathB = (match[3] ?? match[4]);
+        const isPathAIgnored = pathA !== "dev/null" && shouldIgnorePath(pathA, ignoredPatterns);
+        const isPathBIgnored = pathB !== "dev/null" && shouldIgnorePath(pathB, ignoredPatterns);
+        ignoreCurrent = isPathAIgnored || isPathBIgnored;
+        lastIndex = match.index;
+    }
+    if (lastIndex < diff.length && !ignoreCurrent) {
+        const sectionStr = diff.substring(lastIndex);
+        if (sectionStr.trim())
+            keptSections.push(sectionStr);
     }
     return keptSections.join("");
 }
@@ -45257,20 +45263,34 @@ function splitDiffSections(diff) {
     if (!diff) {
         return [];
     }
-    const sections = diff.split(/(?=^diff --git )/m);
     const byPath = new Map();
-    for (const section of sections) {
-        if (!section.trim())
-            continue;
-        const headerMatch = section.match(/^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/m);
-        if (!headerMatch)
-            continue;
-        const pathA = (headerMatch[1] ?? headerMatch[2]);
-        const pathB = (headerMatch[3] ?? headerMatch[4]);
+    const regex = /^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/gm;
+    let match;
+    let lastIndex = 0;
+    let lastPath = null;
+    while ((match = regex.exec(diff)) !== null) {
+        if (lastPath && (lastIndex > 0 || (lastIndex === 0 && match.index > 0))) {
+            const sectionStr = diff.substring(lastIndex, match.index);
+            if (sectionStr.trim()) {
+                byPath.set(lastPath, (byPath.get(lastPath) ?? "") + sectionStr);
+            }
+        }
+        const pathA = (match[1] ?? match[2]);
+        const pathB = (match[3] ?? match[4]);
         const path = pathA !== "dev/null" ? pathA : pathB;
-        if (path === "dev/null")
-            continue;
-        byPath.set(path, (byPath.get(path) ?? "") + section);
+        if (path !== "dev/null") {
+            lastPath = path;
+        }
+        else {
+            lastPath = null;
+        }
+        lastIndex = match.index;
+    }
+    if (lastPath && lastIndex < diff.length) {
+        const sectionStr = diff.substring(lastIndex);
+        if (sectionStr.trim()) {
+            byPath.set(lastPath, (byPath.get(lastPath) ?? "") + sectionStr);
+        }
     }
     return [...byPath.entries()].map(([path, text]) => ({ path, text }));
 }

@@ -39,16 +39,14 @@ export function extractChangedFilePaths(diff: string): string[] {
     return [];
   }
 
-  const sections = diff.split(/(?=^diff --git )/m);
   const paths: string[] = [];
+  const regex =
+    /^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/gm;
+  let match: RegExpExecArray | null;
 
-  for (const section of sections) {
-    const headerMatch = section.match(
-      /^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/m
-    );
-    if (!headerMatch) continue;
-    const pathA = (headerMatch[1] ?? headerMatch[2])!;
-    const pathB = (headerMatch[3] ?? headerMatch[4])!;
+  while ((match = regex.exec(diff)) !== null) {
+    const pathA = (match[1] ?? match[2])!;
+    const pathB = (match[3] ?? match[4])!;
     const changed = pathA !== "dev/null" ? pathA : pathB;
     if (changed !== "dev/null") {
       paths.push(changed);
@@ -63,28 +61,35 @@ export function filterDiff(diff: string, ignoredPatterns: string[]): string {
     return diff;
   }
 
-  const sections = diff.split(/(?=^diff --git )/m);
   const keptSections: string[] = [];
+  const regex =
+    /^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/gm;
+  let match: RegExpExecArray | null;
+  let lastIndex = 0;
+  let ignoreCurrent = false;
 
-  for (const section of sections) {
-    if (!section.trim()) continue;
-
-    const headerMatch = section.match(
-      /^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/m
-    );
-    if (headerMatch) {
-      const pathA = (headerMatch[1] ?? headerMatch[2])!;
-      const pathB = (headerMatch[3] ?? headerMatch[4])!;
-      const isPathAIgnored =
-        pathA !== "dev/null" && shouldIgnorePath(pathA, ignoredPatterns);
-      const isPathBIgnored =
-        pathB !== "dev/null" && shouldIgnorePath(pathB, ignoredPatterns);
-      if (isPathAIgnored || isPathBIgnored) {
-        continue;
+  while ((match = regex.exec(diff)) !== null) {
+    if (lastIndex > 0 || (lastIndex === 0 && match.index > 0)) {
+      if (!ignoreCurrent) {
+        const sectionStr = diff.substring(lastIndex, match.index);
+        if (sectionStr.trim()) keptSections.push(sectionStr);
       }
     }
 
-    keptSections.push(section);
+    const pathA = (match[1] ?? match[2])!;
+    const pathB = (match[3] ?? match[4])!;
+    const isPathAIgnored =
+      pathA !== "dev/null" && shouldIgnorePath(pathA, ignoredPatterns);
+    const isPathBIgnored =
+      pathB !== "dev/null" && shouldIgnorePath(pathB, ignoredPatterns);
+
+    ignoreCurrent = isPathAIgnored || isPathBIgnored;
+    lastIndex = match.index;
+  }
+
+  if (lastIndex < diff.length && !ignoreCurrent) {
+    const sectionStr = diff.substring(lastIndex);
+    if (sectionStr.trim()) keptSections.push(sectionStr);
   }
 
   return keptSections.join("");
