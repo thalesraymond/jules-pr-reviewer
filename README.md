@@ -316,7 +316,7 @@ Opt-in to include GitHub-native one-click suggested changes in Jules' review com
     enable_suggestions: true
 ```
 
-> Suggestions are emitted only for `High` or `Medium` confidence comments. If GitHub rejects a suggestion (for example, because it falls outside a diff hunk), the action automatically retries without suggestions and falls back to the existing summary-only review as a last resort.
+> Suggestions are emitted only for `High` or `Medium` confidence comments. If GitHub rejects a suggestion (for example, because it falls outside a diff hunk), the action automatically retries without suggestions and falls back to the summary-only review as a last resort. When a fallback drops suggested changes or inline comments, the posted review says so — a review that simply had no suggestions or findings is never flagged as degraded.
 
 ### Auto-approving clean PRs
 
@@ -426,6 +426,7 @@ Behind the scenes, this action works by compiling a prompt combining the PR deta
 - **Auto-Resolving Threads**: The action fetches open PR review threads and includes them in the prompt. If Jules determines that a new commit fixes the issue raised in a comment, it signals the action to automatically mark the GitHub conversation thread as **resolved**.
 - **Findings Deduplication**: When `dedupe` is on (default), the prompt also tells Jules not to re-report its own still-open findings as new comments — identical issues don't re-surface across pushes or runs. It can only re-report when the new diff introduces a materially different instance of a problem. Combined with incremental diffing, already-reviewed code stays quiet. Set `dedupe: false` if you want each push fully re-reviewed.
 - **JSON Parsing**: By enforcing a strict JSON output from Jules, the action can decouple the language generation from the GitHub API calls, easily formatting individual line comments for `octokit.rest.pulls.createReview`.
+- **Review delivery state**: `submitReview` reports what GitHub actually accepted — inline findings with suggestions, inline findings without suggestions, or a summary only. If a fallback drops suggestions or inline comments, the posted review body, the check-run summary, and the `review_submitted` / `review_completed` structured logs all disclose the degraded delivery. The verdict, finding counts, configured gate, and check-run annotations are unchanged.
 
 ## Prerequisites
 
@@ -464,6 +465,8 @@ The action classifies failures so you can tell what happened at a glance instead
 | `unknown` | Anything else | Check run fails with the root-cause message; details in the action log. |
 
 Every failure also emits a structured `review_failed` log entry (`::structured::`) carrying `{ kind, stage, reason }`.
+
+**Degraded review delivery.** When GitHub rejects a submission and the fallback drops suggested changes or inline comments, the review is still delivered successfully: the verdict, finding counts, configured gate, and check-run annotations are unchanged. The accepted review body, the check-run summary, and the `review_submitted` / `review_completed` structured logs all state what was actually delivered, so a missing suggestion is never mistaken for a delivery failure.
 
 **Quota exhaustion.** Free Jules keys are capped at 15 sessions per 24 hours. When the cap is hit (HTTP 429 / quota message), the action fails fast with an explicit message instead of a cryptic error — including in agentic mode, where it skips the prompt-mode fallback because that session would fail the same way. To stay under the cap: use the `concurrency` block above, gate runs with `paths:` filters or the `bypass_label`, and skip drafts/forks.
 
