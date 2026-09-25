@@ -165,7 +165,10 @@ describe("index.ts", () => {
     mockGithubHelper.fetchOpenThreads.mockResolvedValue([]);
     mockGithubHelper.createCheckRun.mockResolvedValue(42);
     mockGithubHelper.finalizeCheckRun.mockResolvedValue(undefined);
-    mockSubmissionHelper.submitReview.mockResolvedValue(undefined);
+    mockSubmissionHelper.submitReview.mockResolvedValue({
+      state: "summary_only",
+      degraded: false,
+    });
     mockJulesHelper.runJulesReview.mockResolvedValue({
       reviewResult: {
         verdict: "approve",

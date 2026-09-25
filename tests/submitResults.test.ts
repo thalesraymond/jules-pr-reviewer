@@ -89,7 +89,10 @@ describe("submitResults", () => {
     });
     mockBuildAnnotations.mockReturnValue([]);
     mockBuildPostedCoverageNote.mockReturnValue("");
-    mockSubmitReview.mockResolvedValue(undefined);
+    mockSubmitReview.mockResolvedValue({
+      state: "inline_without_suggestions",
+      degraded: false,
+    });
     mockFinalizeCheckRun.mockResolvedValue(undefined);
   });
 
@@ -220,5 +223,212 @@ describe("submitResults", () => {
     const submittedComments = mockSubmitReview.mock.calls[0][6];
     expect(submittedComments[0]).not.toHaveProperty("suggestion");
     expect(submittedComments[0]).not.toHaveProperty("startLine");
+  });
+
+  it("discloses degraded suggestion delivery in the check run and logs", async () => {
+    mockSubmitReview.mockResolvedValue({
+      state: "inline_without_suggestions",
+      degraded: true,
+      loss: "suggestions_omitted",
+    });
+
+    await submitResults(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      42,
+      baseReviewResult,
+      undefined,
+      [],
+      "session-id",
+      baseConfig,
+      Date.now()
+    );
+
+    expect(mockFinalizeCheckRun).toHaveBeenCalledWith(
+      octokit,
+      "owner",
+      "repo",
+      42,
+      "success",
+      expect.objectContaining({
+        summary: expect.stringContaining(
+          "GitHub rejected the suggested changes"
+        ),
+      })
+    );
+    expect(mockLogStructured).toHaveBeenCalledWith(
+      "review_submitted",
+      expect.objectContaining({
+        delivery: "inline_without_suggestions",
+        degraded: true,
+        deliveryLoss: "suggestions_omitted",
+      })
+    );
+  });
+
+  it("keeps counts, verdict, annotations, and event when summary-only fallback loses findings", async () => {
+    const comments = [
+      {
+        file: "a.ts",
+        line: 1,
+        severity: "High" as const,
+        confidence: "High" as const,
+        message: "Bug",
+        promptForAgents: "",
+      },
+      {
+        file: "b.ts",
+        line: 2,
+        severity: "Info" as const,
+        confidence: "Low" as const,
+        message: "Nit",
+        promptForAgents: "",
+      },
+    ];
+    const annotations = [
+      {
+        path: "a.ts",
+        startLine: 1,
+        endLine: 1,
+        annotationLevel: "failure" as const,
+        message: "Bug",
+      },
+    ];
+    mockFilterCommentsByStrictness.mockReturnValue(comments);
+    mockBuildAnnotations.mockReturnValue(annotations);
+    mockSubmitReview.mockResolvedValue({
+      state: "summary_only",
+      degraded: true,
+      loss: "inline_findings_omitted",
+    });
+
+    await submitResults(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      42,
+      { ...baseReviewResult, newComments: comments },
+      undefined,
+      [],
+      "session-id",
+      baseConfig,
+      Date.now()
+    );
+
+    expect(mockSubmitReview.mock.calls[0][6]).toHaveLength(2);
+    expect(mockSubmitReview.mock.calls[0][7]).toBe("COMMENT");
+    expect(mockBuildAnnotations).toHaveBeenCalledWith(comments);
+    expect(mockConclusionFromVerdict).toHaveBeenCalledWith("comment", "any");
+    expect(mockSetReviewOutputs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        verdict: "comment",
+        issues_count: 2,
+        high_issues_count: 1,
+        info_issues_count: 1,
+      })
+    );
+    expect(mockFinalizeCheckRun).toHaveBeenCalledWith(
+      octokit,
+      "owner",
+      "repo",
+      42,
+      "success",
+      expect.objectContaining({
+        summary: expect.stringContaining("GitHub rejected inline comments"),
+        annotations,
+      })
+    );
+    expect(mockLogStructured).toHaveBeenCalledWith(
+      "review_submitted",
+      expect.objectContaining({
+        delivery: "summary_only",
+        degraded: true,
+        deliveryLoss: "inline_findings_omitted",
+      })
+    );
+    expect(mockLogStructured).toHaveBeenCalledWith(
+      "review_completed",
+      expect.objectContaining({
+        delivery: "summary_only",
+        degraded: true,
+        deliveryLoss: "inline_findings_omitted",
+      })
+    );
+  });
+
+  it("does not disclose fallback when delivery is not degraded", async () => {
+    await submitResults(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      42,
+      baseReviewResult,
+      undefined,
+      [],
+      "session-id",
+      baseConfig,
+      Date.now()
+    );
+
+    expect(mockFinalizeCheckRun).toHaveBeenCalledWith(
+      octokit,
+      "owner",
+      "repo",
+      42,
+      "success",
+      expect.objectContaining({ summary: "Review complete" })
+    );
+    expect(mockLogStructured).toHaveBeenCalledWith(
+      "review_submitted",
+      expect.objectContaining({
+        delivery: "inline_without_suggestions",
+        degraded: false,
+      })
+    );
+  });
+
+  it("treats an intentional summary-only review without findings as normal", async () => {
+    mockSubmitReview.mockResolvedValue({
+      state: "summary_only",
+      degraded: false,
+    });
+
+    await submitResults(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      42,
+      baseReviewResult,
+      undefined,
+      [],
+      "session-id",
+      baseConfig,
+      Date.now()
+    );
+
+    expect(mockFinalizeCheckRun).toHaveBeenCalledWith(
+      octokit,
+      "owner",
+      "repo",
+      42,
+      "success",
+      expect.objectContaining({ summary: "Review complete" })
+    );
+    expect(mockLogStructured).toHaveBeenCalledWith(
+      "review_completed",
+      expect.objectContaining({
+        delivery: "summary_only",
+        degraded: false,
+      })
+    );
   });
 });
