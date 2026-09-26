@@ -1,5 +1,6 @@
 import * as core from "@actions/core";
 import { submitReview, buildAnnotations } from "./submission.js";
+import type { ReviewDeliveryLoss } from "./submission.js";
 import { resolveThreads, finalizeCheckRun } from "./github.js";
 import { setReviewOutputs, logStructured } from "./logging.js";
 import {
@@ -20,6 +21,14 @@ import {
 } from "./types.js";
 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
+
+/** Check-run wording for a fallback that dropped suggestions or inline findings. */
+const DELIVERY_LOSS_CONTEXT: Record<ReviewDeliveryLoss, string> = {
+  suggestions_omitted:
+    "⚠️ Delivery degraded: GitHub rejected the suggested changes, so the posted review omits them. Reported findings, counts, and annotations are unchanged.",
+  inline_findings_omitted:
+    "⚠️ Delivery degraded: GitHub rejected inline comments, so the posted review contains only the summary. Reported findings, counts, and annotations are unchanged.",
+};
 
 export type SubmitResultsConfig = {
   enableSuggestions: boolean;
@@ -94,7 +103,7 @@ export async function submitResults(
   const reviewEvent: "COMMENT" | "APPROVE" =
     config.enableApprove && verdict === "approve" ? "APPROVE" : "COMMENT";
 
-  await submitReview(
+  const delivery = await submitReview(
     octokit,
     owner,
     repo,
@@ -109,6 +118,9 @@ export async function submitResults(
     verdict,
     sessionId,
     commentCount: reportedComments.length,
+    delivery: delivery.state,
+    degraded: delivery.degraded,
+    ...(delivery.degraded ? { deliveryLoss: delivery.loss } : {}),
   });
 
   const { conclusion, description } = unparseable
@@ -121,10 +133,15 @@ export async function submitResults(
       ? conclusionFromFindings(reportedComments, config.blockOn)
       : conclusionFromVerdict(verdict, config.failOn);
 
+  const deliveryContext = delivery.degraded
+    ? DELIVERY_LOSS_CONTEXT[delivery.loss]
+    : undefined;
   const annotations = buildAnnotations(reportedComments);
   await finalizeCheckRun(octokit, owner, repo, checkRunId, conclusion, {
     title: "Jules Review",
-    summary: description,
+    summary: deliveryContext
+      ? `${description}\n\n${deliveryContext}`
+      : description,
     ...(annotations.length > 0 ? { annotations } : {}),
   });
 
@@ -146,6 +163,9 @@ export async function submitResults(
     warningIssues: warningCount,
     infoIssues: infoCount,
     sessionId,
+    delivery: delivery.state,
+    degraded: delivery.degraded,
+    ...(delivery.degraded ? { deliveryLoss: delivery.loss } : {}),
     duration: reviewDuration,
     ...(reviewCoverage
       ? {

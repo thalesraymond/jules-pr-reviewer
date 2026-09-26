@@ -45439,6 +45439,8 @@ async function executeReview(apiKey, prNumber, pr, prepared, ownerRepo, baseSha,
 
 
 const SUGGESTION_ATTRIBUTION = "> ⚠️ Jules suggested this fix — review carefully before applying.";
+const SUGGESTIONS_OMITTED_NOTE = "> ⚠️ GitHub rejected the suggested changes in this review, so they were omitted. All reported findings are still posted as inline comments.";
+const INLINE_FINDINGS_OMITTED_NOTE = "> ⚠️ GitHub rejected inline comments for this review, so it was posted as a summary only. The reported finding counts are unchanged.";
 function sanitizeSuggestion(comment) {
     const sanitized = { ...comment };
     if (sanitized.startLine !== undefined &&
@@ -45505,39 +45507,52 @@ function isUnprocessableEntity(error) {
         getErrorMessage(error).includes("Unprocessable Entity"));
 }
 async function submitReview(octokit, owner, repo, prNumber, headSha, summary, comments, reviewEvent = "COMMENT") {
-    const submitWithComments = (includeSuggestions) => async () => {
-        await octokit.rest.pulls.createReview({
-            owner,
-            repo,
-            pull_number: prNumber,
-            commit_id: headSha,
-            event: reviewEvent,
-            body: summary,
-            comments: comments.map((c) => buildApiComment(c, includeSuggestions)),
-        });
-    };
-    const fallbackToSummaryOnly = async (error) => {
-        warning(`Failed to submit inline review comments (likely due to large diff/Unprocessable Entity). Falling back to summary-only review. Error: ${error}`);
-        await octokit.rest.pulls.createReview({
-            owner,
-            repo,
-            pull_number: prNumber,
-            commit_id: headSha,
-            event: reviewEvent,
-            body: summary,
-            comments: [],
-        });
-    };
+    const hasFindings = comments.length > 0;
     const hasSuggestions = comments.some((c) => c.suggestion);
+    const postReview = (body, reviewComments, includeSuggestions) => octokit.rest.pulls.createReview({
+        owner,
+        repo,
+        pull_number: prNumber,
+        commit_id: headSha,
+        event: reviewEvent,
+        body,
+        comments: reviewComments.map((c) => buildApiComment(c, includeSuggestions)),
+    });
+    const submitFirstAttempt = async () => {
+        await postReview(summary, comments, true);
+        if (!hasFindings) {
+            return { state: "summary_only", degraded: false };
+        }
+        return hasSuggestions
+            ? { state: "inline_with_suggestions", degraded: false }
+            : { state: "inline_without_suggestions", degraded: false };
+    };
+    const submitWithoutSuggestions = async () => {
+        warning("Failed to submit review with suggestions (likely hunk boundary). Retrying without suggestions.");
+        await postReview(`${summary}\n\n${SUGGESTIONS_OMITTED_NOTE}`, comments, false);
+        return {
+            state: "inline_without_suggestions",
+            degraded: true,
+            loss: "suggestions_omitted",
+        };
+    };
+    const submitSummaryOnly = async (error) => {
+        warning(hasFindings
+            ? `Failed to submit inline review comments (likely due to large diff/Unprocessable Entity). Falling back to summary-only review. Error: ${error}`
+            : `Failed to submit summary-only review. Retrying. Error: ${error}`);
+        await postReview(hasFindings ? `${summary}\n\n${INLINE_FINDINGS_OMITTED_NOTE}` : summary, [], true);
+        return hasFindings
+            ? {
+                state: "summary_only",
+                degraded: true,
+                loss: "inline_findings_omitted",
+            }
+            : { state: "summary_only", degraded: false };
+    };
     if (hasSuggestions) {
-        await withFallback(submitWithComments(true), async () => {
-            warning("Failed to submit review with suggestions (likely hunk boundary). Retrying without suggestions.");
-            await withFallback(submitWithComments(false), fallbackToSummaryOnly, isUnprocessableEntity);
-        }, isUnprocessableEntity);
+        return withFallback(submitFirstAttempt, async () => withFallback(submitWithoutSuggestions, submitSummaryOnly, isUnprocessableEntity), isUnprocessableEntity);
     }
-    else {
-        await withFallback(submitWithComments(true), fallbackToSummaryOnly, isUnprocessableEntity);
-    }
+    return withFallback(submitFirstAttempt, submitSummaryOnly, isUnprocessableEntity);
 }
 const MAX_ANNOTATIONS = 50;
 function severityToAnnotationLevel(severity) {
@@ -45643,6 +45658,11 @@ function filterCommentsByStrictness(comments, strictness) {
 
 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
+/** Check-run wording for a fallback that dropped suggestions or inline findings. */
+const DELIVERY_LOSS_CONTEXT = {
+    suggestions_omitted: "⚠️ Delivery degraded: GitHub rejected the suggested changes, so the posted review omits them. Reported findings, counts, and annotations are unchanged.",
+    inline_findings_omitted: "⚠️ Delivery degraded: GitHub rejected inline comments, so the posted review contains only the summary. Reported findings, counts, and annotations are unchanged.",
+};
 async function submitResults(octokit, owner, repo, prNumber, headSha, checkRunId, reviewResult, reviewCoverage, openThreads, sessionId, config, reviewStartTime) {
     const { verdict, summary, resolvedCommentIds, newComments, unparseable } = reviewResult;
     const reportedComments = filterCommentsByStrictness(filterCommentsBySeverity(newComments || [], config.minSeverityToReport), config.strictness);
@@ -45671,11 +45691,14 @@ async function submitResults(octokit, owner, repo, prNumber, headSha, checkRunId
         return copy;
     });
     const reviewEvent = config.enableApprove && verdict === "approve" ? "APPROVE" : "COMMENT";
-    await submitReview(octokit, owner, repo, prNumber, headSha, finalBody, commentsForReview, reviewEvent);
+    const delivery = await submitReview(octokit, owner, repo, prNumber, headSha, finalBody, commentsForReview, reviewEvent);
     logStructured("review_submitted", {
         verdict,
         sessionId,
         commentCount: reportedComments.length,
+        delivery: delivery.state,
+        degraded: delivery.degraded,
+        ...(delivery.degraded ? { deliveryLoss: delivery.loss } : {}),
     });
     const { conclusion, description } = unparseable
         ? {
@@ -45685,10 +45708,15 @@ async function submitResults(octokit, owner, repo, prNumber, headSha, checkRunId
         : config.blockOn
             ? conclusionFromFindings(reportedComments, config.blockOn)
             : conclusionFromVerdict(verdict, config.failOn);
+    const deliveryContext = delivery.degraded
+        ? DELIVERY_LOSS_CONTEXT[delivery.loss]
+        : undefined;
     const annotations = buildAnnotations(reportedComments);
     await finalizeCheckRun(octokit, owner, repo, checkRunId, conclusion, {
         title: "Jules Review",
-        summary: description,
+        summary: deliveryContext
+            ? `${description}\n\n${deliveryContext}`
+            : description,
         ...(annotations.length > 0 ? { annotations } : {}),
     });
     const reviewDuration = Date.now() - reviewStartTime;
@@ -45708,6 +45736,9 @@ async function submitResults(octokit, owner, repo, prNumber, headSha, checkRunId
         warningIssues: warningCount,
         infoIssues: infoCount,
         sessionId,
+        delivery: delivery.state,
+        degraded: delivery.degraded,
+        ...(delivery.degraded ? { deliveryLoss: delivery.loss } : {}),
         duration: reviewDuration,
         ...(reviewCoverage
             ? {
