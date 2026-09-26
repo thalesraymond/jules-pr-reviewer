@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { prepareDiff } from "../src/prepareDiff.js";
+import * as core from "@actions/core";
+import { getOctokit } from "@actions/github";
+import { prepareReview } from "../src/reviewPreparation.js";
+
+vi.mock("@actions/core", () => ({ info: vi.fn() }));
 
 const mockFetchDiff = vi.fn();
 const mockLoadRulesFromBase = vi.fn();
@@ -31,11 +35,9 @@ const baseConfig = {
   rulesDirectory: undefined as string | undefined,
 };
 
-const octokit = { rest: {} } as unknown as ReturnType<
-  typeof import("@actions/github").getOctokit
->;
+const octokit = getOctokit("test-token");
 
-describe("prepareDiff", () => {
+describe("prepareReview", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetchDiff.mockResolvedValue("raw diff");
@@ -46,15 +48,99 @@ describe("prepareDiff", () => {
     mockLoadPerPathRules.mockResolvedValue([]);
   });
 
+  it.each([
+    {
+      action: "opened",
+      before: "beforeSHA",
+      diffMode: "prompt",
+      expected: "baseSHA",
+    },
+    {
+      action: "synchronize",
+      before: "beforeSHA",
+      diffMode: "prompt",
+      expected: "beforeSHA",
+    },
+    {
+      action: "synchronize",
+      before: "baseSHA",
+      diffMode: "prompt",
+      expected: "baseSHA",
+      incremental: true,
+    },
+    {
+      action: "synchronize",
+      before: undefined,
+      diffMode: "prompt",
+      expected: "baseSHA",
+    },
+    {
+      action: "synchronize",
+      before: "beforeSHA",
+      diffMode: "agentic",
+      expected: "baseSHA",
+    },
+    {
+      action: "opened",
+      before: "beforeSHA",
+      diffMode: "agentic",
+      expected: "baseSHA",
+    },
+  ] as const)(
+    "prepares $diffMode review for $action with previous SHA $before from $expected",
+    async ({ action, before, diffMode, expected, incremental }) => {
+      await prepareReview(
+        octokit,
+        "owner",
+        "repo",
+        1,
+        { action, before, diffMode, baseSha: "baseSHA", headSha: "headSHA" },
+        { ...baseConfig, rulesFilePath: "rules.md", rulesDirectory: "rules" }
+      );
+
+      expect(mockFetchDiff).toHaveBeenCalledWith(
+        octokit,
+        "owner",
+        "repo",
+        { number: 1 },
+        expected,
+        "headSHA"
+      );
+      expect(mockLoadRulesFromBase).toHaveBeenCalledWith(
+        octokit,
+        "owner",
+        "repo",
+        "rules.md",
+        "baseSHA"
+      );
+      expect(mockLoadPerPathRules).toHaveBeenCalledWith(
+        octokit,
+        "owner",
+        "repo",
+        "rules",
+        "baseSHA",
+        ["src/a.ts"]
+      );
+      expect(core.info).toHaveBeenCalledWith(
+        expected === "beforeSHA" || incremental
+          ? `Synchronize event detected. Reviewing incremental changes from ${expected} to headSHA`
+          : "Reviewing full PR diff from baseSHA to headSHA"
+      );
+    }
+  );
+
   it("fetches, filters, and extracts changed files", async () => {
-    const result = await prepareDiff(
+    const result = await prepareReview(
       octokit,
       "owner",
       "repo",
       1,
-      "diffBaseSHA",
-      "rulesBaseSHA",
-      "headSHA",
+      {
+        action: "opened",
+        diffMode: "prompt",
+        baseSha: "baseSHA",
+        headSha: "headSHA",
+      },
       baseConfig
     );
 
@@ -63,7 +149,7 @@ describe("prepareDiff", () => {
       "owner",
       "repo",
       { number: 1 },
-      "diffBaseSHA",
+      "baseSHA",
       "headSHA"
     );
     expect(mockFilterDiff).toHaveBeenCalledWith("raw diff", []);
@@ -79,14 +165,17 @@ describe("prepareDiff", () => {
 
   it("loads rules from file when rules_file is configured", async () => {
     mockLoadRulesFromBase.mockResolvedValue("project rules");
-    const result = await prepareDiff(
+    const result = await prepareReview(
       octokit,
       "owner",
       "repo",
       1,
-      "diffBaseSHA",
-      "rulesBaseSHA",
-      "headSHA",
+      {
+        action: "opened",
+        diffMode: "prompt",
+        baseSha: "baseSHA",
+        headSha: "headSHA",
+      },
       { ...baseConfig, rulesFilePath: "rules.md" }
     );
 
@@ -95,7 +184,7 @@ describe("prepareDiff", () => {
       "owner",
       "repo",
       "rules.md",
-      "rulesBaseSHA"
+      "baseSHA"
     );
     expect(result.rulesFromFile).toBe("project rules");
   });
@@ -104,14 +193,17 @@ describe("prepareDiff", () => {
     mockLoadPerPathRules.mockResolvedValue([
       { path: "rules/src.md", glob: "src/**", content: "Be strict" },
     ]);
-    const result = await prepareDiff(
+    const result = await prepareReview(
       octokit,
       "owner",
       "repo",
       1,
-      "diffBaseSHA",
-      "rulesBaseSHA",
-      "headSHA",
+      {
+        action: "opened",
+        diffMode: "prompt",
+        baseSha: "baseSHA",
+        headSha: "headSHA",
+      },
       { ...baseConfig, rulesDirectory: ".github/jules-rules" }
     );
 
@@ -120,7 +212,7 @@ describe("prepareDiff", () => {
       "owner",
       "repo",
       ".github/jules-rules",
-      "rulesBaseSHA",
+      "baseSHA",
       ["src/a.ts"]
     );
     expect(result.perPathRules).toEqual([
@@ -132,14 +224,17 @@ describe("prepareDiff", () => {
     mockFetchOpenThreads.mockResolvedValue([
       { index: 1, threadId: "t1", path: "a.ts", line: 1, body: "old" },
     ]);
-    const result = await prepareDiff(
+    const result = await prepareReview(
       octokit,
       "owner",
       "repo",
       1,
-      "diffBaseSHA",
-      "rulesBaseSHA",
-      "headSHA",
+      {
+        action: "opened",
+        diffMode: "prompt",
+        baseSha: "baseSHA",
+        headSha: "headSHA",
+      },
       baseConfig
     );
 
@@ -155,14 +250,17 @@ describe("prepareDiff", () => {
   });
 
   it("passes ignored paths to filterDiff", async () => {
-    await prepareDiff(
+    await prepareReview(
       octokit,
       "owner",
       "repo",
       1,
-      "diffBaseSHA",
-      "rulesBaseSHA",
-      "headSHA",
+      {
+        action: "opened",
+        diffMode: "prompt",
+        baseSha: "baseSHA",
+        headSha: "headSHA",
+      },
       { ...baseConfig, ignoredPaths: "*.test.ts" }
     );
 

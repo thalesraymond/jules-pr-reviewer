@@ -64,7 +64,7 @@ describe("index.ts", () => {
     loadPerPathRules: vi.fn(),
   };
 
-  const mockPrepareDiff = vi.fn();
+  const mockPrepareReview = vi.fn();
   const mockExecuteReview = vi.fn();
   const mockSubmitResults = vi.fn();
 
@@ -97,7 +97,7 @@ describe("index.ts", () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
-    vi.doUnmock("../src/prepareDiff.js");
+    vi.doUnmock("../src/reviewPreparation.js");
     vi.doUnmock("../src/executeReview.js");
     vi.doUnmock("../src/submitResults.js");
 
@@ -210,7 +210,7 @@ describe("index.ts", () => {
       perPathRules: [],
       openThreads: [],
     };
-    mockPrepareDiff.mockResolvedValue(preparedDiff);
+    mockPrepareReview.mockResolvedValue(preparedDiff);
     mockExecuteReview.mockResolvedValue({
       reviewResult: {
         verdict: "approve",
@@ -220,8 +220,8 @@ describe("index.ts", () => {
       sessionId: "session-id",
     });
     mockSubmitResults.mockResolvedValue(undefined);
-    vi.doMock("../src/prepareDiff.js", () => ({
-      prepareDiff: mockPrepareDiff,
+    vi.doMock("../src/reviewPreparation.js", () => ({
+      prepareReview: mockPrepareReview,
     }));
     vi.doMock("../src/executeReview.js", () => ({
       executeReview: mockExecuteReview,
@@ -856,6 +856,38 @@ index 789..abc 100644
       expect.stringContaining("prompt-session"),
       expect.anything(),
       "COMMENT"
+    );
+  });
+
+  it("keeps the full PR diff for an agentic prompt fallback on synchronize", async () => {
+    (github as any).context.payload.action = "synchronize";
+    (github as any).context.payload.before = "beforeSHA";
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, diffMode: "agentic" },
+    });
+    mockGithubHelper.fetchDiff.mockResolvedValue(
+      makeDiffSection("src/full-pr.ts", 20)
+    );
+    mockJulesHelper.runAgenticReview.mockResolvedValue({
+      reviewResult: null,
+      sessionId: "agentic-session",
+      fallback: true,
+      fallbackReason: "timeout",
+    });
+
+    await loadIndex();
+
+    expect(mockGithubHelper.fetchDiff).toHaveBeenCalledWith(
+      expect.anything(),
+      "owner",
+      "repo",
+      { number: 1 },
+      "baseSHA",
+      "headSHA"
+    );
+    expect(mockJulesHelper.runJulesReview.mock.calls[0][1]).toContain(
+      "src/full-pr.ts"
     );
   });
 

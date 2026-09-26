@@ -4,7 +4,7 @@ import { ReviewOutputs } from "./types.js";
 import { createCheckRun, finalizeCheckRun } from "./github.js";
 import { wrapPermissionError } from "./jules.js";
 import { evaluateSkipPolicy } from "./skipPolicy.js";
-import { prepareDiff } from "./prepareDiff.js";
+import { prepareReview } from "./reviewPreparation.js";
 import { executeReview } from "./executeReview.js";
 import { submitResults } from "./submitResults.js";
 import {
@@ -114,31 +114,19 @@ async function run(): Promise<void> {
       throw wrapPermissionError(err, "checks:write", "createCheckRun");
     }
 
-    // Determine the base SHA for incremental diffing
-    let baseShaForDiff = baseSha;
-    if (ctx.payload.action === "synchronize" && ctx.payload.before) {
-      baseShaForDiff = ctx.payload.before;
-      core.info(
-        `Synchronize event detected. Reviewing incremental changes from ${baseShaForDiff} to ${headSha}`
-      );
-    } else {
-      core.info(`Reviewing full PR diff from ${baseShaForDiff} to ${headSha}`);
-    }
-
-    // In agentic mode Jules inspects the full base...head diff, so use baseSha
-    // for the changed-file set regardless of synchronize events.
-    const diffBaseForMode =
-      config.diffMode === "agentic" ? baseSha : baseShaForDiff;
-
     // ⚡ Bolt: Execute independent GitHub API calls concurrently to reduce overall latency
-    const preparedDiff = await prepareDiff(
+    const preparedDiff = await prepareReview(
       octokit,
       owner,
       repo,
       prNumber,
-      diffBaseForMode,
-      baseSha,
-      headSha,
+      {
+        action: ctx.payload.action,
+        before: ctx.payload.before,
+        diffMode: config.diffMode,
+        baseSha,
+        headSha,
+      },
       {
         ignoredPaths: config.ignoredPaths,
         rulesFilePath: config.rulesFilePath,

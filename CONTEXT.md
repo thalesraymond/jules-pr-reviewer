@@ -28,6 +28,8 @@
 
 ## Key concepts
 
+**Review preparation** — gathering the diff, changed files, applicable base-commit rules, and open threads for a PR review. The review mode and event determine whether the diff covers the full PR or only the latest push; rules always come from the PR base commit.
+
 **ReviewResult** — the structured output from the LLM: verdict (approve/comment/block), summary, resolved comment IDs, and new comments with file/line/severity/confidence/message.
 
 **Strictness profile** — the review-culture dial (`quiet` | `chill` | `assertive`): steers the prompt (per-level trusted instruction block) and the report threshold (which severities surface). `chill` is the default and renders no block, keeping the prompt byte-identical to earlier versions.

@@ -45031,22 +45031,33 @@ async function loadPerPathRules(octokit, owner, repo, rulesDir, baseSha, changed
     return rules;
 }
 
-;// CONCATENATED MODULE: ./src/prepareDiff.ts
+;// CONCATENATED MODULE: ./src/reviewPreparation.ts
 
 
 
-async function prepareDiff(octokit, owner, repo, prNumber, diffBaseSha, rulesBaseSha, headSha, config) {
+
+async function prepareReview(octokit, owner, repo, prNumber, scope, config) {
+    const isIncremental = scope.diffMode === "prompt" &&
+        scope.action === "synchronize" &&
+        Boolean(scope.before);
+    const diffBaseSha = isIncremental && scope.before ? scope.before : scope.baseSha;
+    if (isIncremental) {
+        info(`Synchronize event detected. Reviewing incremental changes from ${diffBaseSha} to ${scope.headSha}`);
+    }
+    else {
+        info(`Reviewing full PR diff from ${diffBaseSha} to ${scope.headSha}`);
+    }
     const [diff, rulesFromFile, openThreads] = await Promise.all([
-        fetchDiff(octokit, owner, repo, { number: prNumber }, diffBaseSha, headSha),
+        fetchDiff(octokit, owner, repo, { number: prNumber }, diffBaseSha, scope.headSha),
         config.rulesFilePath
-            ? loadRulesFromBase(octokit, owner, repo, config.rulesFilePath, rulesBaseSha)
+            ? loadRulesFromBase(octokit, owner, repo, config.rulesFilePath, scope.baseSha)
             : Promise.resolve(undefined),
         fetchOpenThreads(octokit, owner, repo, prNumber),
     ]);
     const filteredDiff = filterDiff(diff, parseIgnoredPaths(config.ignoredPaths));
     const changedFiles = extractChangedFilePaths(filteredDiff);
     const perPathRules = config.rulesDirectory
-        ? await loadPerPathRules(octokit, owner, repo, config.rulesDirectory, rulesBaseSha, changedFiles)
+        ? await loadPerPathRules(octokit, owner, repo, config.rulesDirectory, scope.baseSha, changedFiles)
         : [];
     return {
         diff: filteredDiff,
@@ -45987,20 +45998,14 @@ async function run() {
         catch (err) {
             throw wrapPermissionError(err, "checks:write", "createCheckRun");
         }
-        // Determine the base SHA for incremental diffing
-        let baseShaForDiff = baseSha;
-        if (ctx.payload.action === "synchronize" && ctx.payload.before) {
-            baseShaForDiff = ctx.payload.before;
-            info(`Synchronize event detected. Reviewing incremental changes from ${baseShaForDiff} to ${headSha}`);
-        }
-        else {
-            info(`Reviewing full PR diff from ${baseShaForDiff} to ${headSha}`);
-        }
-        // In agentic mode Jules inspects the full base...head diff, so use baseSha
-        // for the changed-file set regardless of synchronize events.
-        const diffBaseForMode = config.diffMode === "agentic" ? baseSha : baseShaForDiff;
         // ⚡ Bolt: Execute independent GitHub API calls concurrently to reduce overall latency
-        const preparedDiff = await prepareDiff(octokit, owner, repo, prNumber, diffBaseForMode, baseSha, headSha, {
+        const preparedDiff = await prepareReview(octokit, owner, repo, prNumber, {
+            action: ctx.payload.action,
+            before: ctx.payload.before,
+            diffMode: config.diffMode,
+            baseSha,
+            headSha,
+        }, {
             ignoredPaths: config.ignoredPaths,
             rulesFilePath: config.rulesFilePath,
             rulesDirectory: config.rulesDirectory,
