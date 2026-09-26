@@ -3,7 +3,7 @@ import { buildReviewPrompt } from "./prompt.js";
 import { runJulesReview, runAgenticReview } from "./jules.js";
 import { preparePromptDiff } from "./coverage.js";
 import { logStructured } from "./logging.js";
-import type { PreparedDiff } from "./prepareDiff.js";
+import type { PreparedDiff } from "./reviewPreparation.js";
 import {
   DiffMode,
   LargePrStrategy,

@@ -34,7 +34,7 @@ This is a **GitHub Action** (`jules-pr-reviewer`) that uses the [Google Jules SD
 src/
 ├── index.ts         # Action entry point — input parsing, orchestration, status reporting
 ├── skipPolicy.ts    # PR-level skip policy (draft/fork/bypass/title/author/label)
-├── prepareDiff.ts   # Diff preparation — fetch, filter, rules, open threads
+├── reviewPreparation.ts # Review preparation — scope, fetch, filter, rules, open threads
 ├── executeReview.ts # Review execution — prompt building + Jules API (prompt/agentic)
 ├── submitResults.ts # Result submission — filtering, body, review post, check run finalization
 ├── github.ts        # GitHub API helpers (diff fetching, thread management, status)
@@ -52,7 +52,7 @@ src/
 tests/
 ├── index.test.ts         # Tests for the action orchestrator
 ├── skipPolicy.test.ts    # Tests for PR-level skip policy
-├── prepareDiff.test.ts   # Tests for diff preparation
+├── reviewPreparation.test.ts # Tests for review preparation
 ├── executeReview.test.ts # Tests for review execution
 ├── submitResults.test.ts # Tests for result submission
 ├── github.test.ts        # Tests for GitHub API helpers
