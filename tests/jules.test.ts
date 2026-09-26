@@ -4,7 +4,7 @@ import {
   runAgenticReview,
   wrapPermissionError,
 } from "../src/jules.js";
-import { QuotaExceededError } from "../src/errors.js";
+import { QuotaExceededError, AuthError } from "../src/errors.js";
 import { runSession } from "../src/session.js";
 import * as core from "@actions/core";
 
@@ -237,29 +237,38 @@ describe("wrapPermissionError", () => {
   it("wraps 403 error with helpful instructions", () => {
     const err = new Error("Request failed with status 403");
     const result = wrapPermissionError(err, "checks:write", "createCheckRun");
-    expect(result.message).toContain("createCheckRun failed with 403");
-    expect(result.message).toContain("permissions:");
-    expect(result.message).toContain("checks: write");
+    expect(result).toBeInstanceOf(AuthError);
+    expect((result as AuthError).kind).toBe("auth");
+    expect((result as Error).message).toContain(
+      "createCheckRun failed with 403"
+    );
+    expect((result as Error).message).toContain("permissions:");
+    expect((result as Error).message).toContain("checks: write");
   });
 
   it("wraps Resource not accessible error with helpful instructions", () => {
     const err = new Error("Resource not accessible by integration");
     const result = wrapPermissionError(err, "checks:write", "createCheckRun");
-    expect(result.message).toContain("createCheckRun failed with 403");
-    expect(result.message).toContain("permissions:");
-    expect(result.message).toContain("checks: write");
+    expect(result).toBeInstanceOf(AuthError);
+    expect((result as AuthError).kind).toBe("auth");
+    expect((result as Error).message).toContain(
+      "createCheckRun failed with 403"
+    );
+    expect((result as Error).message).toContain("permissions:");
+    expect((result as Error).message).toContain("checks: write");
   });
 
-  it("passes through other Error instances unchanged", () => {
+  it("passes through other Error instances unchanged by throwing them", () => {
     const err = new Error("Some other error");
-    const result = wrapPermissionError(err, "checks:write", "createCheckRun");
-    expect(result).toBe(err);
+    expect(() =>
+      wrapPermissionError(err, "checks:write", "createCheckRun")
+    ).toThrow(err);
   });
 
-  it("wraps non-Error objects into an Error", () => {
+  it("wraps non-Error objects into an Error and throws them", () => {
     const err = "Just a string error";
-    const result = wrapPermissionError(err, "checks:write", "createCheckRun");
-    expect(result).toBeInstanceOf(Error);
-    expect(result.message).toBe("Just a string error");
+    expect(() =>
+      wrapPermissionError(err, "checks:write", "createCheckRun")
+    ).toThrowError(new Error("Just a string error"));
   });
 });

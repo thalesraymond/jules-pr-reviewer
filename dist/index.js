@@ -42203,11 +42203,13 @@ function verifyChangedFiles(reported, actual) {
 function wrapPermissionError(err, needed, op) {
     const msg = getErrorMessage(err);
     if (isAuthError(msg) || msg.includes("Resource not accessible")) {
-        return new Error(`${op} failed with 403. The github_token likely lacks ${needed}. Add to your workflow:\n` +
+        return new AuthError(`${op} failed with 403. The github_token likely lacks ${needed}. Add to your workflow:\n` +
             "    permissions:\n      pull-requests: write\n      contents: read\n      checks: write\n" +
             `(original: ${msg})`);
     }
-    return err instanceof Error ? err : new Error(msg);
+    if (err instanceof Error)
+        throw err;
+    throw new Error(msg);
 }
 
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/balanced-match@4.0.4/node_modules/balanced-match/dist/esm/index.js

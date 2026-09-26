@@ -2,7 +2,12 @@ import * as core from "@actions/core";
 import type { SourceInput } from "@google/jules-sdk";
 import { runSession } from "./session.js";
 import { ReviewResult } from "./types.js";
-import { getErrorMessage, isAuthError, QuotaExceededError } from "./errors.js";
+import {
+  getErrorMessage,
+  isAuthError,
+  QuotaExceededError,
+  AuthError,
+} from "./errors.js";
 import { logStructured } from "./logging.js";
 
 export async function runJulesReview(
@@ -165,14 +170,15 @@ export function wrapPermissionError(
   err: unknown,
   needed: string,
   op: string
-): Error {
+): AuthError {
   const msg = getErrorMessage(err);
   if (isAuthError(msg) || msg.includes("Resource not accessible")) {
-    return new Error(
+    return new AuthError(
       `${op} failed with 403. The github_token likely lacks ${needed}. Add to your workflow:\n` +
         "    permissions:\n      pull-requests: write\n      contents: read\n      checks: write\n" +
         `(original: ${msg})`
     );
   }
-  return err instanceof Error ? err : new Error(msg);
+  if (err instanceof Error) throw err;
+  throw new Error(msg);
 }
