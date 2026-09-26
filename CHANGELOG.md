@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.8.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.7.0...v1.8.0) (2026-09-26)
+
+
+### Features
+
+* report actual review delivery after submission fallback ([#173](https://github.com/thalesraymond/jules-pr-reviewer/issues/173)) ([e88dc7f](https://github.com/thalesraymond/jules-pr-reviewer/commit/e88dc7fc4d0585feacf1d35f25cdc687e52b0195))
+
+
+### Bug Fixes
+
+* mask sensitive action inputs early in entrypoint ([#146](https://github.com/thalesraymond/jules-pr-reviewer/issues/146)) ([d81c012](https://github.com/thalesraymond/jules-pr-reviewer/commit/d81c012fd0175c31843279c62310b9d0cd4bc5ff))
+
 ## [1.7.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.6.0...v1.7.0) (2026-08-20)
 
 
