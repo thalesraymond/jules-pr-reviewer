@@ -22,7 +22,7 @@
 
 **Session module** (`src/session.ts`) — runs a single Jules session to completion: creates the session, waits for it to be ready, polls for the review message, parses the response, and archives the session on every exit. Exports `runSession` which reports its outcome as `review`, `timeout`, or `creation_failed`. It wraps Jules quota/auth errors into the typed `QuotaExceededError`/`AuthError` (classifiers live in `src/errors.ts`) and logs unparseable responses as `review_failed` with `kind: "parse"`.
 
-**Submission module** (`src/submission.ts`) — formats and submits review comments to GitHub. Exports `submitReview` which handles the 3-tier fallback ladder (with suggestions → without suggestions → summary-only), XSS sanitization, suggestion escaping, and comment formatting. The formatting pipeline (severity emojis, confidence indicators, prompt-for-agents collapsible blocks) is hidden as an implementation detail.
+**Submission module** (`src/submission.ts`) — formats and submits review comments to GitHub. Exports `submitReview` which handles the 3-tier fallback ladder (with suggestions → without suggestions → summary-only), XSS sanitization, suggestion escaping, and comment formatting, and returns the accepted **review delivery state** (plus whether a fallback degraded delivery). The body of the accepted attempt carries the matching fallback note. The formatting pipeline (severity emojis, confidence indicators, prompt-for-agents collapsible blocks) is hidden as an implementation detail.
 
 **Strictness module** (`src/strictness.ts`) — the strictness profile dial. Exports `meetsReportThreshold` (which severities surface at a given level: `quiet` → High only, `chill`/`assertive` → everything) and `filterCommentsByStrictness` (applies the threshold to a comment list). The prompt-side per-level instructions live in `src/prompt.ts` as trusted text; `chill` renders no block so the default prompt is unchanged.
 
@@ -43,3 +43,5 @@
 **ReviewCoverage** — the large-PR coverage report: whether the PR is large, how many files were reviewed, and which files were excluded (prompt mode) so the review can state explicit coverage instead of silently truncating the diff.
 
 **Skip decision** — a PR-level early return driven by the ignore inputs: title keyword match, author match, or label allow/deny policy. Skip decisions run before any GitHub/Jules API call, so skipped PRs never create a check run or session.
+
+**Review delivery state** — what readers actually received from a submitted review: inline findings with suggestions, inline findings without suggestions, or a summary without inline findings. Only a fallback that loses suggested changes or inline findings is degraded delivery; a review without suggestions or findings can be intentional. Delivery state is distinct from the review verdict and the number of findings reported by Jules.

@@ -158,9 +158,12 @@ describe("submission.ts", () => {
       pull_number: 1,
       commit_id: "headSHA",
       event: "COMMENT",
-      body: "Summary text",
+      body: expect.stringContaining("GitHub rejected inline comments"),
       comments: [],
     });
+    expect(octokit.rest.pulls.createReview.mock.calls[1][0].body).toContain(
+      "Summary text"
+    );
   });
 
   it("comments without suggestion/startLine fields behave exactly as before", async () => {
@@ -452,7 +455,7 @@ describe("submission.ts", () => {
       pull_number: 1,
       commit_id: "headSHA",
       event: "APPROVE",
-      body: "Summary text",
+      body: expect.stringContaining("GitHub rejected inline comments"),
       comments: [],
     });
   });
@@ -528,5 +531,268 @@ describe("buildAnnotations", () => {
 
   it("returns empty array for empty comments", () => {
     expect(buildAnnotations([])).toEqual([]);
+  });
+});
+
+describe("submitReview delivery state", () => {
+  const suggestionComment = {
+    file: "a.ts",
+    line: 10,
+    severity: "High" as const,
+    confidence: "High" as const,
+    message: "Msg",
+    promptForAgents: "",
+    suggestion: "const x = 1;",
+  };
+
+  const plainComment = {
+    file: "b.ts",
+    line: 20,
+    severity: "Warning" as const,
+    confidence: "Medium" as const,
+    message: "Msg2",
+    promptForAgents: "",
+  };
+
+  function error422(): Error & { status: number } {
+    return Object.assign(new Error("Unprocessable Entity"), { status: 422 });
+  }
+
+  function mockOctokit(...attempts: Array<"resolve" | "reject422">) {
+    const createReview = vi.fn();
+    for (const attempt of attempts) {
+      if (attempt === "resolve") {
+        createReview.mockResolvedValueOnce({});
+      } else {
+        createReview.mockRejectedValueOnce(error422());
+      }
+    }
+    return {
+      octokit: { rest: { pulls: { createReview } } } as any,
+      createReview,
+    };
+  }
+
+  it("reports inline delivery with suggestions on first-attempt success", async () => {
+    const { octokit, createReview } = mockOctokit("resolve");
+
+    const delivery = await submitReview(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      "Summary text",
+      [suggestionComment]
+    );
+
+    expect(delivery).toEqual({
+      state: "inline_with_suggestions",
+      degraded: false,
+    });
+    expect(createReview).toHaveBeenCalledTimes(1);
+    expect(createReview.mock.calls[0][0].body).toBe("Summary text");
+    expect(createReview.mock.calls[0][0].comments[0].body).toContain(
+      "```suggestion"
+    );
+    expect(core.warning).not.toHaveBeenCalled();
+  });
+
+  it("reports inline delivery without suggestions when none were supplied", async () => {
+    const { octokit, createReview } = mockOctokit("resolve");
+
+    const delivery = await submitReview(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      "Summary text",
+      [plainComment]
+    );
+
+    expect(delivery).toEqual({
+      state: "inline_without_suggestions",
+      degraded: false,
+    });
+    expect(createReview).toHaveBeenCalledTimes(1);
+    expect(createReview.mock.calls[0][0].body).toBe("Summary text");
+  });
+
+  it("reports intentional summary-only delivery without warnings for zero findings", async () => {
+    const { octokit, createReview } = mockOctokit("resolve");
+
+    const delivery = await submitReview(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      "Summary text",
+      []
+    );
+
+    expect(delivery).toEqual({ state: "summary_only", degraded: false });
+    expect(createReview).toHaveBeenCalledTimes(1);
+    expect(createReview.mock.calls[0][0].comments).toEqual([]);
+    expect(createReview.mock.calls[0][0].body).toBe("Summary text");
+    expect(core.warning).not.toHaveBeenCalled();
+  });
+
+  it("retries summary-only without a loss note when a zero-finding submission is rejected", async () => {
+    const { octokit, createReview } = mockOctokit("reject422", "resolve");
+
+    const delivery = await submitReview(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      "Summary text",
+      []
+    );
+
+    expect(delivery).toEqual({ state: "summary_only", degraded: false });
+    expect(createReview).toHaveBeenCalledTimes(2);
+    expect(createReview.mock.calls[1][0].body).toBe("Summary text");
+    expect(createReview.mock.calls[1][0].comments).toEqual([]);
+    expect(core.warning).toHaveBeenCalledWith(
+      expect.not.stringContaining("inline review comments")
+    );
+  });
+
+  it("reports degraded suggestions and discloses the omission in the accepted body", async () => {
+    const { octokit, createReview } = mockOctokit("reject422", "resolve");
+
+    const delivery = await submitReview(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      "Summary text",
+      [suggestionComment]
+    );
+
+    expect(delivery).toEqual({
+      state: "inline_without_suggestions",
+      degraded: true,
+      loss: "suggestions_omitted",
+    });
+    expect(createReview.mock.calls[0][0].body).toBe("Summary text");
+    expect(createReview.mock.calls[1][0].body).toContain(
+      "GitHub rejected the suggested changes"
+    );
+    expect(createReview.mock.calls[1][0].comments[0].body).not.toContain(
+      "```suggestion"
+    );
+  });
+
+  it("reports degraded summary-only delivery with a no-inline note after two 422s", async () => {
+    const { octokit, createReview } = mockOctokit(
+      "reject422",
+      "reject422",
+      "resolve"
+    );
+
+    const delivery = await submitReview(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      "Summary text",
+      [suggestionComment]
+    );
+
+    expect(delivery).toEqual({
+      state: "summary_only",
+      degraded: true,
+      loss: "inline_findings_omitted",
+    });
+    expect(createReview).toHaveBeenCalledTimes(3);
+    expect(createReview.mock.calls[2][0].comments).toEqual([]);
+    expect(createReview.mock.calls[2][0].body).toContain(
+      "GitHub rejected inline comments"
+    );
+    expect(createReview.mock.calls[2][0].body).toContain("summary only");
+  });
+
+  it("falls back directly to summary-only when findings carry no suggestions", async () => {
+    const { octokit, createReview } = mockOctokit("reject422", "resolve");
+
+    const delivery = await submitReview(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      "Summary text",
+      [plainComment]
+    );
+
+    expect(delivery).toEqual({
+      state: "summary_only",
+      degraded: true,
+      loss: "inline_findings_omitted",
+    });
+    expect(createReview).toHaveBeenCalledTimes(2);
+    expect(createReview.mock.calls[0][0].comments).toHaveLength(1);
+    expect(createReview.mock.calls[1][0].comments).toEqual([]);
+    expect(createReview.mock.calls[1][0].body).toContain(
+      "GitHub rejected inline comments"
+    );
+  });
+
+  it("preserves APPROVE while reporting degraded suggestions", async () => {
+    const { octokit, createReview } = mockOctokit("reject422", "resolve");
+
+    const delivery = await submitReview(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      "Summary text",
+      [suggestionComment],
+      "APPROVE"
+    );
+
+    expect(delivery).toEqual({
+      state: "inline_without_suggestions",
+      degraded: true,
+      loss: "suggestions_omitted",
+    });
+    expect(createReview.mock.calls[1][0].event).toBe("APPROVE");
+  });
+
+  it("propagates non-422 errors without falling back", async () => {
+    const serverError = Object.assign(new Error("Internal Server Error"), {
+      status: 500,
+    });
+    const createReview = vi.fn().mockRejectedValueOnce(serverError);
+    const octokit = { rest: { pulls: { createReview } } } as any;
+
+    await expect(
+      submitReview(octokit, "owner", "repo", 1, "headSHA", "Summary text", [
+        suggestionComment,
+      ])
+    ).rejects.toThrow("Internal Server Error");
+    expect(createReview).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates the final fallback failure without reporting a delivery", async () => {
+    const { octokit, createReview } = mockOctokit(
+      "reject422",
+      "reject422",
+      "reject422"
+    );
+
+    await expect(
+      submitReview(octokit, "owner", "repo", 1, "headSHA", "Summary text", [
+        suggestionComment,
+      ])
+    ).rejects.toThrow("Unprocessable Entity");
+    expect(createReview).toHaveBeenCalledTimes(3);
   });
 });
