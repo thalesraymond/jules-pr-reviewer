@@ -141,6 +141,9 @@ describe("github.ts", () => {
       "sha"
     );
     expect(rules).toBeUndefined();
+    expect(core.warning).toHaveBeenCalledWith(
+      "Failed to load rules from base: Not found"
+    );
   });
 
   it("loadRulesFromBase returns undefined if content is missing", async () => {
