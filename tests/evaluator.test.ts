@@ -159,6 +159,60 @@ describe("evaluator.ts", () => {
       await expect(loadCases(tmpDir)).rejects.toThrow("severity");
     });
 
+    it("throws when missing a required string field", async () => {
+      await writeFixture("bad.json", {
+        prNumber: 1,
+      });
+      await expect(loadCases(tmpDir)).rejects.toThrow(
+        "missing required field: owner"
+      );
+    });
+
+    it("throws when expected finding is not an object", async () => {
+      await writeFixture("bad.json", {
+        prNumber: 1,
+        owner: "o",
+        repo: "r",
+        title: "t",
+        body: "b",
+        diff: "d",
+        expectedFindings: ["not-an-object"],
+      });
+      await expect(loadCases(tmpDir)).rejects.toThrow(
+        "contains a non-object expected finding"
+      );
+    });
+
+    it("throws when expected finding missing file", async () => {
+      await writeFixture("bad.json", {
+        prNumber: 1,
+        owner: "o",
+        repo: "r",
+        title: "t",
+        body: "b",
+        diff: "d",
+        expectedFindings: [{ line: 1, severity: "High" }],
+      });
+      await expect(loadCases(tmpDir)).rejects.toThrow(
+        "expected finding missing file"
+      );
+    });
+
+    it("throws when expected finding missing line", async () => {
+      await writeFixture("bad.json", {
+        prNumber: 1,
+        owner: "o",
+        repo: "r",
+        title: "t",
+        body: "b",
+        diff: "d",
+        expectedFindings: [{ file: "f.ts", severity: "High" }],
+      });
+      await expect(loadCases(tmpDir)).rejects.toThrow(
+        "expected finding missing line"
+      );
+    });
+
     it("throws when fixture is not an object", async () => {
       await writeFixture("bad.json", "not-an-object");
 
@@ -492,6 +546,51 @@ describe("evaluator.ts", () => {
       expect(report).toContain("b.ts:2");
       expect(report).toContain("c.ts:3");
       expect(report).toContain("fn");
+    });
+
+    it("handles expected findings without a message", () => {
+      const result = runEvaluationResultFactory({
+        caseResults: [
+          {
+            case: {
+              prNumber: 3,
+              owner: "o",
+              repo: "r",
+              title: "t",
+              body: "b",
+              diff: "d",
+              expectedFindings: [],
+            },
+            reviewResult: {
+              summary: "s",
+              verdict: "approve",
+              resolvedCommentIds: [],
+              newComments: [],
+            },
+            comparison: {
+              truePositives: 0,
+              falsePositives: 0,
+              falseNegatives: 1,
+              precision: 0,
+              recall: 0,
+              f1: 0,
+              matchedComments: [],
+              unmatchedComments: [],
+              unmatchedExpected: [
+                {
+                  file: "a.ts",
+                  line: 1,
+                  severity: "High" as const,
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+      const report = formatMarkdownReport(result);
+      expect(report).toContain("False negatives");
+      expect(report).not.toContain("must include");
     });
   });
 });
