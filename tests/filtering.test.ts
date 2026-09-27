@@ -1,9 +1,22 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   parseListInput,
   parseIgnoredPaths,
   filterDiff,
 } from "../src/filtering.js";
+
+vi.mock("minimatch", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    minimatch: vi.fn((path, pattern, options) => {
+      if (pattern === "INVALID_PATTERN_THAT_THROWS") {
+        throw new Error("Invalid pattern");
+      }
+      return actual.minimatch(path, pattern, options);
+    }),
+  };
+});
 
 describe("parseListInput", () => {
   it("returns empty array for empty or undefined input", () => {
@@ -119,5 +132,17 @@ index 123..456 100644
 
     expect(filterDiff(diffWithDist, ["dist/"])).toBe("");
     expect(filterDiff(diffWithDist, ["dist"])).toBe("");
+  });
+
+  it("ignores invalid patterns rather than failing the whole action", () => {
+    const diff = `diff --git a/src/index.ts b/src/index.ts
+index 123..456 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1 +1 @@
+-old
++new`;
+    const filtered = filterDiff(diff, ["INVALID_PATTERN_THAT_THROWS"]);
+    expect(filtered).toContain("src/index.ts");
   });
 });
