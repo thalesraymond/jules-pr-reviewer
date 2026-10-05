@@ -15,21 +15,34 @@ export function splitDiffSections(diff: string): DiffSection[] {
   if (!diff) {
     return [];
   }
-
-  const sections = diff.split(/(?=^diff --git )/m);
   const byPath = new Map<string, string>();
+  const regex =
+    /^diff --git (?:"a\/([^"\n]+)"|a\/(\S+)) (?:"b\/([^"\n]+)"|b\/(\S+))/gm;
+  let match;
+  let lastIndex = 0;
+  let currentPath: string | null = null;
 
-  for (const section of sections) {
-    if (!section.trim()) continue;
-    const headerMatch = section.match(
-      /^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/m
-    );
-    if (!headerMatch) continue;
-    const pathA = (headerMatch[1] ?? headerMatch[2])!;
-    const pathB = (headerMatch[3] ?? headerMatch[4])!;
-    const path = pathA !== "dev/null" ? pathA : pathB;
-    if (path === "dev/null") continue;
-    byPath.set(path, (byPath.get(path) ?? "") + section);
+  while ((match = regex.exec(diff)) !== null) {
+    if (match.index > 0 || lastIndex > 0) {
+      const sectionStr = diff.substring(lastIndex, match.index);
+      if (currentPath && sectionStr.trim()) {
+        byPath.set(currentPath, (byPath.get(currentPath) ?? "") + sectionStr);
+      }
+    }
+
+    const pathA = match[1] ?? match[2];
+    const pathB = match[3] ?? match[4];
+    currentPath = pathA !== "dev/null" ? pathA : pathB;
+    if (currentPath === "dev/null") currentPath = null;
+
+    lastIndex = match.index;
+  }
+
+  if (lastIndex < diff.length || diff.length === 0) {
+    const sectionStr = diff.substring(lastIndex);
+    if (currentPath && sectionStr.trim()) {
+      byPath.set(currentPath, (byPath.get(currentPath) ?? "") + sectionStr);
+    }
   }
 
   return [...byPath.entries()].map(([path, text]) => ({ path, text }));
