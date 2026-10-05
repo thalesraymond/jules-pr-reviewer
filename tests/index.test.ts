@@ -191,6 +191,15 @@ describe("index.ts", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   };
 
+  it("ignores errors when core.getInput throws while setting secrets", async () => {
+    mockGetInput.mockImplementation(() => {
+      throw new Error("Input missing");
+    });
+    // Do NOT unmock config.js so that mockConfigHelper.loadConfig is the one that gets called.
+    await loadIndex();
+    expect(mockConfigHelper.loadConfig).toHaveBeenCalled();
+  });
+
   it("explicitly masks secrets in the entrypoint before loading config", async () => {
     vi.doUnmock("../src/config.js");
     await loadIndex();
