@@ -11,6 +11,7 @@ import {
   formatMarkdownReport,
   type EvalCase,
   type ReviewResult,
+  validateExpectedFinding,
 } from "../src/evaluator.js";
 
 describe("evaluator.ts", () => {
@@ -217,6 +218,65 @@ describe("evaluator.ts", () => {
       await writeFixture("bad.json", "not-an-object");
 
       await expect(loadCases(tmpDir)).rejects.toThrow("not a JSON object");
+    });
+  });
+
+  describe("validateExpectedFinding", () => {
+    const fileName = "test.json";
+
+    it("returns a valid finding", () => {
+      const finding = {
+        file: "test.js",
+        line: 1,
+        severity: "High",
+        message: "Test message",
+      };
+      expect(validateExpectedFinding(finding, fileName)).toEqual({
+        file: "test.js",
+        line: 1,
+        severity: "High",
+        message: "Test message",
+      });
+    });
+
+    it("handles missing message", () => {
+      const finding = { file: "test.js", line: 1, severity: "High" };
+      expect(validateExpectedFinding(finding, fileName)).toEqual({
+        file: "test.js",
+        line: 1,
+        severity: "High",
+        message: undefined,
+      });
+    });
+
+    it("throws if finding is not an object", () => {
+      expect(() => validateExpectedFinding(null, fileName)).toThrow(
+        `Fixture ${fileName} contains a non-object expected finding`
+      );
+      expect(() => validateExpectedFinding("string", fileName)).toThrow(
+        `Fixture ${fileName} contains a non-object expected finding`
+      );
+    });
+
+    it("throws if file is missing", () => {
+      const finding = { line: 1, severity: "High" };
+      expect(() => validateExpectedFinding(finding, fileName)).toThrow(
+        `Fixture ${fileName} expected finding missing file`
+      );
+    });
+
+    it("throws if line is missing", () => {
+      const finding = { file: "test.js", severity: "High" };
+      expect(() => validateExpectedFinding(finding, fileName)).toThrow(
+        `Fixture ${fileName} expected finding missing line`
+      );
+    });
+
+    it("throws if severity is invalid", () => {
+      const finding = { file: "test.js", line: 1, severity: "Critical" };
+      expect(() => validateExpectedFinding(finding, fileName)).toThrow(
+        `Fixture ${fileName} expected finding has invalid severity`
+      );
     });
   });
 

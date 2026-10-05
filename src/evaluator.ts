@@ -130,7 +130,7 @@ function validateEvalCase(parsed: unknown, fileName: string): EvalCase {
   };
 }
 
-function validateExpectedFinding(
+export function validateExpectedFinding(
   finding: unknown,
   fileName: string
 ): ExpectedFinding {
