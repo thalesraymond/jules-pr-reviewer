@@ -1,7 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { runSession } from "../src/session.js";
-import { isAuthError, QuotaExceededError, AuthError } from "../src/errors.js";
+import {
+  isAuthError,
+  QuotaExceededError,
+  AuthError,
+  PreconditionError,
+} from "../src/errors.js";
 import { jules } from "@google/jules-sdk";
 import * as core from "@actions/core";
 
@@ -134,6 +139,21 @@ describe("session.ts", () => {
         sessionId: "",
         error: boom,
       });
+    });
+
+    it("wraps a precondition error from session creation in PreconditionError", async () => {
+      (jules as any).with = vi.fn().mockReturnValue({
+        session: vi
+          .fn()
+          .mockRejectedValue(new Error("FAILED_PRECONDITION 400")),
+      });
+
+      const result = await runSession(runOptions);
+
+      expect(result.kind).toBe("creation_failed");
+      if (result.kind === "creation_failed") {
+        expect(result.error).toBeInstanceOf(PreconditionError);
+      }
     });
 
     it("wraps a quota error from session creation in QuotaExceededError", async () => {

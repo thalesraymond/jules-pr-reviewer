@@ -44,6 +44,15 @@ export class AuthError extends Error {
   }
 }
 
+export class PreconditionError extends Error {
+  readonly kind = "config" as const;
+
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "PreconditionError";
+  }
+}
+
 const CONFIG_PATTERN =
   /(?:invalid fail_on|invalid diff_mode|invalid large_pr_strategy|missing input)/i;
 /** Jules SDK quota exhaustion (HTTP 429, quota/cap wording). */
@@ -67,6 +76,10 @@ export function isQuotaError(message: string): boolean {
 
 export function isAuthError(message: string): boolean {
   return AUTH_PATTERN.test(message);
+}
+
+export function isPreconditionError(message: string): boolean {
+  return /(?:FAILED_PRECONDITION|400|\bprecondition\b)/i.test(message);
 }
 
 function quotaSummary(message: string): string {
@@ -133,6 +146,11 @@ export function classifyFailure(error: unknown): ReviewFailure {
     kind = "quota";
   } else if (error instanceof AuthError || AUTH_PATTERN.test(message)) {
     kind = "auth";
+  } else if (
+    error instanceof PreconditionError ||
+    /(?:FAILED_PRECONDITION|400|\bprecondition\b)/i.test(message)
+  ) {
+    kind = "config";
   } else if (CONFIG_PATTERN.test(message)) {
     kind = "config";
   } else if (PARSE_PATTERN.test(message)) {

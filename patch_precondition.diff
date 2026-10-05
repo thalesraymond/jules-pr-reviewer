@@ -1,0 +1,64 @@
+--- src/errors.ts
++++ src/errors.ts
+@@ -29,6 +29,14 @@
+   }
+ }
+
++export class PreconditionError extends Error {
++  readonly kind = "config" as const;
++
++  constructor(message: string, options?: ErrorOptions) {
++    super(message, options);
++    this.name = "PreconditionError";
++  }
++}
++
+ const CONFIG_PATTERN =
+   /(?:invalid fail_on|invalid diff_mode|invalid large_pr_strategy|missing input)/i;
+ /** Jules SDK quota exhaustion (HTTP 429, quota/cap wording). */
+@@ -43,6 +51,10 @@
+   "The free tier allows 15 sessions per 24 hours — wait for the window to reset or reduce usage.";
+
+ export function isQuotaError(message: string): boolean {
+   return /(?:429|\bquota\b|\brate limit\b|\bsession cap\b)/i.test(message);
+ }
+
+ export function isAuthError(message: string): boolean {
+   return AUTH_PATTERN.test(message);
+ }
++
++export function isPreconditionError(message: string): boolean {
++  return /(?:FAILED_PRECONDITION|400|\bprecondition\b)/i.test(message);
++}
+
+ function quotaSummary(message: string): string {
+   if (
+--- src/session.ts
++++ src/session.ts
+@@ -7,6 +7,8 @@
+   isQuotaError,
+   AuthError,
+   QuotaExceededError,
++  PreconditionError,
++  isPreconditionError,
+   QUOTA_HINT,
+ } from "./errors.js";
+ import { logStructured } from "./logging.js";
+@@ -160,7 +162,7 @@
+ }
+
+ /** Wrap a Jules API error in an actionable typed error, or return null. */
+-function wrapJulesError(err: unknown): QuotaExceededError | AuthError | null {
++function wrapJulesError(err: unknown): QuotaExceededError | AuthError | PreconditionError | null {
+   const msg = getErrorMessage(err);
+   if (isQuotaError(msg)) {
+     return new QuotaExceededError(quotaMessage(msg), { cause: err });
+   }
+   if (isAuthError(msg)) {
+     return new AuthError(authMessage(msg), { cause: err });
+   }
++  if (isPreconditionError(msg)) {
++    return new PreconditionError(`Jules API precondition failed: ${msg}. Check if your repository exists or requires special access.`, { cause: err });
++  }
+   return null;
+ }

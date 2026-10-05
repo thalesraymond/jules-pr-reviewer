@@ -8,6 +8,8 @@ import {
   isQuotaError,
   AuthError,
   QuotaExceededError,
+  PreconditionError,
+  isPreconditionError,
   QUOTA_HINT,
 } from "./errors.js";
 import { logStructured } from "./logging.js";
@@ -160,13 +162,21 @@ async function pollForReview(
 }
 
 /** Wrap a Jules API error in an actionable typed error, or return null. */
-function wrapJulesError(err: unknown): QuotaExceededError | AuthError | null {
+function wrapJulesError(
+  err: unknown
+): QuotaExceededError | AuthError | PreconditionError | null {
   const msg = getErrorMessage(err);
   if (isQuotaError(msg)) {
     return new QuotaExceededError(quotaMessage(msg), { cause: err });
   }
   if (isAuthError(msg)) {
     return new AuthError(authMessage(msg), { cause: err });
+  }
+  if (isPreconditionError(msg)) {
+    return new PreconditionError(
+      `Jules API precondition failed (${msg}). Check if your repository exists or requires special access.`,
+      { cause: err }
+    );
   }
   return null;
 }
