@@ -89,7 +89,7 @@ function requireString(
   return raw[key] as string;
 }
 
-function validateEvalCase(parsed: unknown, fileName: string): EvalCase {
+export function validateEvalCase(parsed: unknown, fileName: string): EvalCase {
   if (!parsed || typeof parsed !== "object") {
     throw new Error(`Fixture ${fileName} is not a JSON object`);
   }
