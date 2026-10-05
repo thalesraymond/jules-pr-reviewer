@@ -71,7 +71,7 @@ export async function loadCases(casesDir: string): Promise<EvalCase[]> {
   const cases: EvalCase[] = [];
   for (const file of files) {
     const raw = await fs.readFile(path.join(casesDir, file), "utf-8");
-    const parsed: unknown = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as unknown;
     cases.push(validateEvalCase(parsed, file));
   }
 
@@ -261,17 +261,19 @@ export function scoreReview(
   return compareFindings(reviewResult.newComments, evalCase.expectedFindings);
 }
 
-export function defaultMockReview(evalCase: EvalCase): Promise<ReviewResult> {
+export async function defaultMockReview(
+  evalCase: EvalCase
+): Promise<ReviewResult> {
   if (!evalCase.mockResponse) {
-    return Promise.resolve({
+    return {
       summary: "No mock response configured.",
       verdict: "approve",
       resolvedCommentIds: [],
       newComments: [],
-    });
+    };
   }
 
-  return Promise.resolve(parseReviewResponse(evalCase.mockResponse));
+  return parseReviewResponse(evalCase.mockResponse);
 }
 
 export async function runEvaluation(
@@ -292,19 +294,13 @@ export async function runEvaluation(
   let totalFp = 0;
   let totalFn = 0;
 
-  const evaluatedCases = await Promise.all(
-    cases.map(async (evalCase) => {
-      const reviewResult = await provider(evalCase);
-      const comparison = scoreReview(evalCase, reviewResult);
-      return { case: evalCase, reviewResult, comparison };
-    })
-  );
-
-  for (const result of evaluatedCases) {
-    caseResults.push(result);
-    totalTp += result.comparison.truePositives;
-    totalFp += result.comparison.falsePositives;
-    totalFn += result.comparison.falseNegatives;
+  for (const evalCase of cases) {
+    const reviewResult = await provider(evalCase);
+    const comparison = scoreReview(evalCase, reviewResult);
+    caseResults.push({ case: evalCase, reviewResult, comparison });
+    totalTp += comparison.truePositives;
+    totalFp += comparison.falsePositives;
+    totalFn += comparison.falseNegatives;
   }
 
   const result: EvalRunResult = {
