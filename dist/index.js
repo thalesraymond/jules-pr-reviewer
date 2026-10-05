@@ -37393,11 +37393,12 @@ function classifyFailure(error) {
         kind = "unknown";
     }
     const spec = FAILURE_SPEC[kind];
-    const summary = error instanceof QuotaExceededError || error instanceof AuthError
+    const summary = error instanceof QuotaExceededError ||
+        error instanceof AuthError ||
+        error instanceof PreconditionError ||
+        /(?:FAILED_PRECONDITION|400|\bprecondition\b)/i.test(message)
         ? message
-        : error instanceof PreconditionError
-            ? message
-            : spec.summary(message);
+        : spec.summary(message);
     return { kind, stage: spec.stage, message, summary };
 }
 /** Summary for the "no review within timeout" exit, shared with index.ts. */
