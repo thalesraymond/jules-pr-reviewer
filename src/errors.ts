@@ -165,7 +165,9 @@ export function classifyFailure(error: unknown): ReviewFailure {
   const summary =
     error instanceof QuotaExceededError || error instanceof AuthError
       ? message
-      : spec.summary(message);
+      : error instanceof PreconditionError
+        ? message
+        : spec.summary(message);
 
   return { kind, stage: spec.stage, message, summary };
 }
