@@ -66,14 +66,14 @@ describe("github.ts", () => {
   });
 
   it("fetchDiff falls back to pulls.get when compareCommitsWithBasehead fails", async () => {
+    const compareCommitsWithBaseheadMock = vi
+      .fn()
+      .mockRejectedValue(new Error("fail"));
+    const pullsGetMock = vi.fn().mockResolvedValue({ data: "fallback diff" });
     const octokit = {
       rest: {
-        repos: {
-          compareCommitsWithBasehead: vi
-            .fn()
-            .mockRejectedValue(new Error("fail")),
-        },
-        pulls: { get: vi.fn().mockResolvedValue({ data: "fallback diff" }) },
+        repos: { compareCommitsWithBasehead: compareCommitsWithBaseheadMock },
+        pulls: { get: pullsGetMock },
       },
     } as any;
     const diff = await fetchDiff(
@@ -85,6 +85,11 @@ describe("github.ts", () => {
       "headSHA"
     );
     expect(diff).toBe("fallback diff");
+    expect(compareCommitsWithBaseheadMock).toHaveBeenCalledTimes(1);
+    expect(pullsGetMock).toHaveBeenCalledTimes(1);
+    expect(core.warning).toHaveBeenCalledWith(
+      "compareCommitsWithBasehead failed, falling back to pulls.get: fail"
+    );
   });
 
   it("fetchDiff throws if pulls.get fails to return a string diff", async () => {
