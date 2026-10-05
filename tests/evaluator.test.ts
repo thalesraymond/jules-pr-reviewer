@@ -11,6 +11,7 @@ import {
   formatMarkdownReport,
   type EvalCase,
   type ReviewResult,
+  validateEvalCase,
 } from "../src/evaluator.js";
 
 describe("evaluator.ts", () => {
@@ -50,6 +51,143 @@ describe("evaluator.ts", () => {
       ...overrides,
     };
   }
+
+  describe("validateEvalCase", () => {
+    it("validates a complete and valid case", () => {
+      const validCase = {
+        prNumber: 123,
+        owner: "test-owner",
+        repo: "test-repo",
+        title: "Test PR",
+        body: "Test Body",
+        diff: "Test Diff",
+        expectedFindings: [
+          { file: "src/index.ts", line: 10, severity: "High" },
+        ],
+        mockResponse: "mocked",
+        tags: ["test"],
+      };
+
+      const result = validateEvalCase(validCase, "test.json");
+      expect(result).toEqual(validCase);
+    });
+
+    it("throws when parsed is null or not an object", () => {
+      expect(() => validateEvalCase(null, "test.json")).toThrow(
+        "Fixture test.json is not a JSON object"
+      );
+      expect(() => validateEvalCase("string", "test.json")).toThrow(
+        "Fixture test.json is not a JSON object"
+      );
+      expect(() => validateEvalCase(123, "test.json")).toThrow(
+        "Fixture test.json is not a JSON object"
+      );
+    });
+
+    it("throws when prNumber is missing or not a number", () => {
+      const invalidCase = {
+        owner: "test",
+        repo: "test",
+        title: "test",
+        body: "test",
+        diff: "test",
+        expectedFindings: [],
+      };
+      expect(() => validateEvalCase(invalidCase, "test.json")).toThrow(
+        "Fixture test.json is missing required field: prNumber"
+      );
+
+      const invalidCase2 = { ...invalidCase, prNumber: "123" };
+      expect(() => validateEvalCase(invalidCase2, "test.json")).toThrow(
+        "Fixture test.json is missing required field: prNumber"
+      );
+    });
+
+    it("throws when required string fields are missing", () => {
+      const baseCase = { prNumber: 1, expectedFindings: [] };
+
+      expect(() =>
+        validateEvalCase(
+          { ...baseCase, repo: "r", title: "t", body: "b", diff: "d" },
+          "test.json"
+        )
+      ).toThrow("Fixture test.json is missing required field: owner");
+      expect(() =>
+        validateEvalCase(
+          { ...baseCase, owner: "o", title: "t", body: "b", diff: "d" },
+          "test.json"
+        )
+      ).toThrow("Fixture test.json is missing required field: repo");
+      expect(() =>
+        validateEvalCase(
+          { ...baseCase, owner: "o", repo: "r", body: "b", diff: "d" },
+          "test.json"
+        )
+      ).toThrow("Fixture test.json is missing required field: title");
+      expect(() =>
+        validateEvalCase(
+          { ...baseCase, owner: "o", repo: "r", title: "t", diff: "d" },
+          "test.json"
+        )
+      ).toThrow("Fixture test.json is missing required field: body");
+      expect(() =>
+        validateEvalCase(
+          { ...baseCase, owner: "o", repo: "r", title: "t", body: "b" },
+          "test.json"
+        )
+      ).toThrow("Fixture test.json is missing required field: diff");
+    });
+
+    it("throws when expectedFindings is not an array", () => {
+      const invalidCase = {
+        prNumber: 1,
+        owner: "o",
+        repo: "r",
+        title: "t",
+        body: "b",
+        diff: "d",
+        expectedFindings: "not-an-array",
+      };
+      expect(() => validateEvalCase(invalidCase, "test.json")).toThrow(
+        "Fixture test.json is missing required field: expectedFindings"
+      );
+    });
+
+    it("validates expectedFindings items correctly", () => {
+      const invalidCase = {
+        prNumber: 1,
+        owner: "o",
+        repo: "r",
+        title: "t",
+        body: "b",
+        diff: "d",
+        expectedFindings: [null],
+      };
+      expect(() => validateEvalCase(invalidCase, "test.json")).toThrow(
+        "Fixture test.json contains a non-object expected finding"
+      );
+    });
+
+    it("handles optional fields correctly", () => {
+      const validCase = {
+        prNumber: 1,
+        owner: "o",
+        repo: "r",
+        title: "t",
+        body: "b",
+        diff: "d",
+        expectedFindings: [],
+      };
+
+      const result = validateEvalCase(validCase, "test.json");
+      expect(result.mockResponse).toBeUndefined();
+      expect(result.tags).toBeUndefined();
+
+      const caseWithInvalidTags = { ...validCase, tags: ["valid", 123] };
+      const result2 = validateEvalCase(caseWithInvalidTags, "test.json");
+      expect(result2.tags).toEqual(["valid"]);
+    });
+  });
 
   describe("loadCases", () => {
     it("loads and validates valid fixtures", async () => {
