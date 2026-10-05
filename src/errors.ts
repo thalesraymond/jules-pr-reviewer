@@ -47,8 +47,7 @@ export class AuthError extends Error {
 const CONFIG_PATTERN =
   /(?:invalid fail_on|invalid diff_mode|invalid large_pr_strategy|missing input)/i;
 /** Jules SDK quota exhaustion (HTTP 429, quota/cap wording). */
-const JULES_QUOTA_PATTERN =
-  /(?:429|\bquota\b|\bsession cap\b|400\b.*FAILED_PRECONDITION)/is;
+const JULES_QUOTA_PATTERN = /(?:429|\bquota\b|\bsession cap\b|400[\s\S]*FAILED_PRECONDITION)/i;
 /** GitHub API rate-limit responses (403 with rate-limit wording). */
 const GITHUB_RATE_LIMIT_PATTERN =
   /(?:rate limit|secondary rate limit|abuse detection)/i;
@@ -63,7 +62,7 @@ export const QUOTA_HINT =
   "The free tier allows 15 sessions per 24 hours — wait for the window to reset or reduce usage.";
 
 export function isQuotaError(message: string): boolean {
-  return /(?:429|\bquota\b|\brate limit\b|\bsession cap\b|400\b.*FAILED_PRECONDITION)/is.test(
+  return /(?:429|\bquota\b|\brate limit\b|\bsession cap\b|400[\s\S]*FAILED_PRECONDITION)/i.test(
     message
   );
 }
