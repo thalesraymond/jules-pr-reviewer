@@ -5,9 +5,9 @@
   "description": "GitHub Action that uses Google Jules to review pull requests and post review comments.",
   "scripts": {
     "build": "ncc build src/index.ts -o dist --source-map --license licenses.txt",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.test.json",
+    "test": "pnpm typecheck && vitest run",
+    "coverage": "pnpm typecheck && vitest run --coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

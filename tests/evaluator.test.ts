@@ -10,9 +10,9 @@ import {
   runEvaluation,
   formatMarkdownReport,
   type EvalCase,
-  type ReviewResult,
   validateEvalCase,
 } from "../src/evaluator.js";
+import type { ReviewResult } from "../src/types.js";
 
 describe("evaluator.ts", () => {
   let tmpDir: string;

@@ -1,5 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  assert,
+  vi,
+  beforeEach,
+  afterEach,
+} from "vitest";
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import { QuotaExceededError, AuthError } from "../src/errors.js";
@@ -1685,7 +1693,7 @@ index 789..abc 100644
     const annotationCall = mockGithubHelper.finalizeCheckRun.mock.calls.find(
       (c: any) => c[5]?.annotations
     );
-    expect(annotationCall).toBeDefined();
+    assert.isDefined(annotationCall);
     expect(annotationCall[5].annotations.map((a: any) => a.path)).toEqual([
       "a.ts",
       "b.ts",

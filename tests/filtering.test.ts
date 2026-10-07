@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import type { MinimatchOptions } from "minimatch";
 import {
   parseListInput,
   parseIgnoredPaths,
@@ -6,15 +7,17 @@ import {
 } from "../src/filtering.js";
 
 vi.mock("minimatch", async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = await importOriginal<typeof import("minimatch")>();
   return {
     ...actual,
-    minimatch: vi.fn((path, pattern, options) => {
-      if (pattern === "INVALID_PATTERN_THAT_THROWS") {
-        throw new Error("Invalid pattern");
+    minimatch: vi.fn(
+      (path: string, pattern: string, options?: MinimatchOptions) => {
+        if (pattern === "INVALID_PATTERN_THAT_THROWS") {
+          throw new Error("Invalid pattern");
+        }
+        return actual.minimatch(path, pattern, options);
       }
-      return actual.minimatch(path, pattern, options);
-    }),
+    ),
   };
 });
 

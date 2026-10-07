@@ -735,7 +735,6 @@ describe("buildReviewPrompt (agentic mode)", () => {
           body: "Fix this",
         },
       ],
-      fileCount: 5,
     });
 
     expect(prompt).toContain("# Trusted: Open Review Comments");
