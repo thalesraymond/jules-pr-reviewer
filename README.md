@@ -516,6 +516,21 @@ To build the action into the `dist` folder:
 pnpm run build
 ```
 
+To check types or run tests:
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm coverage
+```
+
+Both `test` and `coverage` run TypeScript checking before Vitest and stop if
+checking fails. `typecheck` checks production sources with `tsconfig.json`, then
+sources, tests, and the Vitest configuration with `tsconfig.test.json`. Vitest
+transpilation alone does not check types. See
+[the test type-error map](docs/test-type-errors.md) for the baseline errors exposed
+by this gate and their corrections.
+
 ## Quality evaluation
 
 The repository includes a small, deterministic evaluator harness for regression-testing prompt and pipeline changes. Curated PR fixtures live in [`eval/cases/`](./eval/cases/) and declare a synthetic diff plus the findings a human reviewer would expect.

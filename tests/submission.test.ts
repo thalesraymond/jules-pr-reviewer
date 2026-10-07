@@ -344,8 +344,9 @@ describe("submission.ts", () => {
   });
 
   it("Tier 1 fail -> Tier 2 strips suggestions and emits warning", async () => {
-    const error422 = new Error("Unprocessable Entity");
-    error422.status = 422;
+    const error422 = Object.assign(new Error("Unprocessable Entity"), {
+      status: 422,
+    });
     const createReview = vi
       .fn()
       .mockRejectedValueOnce(error422)
@@ -376,8 +377,9 @@ describe("submission.ts", () => {
   });
 
   it("Tier 1 fail -> Tier 2 fail -> Tier 3 summary-only fallback", async () => {
-    const error422 = new Error("Unprocessable Entity");
-    error422.status = 422;
+    const error422 = Object.assign(new Error("Unprocessable Entity"), {
+      status: 422,
+    });
     const createReview = vi
       .fn()
       .mockRejectedValueOnce(error422)
@@ -404,8 +406,9 @@ describe("submission.ts", () => {
   });
 
   it("summary-only fallback preserves APPROVE event", async () => {
-    const error422 = new Error("Unprocessable Entity");
-    error422.status = 422;
+    const error422 = Object.assign(new Error("Unprocessable Entity"), {
+      status: 422,
+    });
     const createReview = vi
       .fn()
       .mockRejectedValueOnce(error422)
