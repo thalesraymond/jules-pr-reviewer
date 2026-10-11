@@ -37396,6 +37396,22 @@ function sleep(ms) {
     }
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
+async function mapConcurrent(items, concurrency, mapper) {
+    if (concurrency < 1) {
+        return Promise.reject(new Error("concurrency must be at least 1"));
+    }
+    const results = new Array(items.length);
+    let currentIndex = 0;
+    const worker = async () => {
+        while (currentIndex < items.length) {
+            const index = currentIndex++;
+            results[index] = await mapper(items[index], index);
+        }
+    };
+    const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
+    await Promise.all(workers);
+    return results;
+}
 
 ;// CONCATENATED MODULE: ./src/resilience.ts
 

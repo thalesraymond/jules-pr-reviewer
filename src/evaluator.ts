@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { ReviewComment, ReviewResult, Severity } from "./types.js";
 import { parseReviewResponse } from "./validation.js";
+import { mapConcurrent } from "./utils.js";
 
 export type EvalMode = "mock" | "live";
 
@@ -292,13 +293,11 @@ export async function runEvaluation(
   let totalFp = 0;
   let totalFn = 0;
 
-  const evaluatedCases = await Promise.all(
-    cases.map(async (evalCase) => {
-      const reviewResult = await provider(evalCase);
-      const comparison = scoreReview(evalCase, reviewResult);
-      return { case: evalCase, reviewResult, comparison };
-    })
-  );
+  const evaluatedCases = await mapConcurrent(cases, 5, async (evalCase) => {
+    const reviewResult = await provider(evalCase);
+    const comparison = scoreReview(evalCase, reviewResult);
+    return { case: evalCase, reviewResult, comparison };
+  });
 
   for (const result of evaluatedCases) {
     caseResults.push(result);
