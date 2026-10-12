@@ -1,4 +1,5 @@
 import { minimatch } from "minimatch";
+import { splitDiff } from "./utils.js";
 
 export function parseListInput(input?: string): string[] {
   if (!input || !input.trim()) {
@@ -39,7 +40,7 @@ export function extractChangedFilePaths(diff: string): string[] {
     return [];
   }
 
-  const sections = diff.split(/(?=^diff --git )/m);
+  const sections = splitDiff(diff);
   const paths: string[] = [];
 
   for (const section of sections) {
@@ -63,7 +64,7 @@ export function filterDiff(diff: string, ignoredPatterns: string[]): string {
     return diff;
   }
 
-  const sections = diff.split(/(?=^diff --git )/m);
+  const sections = splitDiff(diff);
   const keptSections: string[] = [];
 
   for (const section of sections) {

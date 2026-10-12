@@ -1,4 +1,5 @@
 import { LargePrStrategy, ReviewCoverage } from "./types.js";
+import { splitDiff } from "./utils.js";
 
 export interface DiffSection {
   path: string;
@@ -16,7 +17,7 @@ export function splitDiffSections(diff: string): DiffSection[] {
     return [];
   }
 
-  const sections = diff.split(/(?=^diff --git )/m);
+  const sections = splitDiff(diff);
   const byPath = new Map<string, string>();
 
   for (const section of sections) {

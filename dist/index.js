@@ -37396,6 +37396,29 @@ function sleep(ms) {
     }
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
+/**
+ * Splits a git diff into individual file sections.
+ * O(n) performance: Avoids expensive V8 positive-lookahead regex split memory allocations.
+ */
+function splitDiff(diff) {
+    if (!diff)
+        return [];
+    const regex = /^diff --git /gm;
+    const sections = [];
+    let match = regex.exec(diff);
+    if (!match)
+        return [diff];
+    if (match.index > 0) {
+        sections.push(diff.slice(0, match.index));
+    }
+    let lastIndex = match.index;
+    while ((match = regex.exec(diff)) !== null) {
+        sections.push(diff.slice(lastIndex, match.index));
+        lastIndex = match.index;
+    }
+    sections.push(diff.slice(lastIndex));
+    return sections;
+}
 
 ;// CONCATENATED MODULE: ./src/resilience.ts
 
@@ -45040,6 +45063,7 @@ minimatch.unescape = unescape_unescape;
 //# sourceMappingURL=index.js.map
 ;// CONCATENATED MODULE: ./src/filtering.ts
 
+
 function parseListInput(input) {
     if (!input || !input.trim()) {
         return [];
@@ -45073,7 +45097,7 @@ function extractChangedFilePaths(diff) {
     if (!diff) {
         return [];
     }
-    const sections = diff.split(/(?=^diff --git )/m);
+    const sections = splitDiff(diff);
     const paths = [];
     for (const section of sections) {
         const headerMatch = section.match(/^diff --git (?:"a\/([^"]+)"|a\/(\S+)) (?:"b\/([^"]+)"|b\/(\S+))/m);
@@ -45092,7 +45116,7 @@ function filterDiff(diff, ignoredPatterns) {
     if (!diff || !ignoredPatterns || ignoredPatterns.length === 0) {
         return diff;
     }
-    const sections = diff.split(/(?=^diff --git )/m);
+    const sections = splitDiff(diff);
     const keptSections = [];
     for (const section of sections) {
         if (!section.trim())
@@ -45574,11 +45598,12 @@ ${list}`;
 }
 
 ;// CONCATENATED MODULE: ./src/coverage.ts
+
 function splitDiffSections(diff) {
     if (!diff) {
         return [];
     }
-    const sections = diff.split(/(?=^diff --git )/m);
+    const sections = splitDiff(diff);
     const byPath = new Map();
     for (const section of sections) {
         if (!section.trim())
