@@ -27,7 +27,11 @@ Add single-retry resilience to the Jules review pipeline. When the first session
 
 ### Retry is internal to the review pipeline
 
-The retry logic lives entirely inside the review-runner module (`jules.ts`). No new inputs are added to `action.yml`, `index.ts` requires no orchestration changes, and no new fields are added to the shared type definitions. The retry count is fixed at one retry (two total attempts); it is not configurable.
+The retry logic is internal to the review execution module (`executeReview.ts`),
+alongside mode selection, fallback, and execution telemetry. The session module
+owns each individual session's lifecycle. No new action inputs or shared type
+fields are added. The retry count is fixed at one retry (two total prompt
+attempts); it is not configurable. See ADR-021.
 
 ### Timeout is the only retry trigger
 
@@ -35,7 +39,10 @@ A timeout is defined as the polling function returning an empty string (`""`) af
 
 ### The retry uses a fresh session with the full budget
 
-On timeout the action creates a fresh session with the same prompt and source and polls with the full `timeoutMinutes` budget (not halved). If both attempts time out, the raised error message includes both session IDs and states that 2 attempts were made.
+On timeout the action creates a fresh session with the same prompt and source and
+polls with the full `timeoutMinutes` budget (not halved). If both attempts time out,
+the execution returns a null review and the second session ID, logs both session
+IDs, and lets the action finalize the check run as a timeout failure.
 
 ### Structured logging on retry
 
@@ -45,8 +52,8 @@ A retry emits a `core.info` line plus a structured log event carrying `{ failedS
 
 - **What makes a good test:** Test the retry decision — one retry on timeout, no retry on success/auth/parse/readiness failures, the full-budget second attempt, the both-timeout error message containing both session IDs — without exercising the real Jules API.
 - **Modules under test:**
-  - `jules.ts` — `runJulesReview` retry behavior against a mocked `runSession` from `session.ts`.
-- **Prior art:** `tests/jules.test.ts` already mocks `runSession` and asserts review outcomes and error messages; the retry cases extend the same mock boundary (`vi.fn()` on `runSession`) and add assertions for the retry-emitted log events.
+  - `executeReview.ts` — retry behavior through `executeReview`, with session outcomes scripted at the session seam.
+- **Joined coverage:** `tests/executeReview.integration.test.ts` keeps prompt construction, execution policy, parsing, and cleanup real while mocking only the Jules SDK. It covers agentic fallback followed by prompt retry and verifies every created session is archived and one completion event describes the whole execution.
 
 ## Out of Scope
 

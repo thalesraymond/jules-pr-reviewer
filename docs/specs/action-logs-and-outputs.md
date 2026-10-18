@@ -34,6 +34,22 @@ Add a small, dependency-free structured-logging layer and a stable set of GitHub
 
 Structured entries are JSON serialized, prefixed `::structured::`, and emitted through `core.info`. The stable prefix lets consumers parse events from the run log with simple text matching while keeping the entry visually identifiable, without interfering with `::group::`, `::error::`, or other Actions commands.
 
+### Review execution owns completion telemetry
+
+The review execution module owns mode selection, prompt-session retry, agentic
+fallback, and the `jules_api_called` completion event. Each invocation emits exactly
+one event with the existing `{ success, duration }` payload. Duration is elapsed
+milliseconds for the whole execution, including prompt preparation, retries,
+fallback, and session cleanup, but excluding GitHub preparation and submission.
+`success` is true only when a valid parsed review is returned; exhausted timeouts,
+thrown failures, and unparseable-response fallback reviews report false. The event
+does not describe delivery or whether the verdict approves the PR.
+
+Single-session creation, readiness, polling, parsing, and best-effort archiving
+remain in the session module. Retry and fallback diagnostics remain separate.
+Existing retry/fallback behavior is preserved, including prompt fallback after an
+agentic session-creation auth failure; readiness/polling auth failures still throw.
+
 ### Logging and output helpers in a dedicated module
 
 Log setup, structured logging, and output helpers live in their own module, isolating the capability (Single Responsibility Principle), centralizing secret scrubbing, and creating a clear test surface. Instrumentation points in the orchestrator stay concise.
@@ -56,7 +72,7 @@ Before emission, payloads are recursively scrubbed: the GitHub token and Jules A
 - **Modules under test:**
   - `logging.ts` — structured event emission, `::structured::` prefix, recursive secret scrubbing (token, API key, untrusted fields redacted).
   - `index.ts` — outputs set in success and skip (draft/fork/bypass) paths.
-  - `action.yml` — output declarations.
+- `action.yml` — output declarations.
 - **Prior art:** `tests/logging.test.ts` already asserts structured events and scrubbing against a mocked `@actions/core`; `tests/index.test.ts` asserts orchestrator behaviour including skip branches via mocked helpers.
 
 ## Out of Scope

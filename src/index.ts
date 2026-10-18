@@ -134,38 +134,30 @@ async function run(): Promise<void> {
       }
     );
 
-    const { reviewResult, sessionId, reviewCoverage, julesApiDuration } =
-      await executeReview(
-        config.apiKey,
-        prNumber,
-        {
-          title: pr.title,
-          body: pr.body,
-          head: pr.head,
-          base: pr.base,
-        },
-        preparedDiff,
-        `${owner}/${repo}`,
-        baseSha,
-        headSha,
-        {
-          diffMode: config.diffMode,
-          ignoredPaths: config.ignoredPaths,
-          extraInstructions: config.extraInstructions,
-          dedupe: config.dedupe,
-          strictness: config.strictness,
-          largePrThreshold: config.largePrThreshold,
-          largePrStrategy: config.largePrStrategy,
-          timeoutMinutes: config.timeoutMinutes,
-        }
-      );
-
-    if (julesApiDuration !== undefined) {
-      logStructured("jules_api_called", {
-        success: true,
-        duration: julesApiDuration,
-      });
-    }
+    const { reviewResult, sessionId, reviewCoverage } = await executeReview(
+      config.apiKey,
+      prNumber,
+      {
+        title: pr.title,
+        body: pr.body,
+        head: pr.head,
+        base: pr.base,
+      },
+      preparedDiff,
+      `${owner}/${repo}`,
+      baseSha,
+      headSha,
+      {
+        diffMode: config.diffMode,
+        ignoredPaths: config.ignoredPaths,
+        extraInstructions: config.extraInstructions,
+        dedupe: config.dedupe,
+        strictness: config.strictness,
+        largePrThreshold: config.largePrThreshold,
+        largePrStrategy: config.largePrStrategy,
+        timeoutMinutes: config.timeoutMinutes,
+      }
+    );
 
     if (!reviewResult) {
       await finalizeCheckRun(octokit, owner, repo, checkRunId!, "failure", {

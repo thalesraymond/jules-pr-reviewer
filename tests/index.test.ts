@@ -12,6 +12,7 @@ import * as core from "@actions/core";
 import * as github from "@actions/github";
 import { QuotaExceededError, AuthError } from "../src/errors.js";
 import { buildAnnotations } from "../src/submission.js";
+import type { RunSessionOptions } from "../src/session.js";
 
 // Mock dependencies
 vi.mock("@actions/core");
@@ -54,8 +55,8 @@ describe("index.ts", () => {
   };
 
   const mockJulesHelper = {
-    runJulesReview: vi.fn(),
-    runAgenticReview: vi.fn(),
+    promptSession: vi.fn(),
+    agenticSession: vi.fn(),
     wrapPermissionError: vi.fn(),
   };
 
@@ -156,7 +157,15 @@ describe("index.ts", () => {
     // mock helpers
     vi.doMock("../src/github.js", () => mockGithubHelper);
     vi.doMock("../src/submission.js", () => mockSubmissionHelper);
-    vi.doMock("../src/jules.js", () => mockJulesHelper);
+    vi.doMock("../src/jules.js", () => ({
+      wrapPermissionError: mockJulesHelper.wrapPermissionError,
+    }));
+    vi.doMock("../src/session.js", () => ({
+      runSession: (options: RunSessionOptions) =>
+        options.title === "Code Review (Agentic)"
+          ? mockJulesHelper.agenticSession(options)
+          : mockJulesHelper.promptSession(options),
+    }));
     vi.doMock("../src/logging.js", () => mockLoggingHelper);
     vi.doMock("../src/config.js", () => mockConfigHelper);
     vi.doMock("../src/pathRules.js", () => mockPathRulesHelper);
@@ -177,7 +186,8 @@ describe("index.ts", () => {
       state: "summary_only",
       degraded: false,
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "approve",
         summary: "Good job",
@@ -249,7 +259,7 @@ describe("index.ts", () => {
     await loadIndex();
     expect(mockSetSecret).toHaveBeenCalledWith("dummy_key");
     expect(mockSetSecret).toHaveBeenCalledWith("dummy_token");
-    expect(mockJulesHelper.runJulesReview).toHaveBeenCalled();
+    expect(mockJulesHelper.promptSession).toHaveBeenCalled();
   });
 
   it("fails if eventName is pull_request_target", async () => {
@@ -285,7 +295,7 @@ describe("index.ts", () => {
     });
     await loadIndex();
     expect(mockSetFailed).toHaveBeenCalledWith('Invalid fail_on: "invalid"');
-    expect(mockJulesHelper.runJulesReview).not.toHaveBeenCalled();
+    expect(mockJulesHelper.promptSession).not.toHaveBeenCalled();
     expect(mockGithubHelper.fetchDiff).not.toHaveBeenCalled();
     expect(mockGithubHelper.createCheckRun).not.toHaveBeenCalled();
     expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
@@ -363,7 +373,7 @@ describe("index.ts", () => {
     (github as any).context.payload.pull_request.title = "Add login flow";
     await loadIndex();
     expect(mockGithubHelper.createCheckRun).toHaveBeenCalled();
-    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
+    expect(mockJulesHelper.promptSession).toHaveBeenCalledTimes(1);
   });
 
   it("skips when the PR author is in ignore_authors", async () => {
@@ -391,7 +401,7 @@ describe("index.ts", () => {
     };
     await loadIndex();
     expect(mockGithubHelper.createCheckRun).toHaveBeenCalled();
-    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
+    expect(mockJulesHelper.promptSession).toHaveBeenCalledTimes(1);
   });
 
   it("skips when a deny review_label is present", async () => {
@@ -430,7 +440,7 @@ describe("index.ts", () => {
     ];
     await loadIndex();
     expect(mockGithubHelper.createCheckRun).toHaveBeenCalled();
-    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
+    expect(mockJulesHelper.promptSession).toHaveBeenCalledTimes(1);
   });
 
   it("reviews when only deny review_labels are configured and none are present", async () => {
@@ -441,7 +451,7 @@ describe("index.ts", () => {
     (github as any).context.payload.pull_request.labels = [];
     await loadIndex();
     expect(mockGithubHelper.createCheckRun).toHaveBeenCalled();
-    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
+    expect(mockJulesHelper.promptSession).toHaveBeenCalledTimes(1);
   });
 
   it("warns and continues when review_labels cannot be evaluated (labels missing from payload)", async () => {
@@ -455,7 +465,7 @@ describe("index.ts", () => {
       expect.stringContaining("review_labels cannot be evaluated")
     );
     expect(mockGithubHelper.createCheckRun).toHaveBeenCalled();
-    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
+    expect(mockJulesHelper.promptSession).toHaveBeenCalledTimes(1);
     expect(mockLoggingHelper.setReviewOutputs).not.toHaveBeenCalledWith({
       verdict: "skipped",
       issues_count: 0,
@@ -520,7 +530,7 @@ describe("index.ts", () => {
       "baseSHA",
       ["src/auth/login.ts"]
     );
-    const prompt = mockJulesHelper.runJulesReview.mock.calls[0][1];
+    const prompt = mockJulesHelper.promptSession.mock.calls[0][0].prompt;
     expect(prompt).toContain("# UNTRUSTED: Project-specific rules");
     expect(prompt).toContain(
       "## Per-path rules — files matching `src/**`\nStrict auth rules"
@@ -548,18 +558,18 @@ describe("index.ts", () => {
         content: "Strict auth rules",
       },
     ]);
-    mockJulesHelper.runAgenticReview.mockResolvedValue({
+    mockJulesHelper.agenticSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "approve",
         summary: "ok",
         newComments: [],
       },
       sessionId: "agentic-session",
-      fallback: false,
     });
     await loadIndex();
 
-    const prompt = mockJulesHelper.runAgenticReview.mock.calls[0][1];
+    const prompt = mockJulesHelper.agenticSession.mock.calls[0][0].prompt;
     expect(prompt).toContain(
       "## Per-path rules — files matching `src/**`\nStrict auth rules"
     );
@@ -570,38 +580,39 @@ describe("index.ts", () => {
     mockGithubHelper.fetchDiff.mockResolvedValue(hugeDiff);
     await loadIndex();
     // Verify prompt contains truncation note
-    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringContaining(
-        "NOTE: The diff was truncated: original 81000 chars, kept first 80000."
-      ),
-      expect.anything(),
-      expect.anything()
+    expect(mockJulesHelper.promptSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining(
+          "NOTE: The diff was truncated: original 81000 chars, kept first 80000."
+        ),
+      })
     );
   });
 
   it("instructs coverage even on a large headerless diff", async () => {
     mockGithubHelper.fetchDiff.mockResolvedValue("x".repeat(81_000));
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: { verdict: "approve", summary: "Good", newComments: [] },
       sessionId: "s1",
     });
     await loadIndex();
 
-    const prompt = mockJulesHelper.runJulesReview.mock.calls[0][1];
+    const prompt = mockJulesHelper.promptSession.mock.calls[0][0].prompt;
     expect(prompt).toContain("# Large PR — coverage");
     expect(prompt).toContain("per-file coverage could not be computed");
   });
 
   it("selects a prioritized subset of a large diff and reports coverage in the posted body", async () => {
     mockGithubHelper.fetchDiff.mockResolvedValue(BIG + MID + SMALL);
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: { verdict: "approve", summary: "Good", newComments: [] },
       sessionId: "s1",
     });
     await loadIndex();
 
-    const prompt = mockJulesHelper.runJulesReview.mock.calls[0][1];
+    const prompt = mockJulesHelper.promptSession.mock.calls[0][0].prompt;
     expect(prompt).toContain("# Large PR — coverage");
     expect(prompt).toContain("a/src/big.ts");
     expect(prompt).toContain("a/src/small.ts");
@@ -616,7 +627,8 @@ describe("index.ts", () => {
   });
 
   it("does not append a coverage note for a small PR", async () => {
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: { verdict: "approve", summary: "Good", newComments: [] },
       sessionId: "s1",
     });
@@ -633,7 +645,8 @@ describe("index.ts", () => {
       config: { ...defaultConfig, diffMode: "agentic", largePrThreshold: 10 },
     });
     mockGithubHelper.fetchDiff.mockResolvedValue(BIG + MID);
-    mockJulesHelper.runAgenticReview.mockResolvedValue({
+    mockJulesHelper.agenticSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "approve",
         summary: "ok",
@@ -641,11 +654,10 @@ describe("index.ts", () => {
         changedFiles: ["src/big.ts", "src/mid.ts"],
       },
       sessionId: "agentic-session",
-      fallback: false,
     });
     await loadIndex();
 
-    const prompt = mockJulesHelper.runAgenticReview.mock.calls[0][1];
+    const prompt = mockJulesHelper.agenticSession.mock.calls[0][0].prompt;
     expect(prompt).toContain("# Large PR — coverage");
     expect(prompt).toContain(
       'Your summary MUST state coverage as "Reviewed X of 2 changed files"'
@@ -665,7 +677,8 @@ index 123..456 100644
 @@ -1 +1 @@
 -old
 +new`);
-    mockJulesHelper.runAgenticReview.mockResolvedValue({
+    mockJulesHelper.agenticSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "approve",
         summary: "ok",
@@ -673,17 +686,17 @@ index 123..456 100644
         changedFiles: ["src/index.ts"],
       },
       sessionId: "s1",
-      fallback: false,
     });
     await loadIndex();
 
-    const prompt = mockJulesHelper.runAgenticReview.mock.calls[0][1];
+    const prompt = mockJulesHelper.agenticSession.mock.calls[0][0].prompt;
     expect(prompt).not.toContain("# Large PR — coverage");
   });
 
   it("emits coverage in the review_completed log on a large PR", async () => {
     mockGithubHelper.fetchDiff.mockResolvedValue(BIG + MID + SMALL);
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: { verdict: "approve", summary: "Good", newComments: [] },
       sessionId: "s1",
     });
@@ -725,17 +738,15 @@ index 789..abc 100644
     mockGithubHelper.fetchDiff.mockResolvedValue(diffWithDist);
     await loadIndex();
 
-    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringContaining("src/index.ts"),
-      expect.anything(),
-      expect.anything()
+    expect(mockJulesHelper.promptSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining("src/index.ts"),
+      })
     );
-    expect(mockJulesHelper.runJulesReview).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringContaining("dist/index.js"),
-      expect.anything(),
-      expect.anything()
+    expect(mockJulesHelper.promptSession).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining("dist/index.js"),
+      })
     );
   });
 
@@ -748,14 +759,14 @@ index 789..abc 100644
     expect(mockSetFailed).toHaveBeenCalledWith(
       expect.stringContaining('Invalid diff_mode: "bogus"')
     );
-    expect(mockJulesHelper.runJulesReview).not.toHaveBeenCalled();
-    expect(mockJulesHelper.runAgenticReview).not.toHaveBeenCalled();
+    expect(mockJulesHelper.promptSession).not.toHaveBeenCalled();
+    expect(mockJulesHelper.agenticSession).not.toHaveBeenCalled();
   });
 
   it("runs the prompt pipeline when diff_mode is prompt", async () => {
     await loadIndex();
-    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
-    expect(mockJulesHelper.runAgenticReview).not.toHaveBeenCalled();
+    expect(mockJulesHelper.promptSession).toHaveBeenCalledTimes(1);
+    expect(mockJulesHelper.agenticSession).not.toHaveBeenCalled();
   });
 
   it("runs the agentic pipeline when diff_mode is agentic", async () => {
@@ -778,7 +789,8 @@ index 789..abc 100644
 @@ -1 +1 @@
 -old
 +new`);
-    mockJulesHelper.runAgenticReview.mockResolvedValue({
+    mockJulesHelper.agenticSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "approve",
         summary: "ok",
@@ -786,20 +798,18 @@ index 789..abc 100644
         changedFiles: ["src/index.ts", "src/utils.ts"],
       },
       sessionId: "agentic-session",
-      fallback: false,
     });
 
     await loadIndex();
 
-    expect(mockJulesHelper.runAgenticReview).toHaveBeenCalledTimes(1);
-    expect(mockJulesHelper.runJulesReview).not.toHaveBeenCalled();
-    const agenticCall = mockJulesHelper.runAgenticReview.mock.calls[0];
-    expect(agenticCall[1]).toContain("git diff baseSHA...headSHA");
-    expect(agenticCall[2]).toEqual({
+    expect(mockJulesHelper.agenticSession).toHaveBeenCalledTimes(1);
+    expect(mockJulesHelper.promptSession).not.toHaveBeenCalled();
+    const agenticCall = mockJulesHelper.agenticSession.mock.calls[0];
+    expect(agenticCall[0].prompt).toContain("git diff baseSHA...headSHA");
+    expect(agenticCall[0].source).toEqual({
       github: "owner/repo",
       baseBranch: "feature",
     });
-    expect(agenticCall[4]).toEqual(["src/index.ts", "src/utils.ts"]);
     expect(mockSubmissionHelper.submitReview).toHaveBeenCalledTimes(1);
   });
 
@@ -810,14 +820,14 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, diffMode: "agentic" },
     });
-    mockJulesHelper.runAgenticReview.mockResolvedValue({
+    mockJulesHelper.agenticSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "approve",
         summary: "ok",
         newComments: [],
       },
       sessionId: "s1",
-      fallback: false,
     });
     await loadIndex();
     expect(mockGithubHelper.fetchDiff).toHaveBeenCalledWith(
@@ -835,13 +845,12 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, diffMode: "agentic" },
     });
-    mockJulesHelper.runAgenticReview.mockResolvedValue({
-      reviewResult: null,
+    mockJulesHelper.agenticSession.mockResolvedValue({
+      kind: "timeout",
       sessionId: "abandoned-session",
-      fallback: true,
-      fallbackReason: "timeout",
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "comment",
         summary: "prompt fallback ok",
@@ -852,8 +861,8 @@ index 789..abc 100644
 
     await loadIndex();
 
-    expect(mockJulesHelper.runAgenticReview).toHaveBeenCalledTimes(1);
-    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledTimes(1);
+    expect(mockJulesHelper.agenticSession).toHaveBeenCalledTimes(1);
+    expect(mockJulesHelper.promptSession).toHaveBeenCalledTimes(1);
     expect(mockSubmissionHelper.submitReview).toHaveBeenCalledTimes(1);
     expect(mockSubmissionHelper.submitReview).toHaveBeenCalledWith(
       expect.anything(),
@@ -877,11 +886,9 @@ index 789..abc 100644
     mockGithubHelper.fetchDiff.mockResolvedValue(
       makeDiffSection("src/full-pr.ts", 20)
     );
-    mockJulesHelper.runAgenticReview.mockResolvedValue({
-      reviewResult: null,
+    mockJulesHelper.agenticSession.mockResolvedValue({
+      kind: "timeout",
       sessionId: "agentic-session",
-      fallback: true,
-      fallbackReason: "timeout",
     });
 
     await loadIndex();
@@ -894,14 +901,14 @@ index 789..abc 100644
       "baseSHA",
       "headSHA"
     );
-    expect(mockJulesHelper.runJulesReview.mock.calls[0][1]).toContain(
+    expect(mockJulesHelper.promptSession.mock.calls[0][0].prompt).toContain(
       "src/full-pr.ts"
     );
   });
 
   it("handles Jules failure to return review", async () => {
-    mockJulesHelper.runJulesReview.mockResolvedValue({
-      reviewResult: null,
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "timeout",
       sessionId: "s1",
     });
     await loadIndex();
@@ -934,7 +941,8 @@ index 789..abc 100644
       { index: 1, threadId: "t1" },
       { index: 2, threadId: "t2" },
     ]);
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "approve",
         summary: "ok",
@@ -954,11 +962,10 @@ index 789..abc 100644
       { index: 1, threadId: "t1", path: "a.ts", line: 10, body: "Fix me" },
     ]);
     await loadIndex();
-    expect(mockJulesHelper.runJulesReview).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringContaining("MUST NOT re-report"),
-      expect.anything(),
-      expect.anything()
+    expect(mockJulesHelper.promptSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining("MUST NOT re-report"),
+      })
     );
   });
 
@@ -971,7 +978,7 @@ index 789..abc 100644
       { index: 1, threadId: "t1", path: "a.ts", line: 10, body: "Fix me" },
     ]);
     await loadIndex();
-    const prompt = mockJulesHelper.runJulesReview.mock.calls[0][1];
+    const prompt = mockJulesHelper.promptSession.mock.calls[0][0].prompt;
     expect(prompt).toContain("# Trusted: Open Review Comments");
     expect(prompt).not.toContain("MUST NOT re-report");
   });
@@ -984,22 +991,20 @@ index 789..abc 100644
     mockGithubHelper.fetchOpenThreads.mockResolvedValue([
       { index: 1, threadId: "t1", path: "a.ts", line: 10, body: "Fix me" },
     ]);
-    mockJulesHelper.runAgenticReview.mockResolvedValue({
+    mockJulesHelper.agenticSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "approve",
         summary: "ok",
         newComments: [],
       },
       sessionId: "s1",
-      fallback: false,
     });
     await loadIndex();
-    expect(mockJulesHelper.runAgenticReview).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringContaining("MUST NOT re-report"),
-      expect.anything(),
-      expect.anything(),
-      expect.anything()
+    expect(mockJulesHelper.agenticSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining("MUST NOT re-report"),
+      })
     );
   });
 
@@ -1008,7 +1013,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, enableApprove: true },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: { verdict: "approve", summary: "ok", newComments: [] },
       sessionId: "s1",
     });
@@ -1030,7 +1036,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, enableApprove: true },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "comment",
         summary: "ok",
@@ -1065,7 +1072,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, enableApprove: true },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "block",
         summary: "bad",
@@ -1100,7 +1108,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, enableApprove: false },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: { verdict: "approve", summary: "ok", newComments: [] },
       sessionId: "s1",
     });
@@ -1122,7 +1131,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, failOn: "blocking" },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: { verdict: "block", summary: "bad", newComments: [] },
       sessionId: "s1",
     });
@@ -1146,7 +1156,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, failOn: "never" },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: { verdict: "block", summary: "bad", newComments: [] },
       sessionId: "s1",
     });
@@ -1165,7 +1176,8 @@ index 789..abc 100644
   });
 
   it("handles fail_on = any with approve verdict", async () => {
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: { verdict: "approve", summary: "ok", newComments: [] },
       sessionId: "s1",
     });
@@ -1184,7 +1196,8 @@ index 789..abc 100644
   });
 
   it("strips suggestion fields when enable_suggestions is false (default)", async () => {
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "approve",
         summary: "ok",
@@ -1234,7 +1247,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, enableSuggestions: true },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "approve",
         summary: "ok",
@@ -1313,7 +1327,7 @@ index 789..abc 100644
   });
 
   it("finalizes the check run with an actionable quota summary on quota exhaustion", async () => {
-    mockJulesHelper.runJulesReview.mockRejectedValue(
+    mockJulesHelper.promptSession.mockRejectedValue(
       new QuotaExceededError(
         "Jules API quota or rate limit exceeded (status code 429). The free tier allows 15 sessions per 24 hours — wait for the window to reset or reduce usage."
       )
@@ -1343,7 +1357,7 @@ index 789..abc 100644
   });
 
   it("classifies a raw 429 as quota and finalizes the check run", async () => {
-    mockJulesHelper.runJulesReview.mockRejectedValue(
+    mockJulesHelper.promptSession.mockRejectedValue(
       new Error("status code 429")
     );
     await loadIndex();
@@ -1361,7 +1375,7 @@ index 789..abc 100644
   });
 
   it("finalizes the check run with an auth failure surface on auth errors", async () => {
-    mockJulesHelper.runJulesReview.mockRejectedValue(
+    mockJulesHelper.promptSession.mockRejectedValue(
       new AuthError(
         "Jules API rejected request (status code 401). Check JULES_API_KEY is valid."
       )
@@ -1406,7 +1420,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, failOn: "never" },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         summary: "Jules returned an invalid response that could not be parsed.",
         verdict: "block",
@@ -1443,7 +1458,8 @@ index 789..abc 100644
   });
 
   it("emits review_completed log with issue counts", async () => {
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "comment",
         summary: "Found 2 issues",
@@ -1502,8 +1518,13 @@ index 789..abc 100644
     );
   });
 
-  it("emits jules_api_called log with success", async () => {
+  it("emits exactly one jules_api_called completion log", async () => {
     await loadIndex();
+    expect(
+      mockLoggingHelper.logStructured.mock.calls.filter(
+        ([event]) => event === "jules_api_called"
+      )
+    ).toHaveLength(1);
     expect(mockLoggingHelper.logStructured).toHaveBeenCalledWith(
       "jules_api_called",
       expect.objectContaining({
@@ -1514,7 +1535,8 @@ index 789..abc 100644
   });
 
   it("emits review_submitted log after submitReview resolves", async () => {
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "approve",
         summary: "Good",
@@ -1545,7 +1567,8 @@ index 789..abc 100644
   });
 
   it("sets outputs on successful review", async () => {
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "approve",
         summary: "Good",
@@ -1651,7 +1674,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, minSeverityToReport: "Warning" },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "comment",
         summary: "ok",
@@ -1724,7 +1748,8 @@ index 789..abc 100644
   });
 
   it("keeps all findings when min_severity_to_report is unset (default Info)", async () => {
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "comment",
         summary: "ok",
@@ -1766,7 +1791,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, blockOn: "High", failOn: "never" },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "block",
         summary: "bad",
@@ -1801,7 +1827,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, blockOn: "High", failOn: "any" },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "comment",
         summary: "warnings only",
@@ -1836,7 +1863,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, failOn: "any" },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "comment",
         summary: "found things",
@@ -1861,7 +1889,7 @@ index 789..abc 100644
       config: { ...defaultConfig, strictness: "assertive" },
     });
     await loadIndex();
-    const prompt = mockJulesHelper.runJulesReview.mock.calls[0][1];
+    const prompt = mockJulesHelper.promptSession.mock.calls[0][0].prompt;
     expect(prompt).toContain("# Trusted: Strictness profile (assertive)");
   });
 
@@ -1870,17 +1898,17 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, diffMode: "agentic", strictness: "quiet" },
     });
-    mockJulesHelper.runAgenticReview.mockResolvedValue({
+    mockJulesHelper.agenticSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "approve",
         summary: "ok",
         newComments: [],
       },
       sessionId: "s1",
-      fallback: false,
     });
     await loadIndex();
-    const prompt = mockJulesHelper.runAgenticReview.mock.calls[0][1];
+    const prompt = mockJulesHelper.agenticSession.mock.calls[0][0].prompt;
     expect(prompt).toContain("# Trusted: Strictness profile (quiet)");
   });
 
@@ -1889,7 +1917,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, strictness: "quiet" },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "comment",
         summary: "Mixed findings",
@@ -1968,7 +1997,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, strictness: "quiet", failOn: "any" },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "comment",
         summary: "Only warnings",
@@ -2005,7 +2035,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, strictness: "quiet", blockOn: "Warning" },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "block",
         summary: "warnings only",
@@ -2040,7 +2071,8 @@ index 789..abc 100644
       ok: true,
       config: { ...defaultConfig, strictness: "quiet", blockOn: "High" },
     });
-    mockJulesHelper.runJulesReview.mockResolvedValue({
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
       reviewResult: {
         verdict: "comment",
         summary: "one high",

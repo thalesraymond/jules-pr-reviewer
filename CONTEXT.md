@@ -22,6 +22,15 @@
 
 **Session module** (`src/session.ts`) — runs a single Jules session to completion: creates the session, waits for it to be ready, polls for the review message, parses the response, and archives the session on every exit. Exports `runSession` which reports its outcome as `review`, `timeout`, or `creation_failed`. It wraps Jules quota/auth errors into the typed `QuotaExceededError`/`AuthError` (classifiers live in `src/errors.ts`) and logs unparseable responses as `review_failed` with `kind: "parse"`.
 
+**Review execution module** (`src/executeReview.ts`) — owns prompt construction,
+mode selection, timeout-only prompt retry, agentic-to-prompt fallback, and
+informational changed-file verification behind `executeReview`. Single-session
+lifecycle remains in the session module. Execution emits exactly one
+`jules_api_called` completion event across all attempts, including cleanup, with
+elapsed milliseconds and success only for a valid parsed review. Callers receive
+the review, final session ID, and prompt coverage; telemetry is not caller work.
+See ADR-021 for scope and compatibility constraints.
+
 **Submission module** (`src/submission.ts`) — formats and submits review comments to GitHub. Exports `submitReview` which handles the 3-tier fallback ladder (with suggestions → without suggestions → summary-only), XSS sanitization, suggestion escaping, and comment formatting, and returns the accepted **review delivery state** (plus whether a fallback degraded delivery). The body of the accepted attempt carries the matching fallback note. The formatting pipeline (severity emojis, confidence indicators, prompt-for-agents collapsible blocks) is hidden as an implementation detail.
 
 **Strictness module** (`src/strictness.ts`) — the strictness profile dial. Exports `meetsReportThreshold` (which severities surface at a given level: `quiet` → High only, `chill`/`assertive` → everything) and `filterCommentsByStrictness` (applies the threshold to a comment list). The prompt-side per-level instructions live in `src/prompt.ts` as trusted text; `chill` renders no block so the default prompt is unchanged.
@@ -29,6 +38,11 @@
 ## Key concepts
 
 **Review preparation** — gathering the diff, changed files, applicable base-commit rules, and open threads for a PR review. The review mode and event determine whether the diff covers the full PR or only the latest push; rules always come from the PR base commit.
+
+**Review execution** — producing one review from prepared PR context, including
+all Jules session attempts needed by the selected mode and its fallback. It ends
+after session cleanup, before GitHub review submission. A blocking verdict is
+still a successful execution; an unparseable-response fallback review is not.
 
 **ReviewResult** — the structured output from the LLM: verdict (approve/comment/block), summary, resolved comment IDs, and new comments with file/line/severity/confidence/message.
 

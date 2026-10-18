@@ -466,6 +466,13 @@ The action classifies failures so you can tell what happened at a glance instead
 
 Every failure also emits a structured `review_failed` log entry (`::structured::`) carrying `{ kind, stage, reason }`.
 
+Each review execution emits exactly one structured `jules_api_called` completion
+event with `{ success, duration }`. Duration is total elapsed milliseconds across
+prompt preparation, session cleanup, retries, and agentic-to-prompt fallback; it
+excludes GitHub preparation and submission. Success means a valid parsed review
+was returned, regardless of verdict. Timeouts, thrown failures, and unparseable
+responses report `success: false`. Retry and fallback diagnostics remain separate.
+
 **Degraded review delivery.** When GitHub rejects a submission and the fallback drops suggested changes or inline comments, the review is still delivered successfully: the verdict, finding counts, configured gate, and check-run annotations are unchanged. The accepted review body, the check-run summary, and the `review_submitted` / `review_completed` structured logs all state what was actually delivered, so a missing suggestion is never mistaken for a delivery failure.
 
 **Quota exhaustion.** Free Jules keys are capped at 15 sessions per 24 hours. When the cap is hit (HTTP 429 / quota message), the action fails fast with an explicit message instead of a cryptic error — including in agentic mode, where it skips the prompt-mode fallback because that session would fail the same way. To stay under the cap: use the `concurrency` block above, gate runs with `paths:` filters or the `bypass_label`, and skip drafts/forks.

@@ -33,9 +33,12 @@ Add a `diff_mode` input (`prompt` | `agentic`, default `prompt`). In agentic mod
 
 ## Implementation Decisions
 
-### Mode branching in the orchestrator
+### Mode branching in review execution
 
-The two pipelines share the same pre-amble (input parsing, skip checks, status setting) and post-amble (thread resolution, review submission, status mapping). The branching point is at the diff-fetch stage in the orchestrator, keeping the two pipelines DRY without a separate entry point.
+The two modes share preparation and submission. Review preparation selects diff
+scope, while `executeReview` owns prompt construction, mode selection, prompt
+retry, fallback, and execution telemetry. Callers do not interpret fallback flags.
+Single-session lifecycle remains in `session.ts`. See ADR-021.
 
 ### `source.baseBranch` set to the PR head ref
 
@@ -45,9 +48,13 @@ The Jules SDK's `SourceInput.baseBranch` expects a branch name, not a SHA. The h
 
 A distinct agentic prompt builder keeps the existing prompt-mode builder untouched. The agentic prompt has a fundamentally different shape: SHA-based diff instructions, a read-only SECURITY section, merged `ignored_paths`, a >50-file nudge, and UNTRUSTED labels on PR title, description, diff instructions, rules file, and ignored paths.
 
-### Fallback re-runs the full prompt pipeline inline
+### Fallback uses the prepared full-PR diff
 
-On fallback the action re-runs fetch diff → build prompt → run Jules → parse → submit. The status is still `pending` at fallback time, so the prompt pipeline's final status write overwrites cleanly, and exactly one review is produced.
+On fallback, execution builds the prompt-mode request from the already-prepared
+full-PR diff, including on synchronize events. Prompt sessions receive the full
+per-attempt timeout budget and retain their timeout-only fresh-session retry.
+Execution returns one review for submission; the action finalizes its existing
+check run afterward.
 
 ### `changedFiles` verification is log-only
 
@@ -62,10 +69,11 @@ Archiving removes the session from the Jules list view; a failure is cosmetic an
 - **What makes a good test:** Test the external contract — the prompt text the mode produces, the fallback triggers and their side effects (one review posted, session archived), and the `verification_mismatch` logging — not the internal branching mechanics.
 - **Modules under test:**
   - `prompt.ts` — agentic prompt contract (SHA-based diff instruction, read-only prohibition, ignored paths merging, >50-file nudge, UNTRUSTED labels).
-  - `jules.ts` — `runAgenticReview` fallback state machine (session-creation failure and timeout fall back; no agentic retry), session archiving, and the log events emitted.
+  - `executeReview.ts` — fallback policy through `executeReview` (session-creation failure and timeout fall back; no agentic retry), file verification, and completion telemetry.
+  - `session.ts` — single-session lifecycle and best-effort archiving.
   - `index.ts` — `diff_mode` input parsing, mode branching, invalid-value failure, and `changedFiles` verification logging.
   - `validation.ts` — optional `changedFiles` field parsing in `parseReviewResponse`.
-- **Prior art:** `tests/jules.test.ts` already mocks `runSession` and asserts review outcomes; `tests/index.test.ts` mocks the github/jules/submission helpers and asserts orchestrator behavior; `tests/prompt.test.ts` asserts prompt text content for prompt mode. The new tests follow these patterns (mock external boundaries with `vi.fn()`/`vi.spyOn()`, assert on structured log events and prompt content).
+- **Test seams:** `tests/executeReview.test.ts` scripts session outcomes through the execution interface; joined tests keep the session lifecycle real against a mock Jules SDK. `tests/index.test.ts` keeps execution real and verifies one submission after fallback. `tests/prompt.test.ts` protects prompt content.
 
 ## Out of Scope
 
