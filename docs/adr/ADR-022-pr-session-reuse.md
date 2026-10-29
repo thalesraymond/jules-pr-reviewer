@@ -26,7 +26,7 @@ never publishes reusable metadata. Changing modes rotates the session, including
 when agentic execution falls back to prompt mode.
 
 Keep storage separate from execution policy (ADR-021). The session module owns
-reopening, terminal/awaiting-feedback readiness checks, unarchiving, prior activity
+reopening, completed/awaiting-feedback/paused readiness checks, unarchiving, prior activity
 ID capture, sending, polling, parsing, and best-effort archiving after adopting a
 session. Busy/inaccessible candidates are left untouched. Execution owns
 the full current prompt, agentic checkout refresh, and recovery budget. A failed
@@ -53,3 +53,6 @@ Fresh-session behavior without an eligible reuse candidate is unchanged.
 - The follow-up cap bounds conversation growth but cannot eliminate anchoring.
 - Quota savings depend on Jules billing/message limits and retention; these are
   not guaranteed by this action or validated by mocked SDK tests.
+- A live read-only check during PR #211 debugging confirmed a reviewed session
+  reports `PAUSED`. Paused sessions must reach unarchive/send rather than being
+  rejected as busy. The published v1alpha API has no separate resume method.

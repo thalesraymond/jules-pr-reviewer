@@ -256,9 +256,13 @@ async function runAgenticReview(
       throw outcome.error;
     }
     const msg = getErrorMessage(outcome.error);
-    core.warning(`Agentic session creation failed: ${msg}`);
+    core.warning(
+      `Agentic session ${reusableSession ? "reuse" : "creation"} failed: ${msg}`
+    );
     logStructured("agentic_fallback", {
-      reason: "session_creation_failed",
+      reason: reusableSession
+        ? "session_reuse_failed"
+        : "session_creation_failed",
       error: msg,
     });
     return null;

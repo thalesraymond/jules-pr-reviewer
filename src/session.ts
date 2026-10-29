@@ -79,8 +79,17 @@ export async function runSession(
     const previousActivityIds = new Set<string>();
     if (options.reusableSession) {
       const info = await session.info();
-      if (info.state !== "completed" && info.state !== "awaitingUserFeedback") {
-        throw new Error("Previous session is not ready for a follow-up.");
+      core.info(
+        `Session ${session.id} reuse state: ${info.state}; archived: ${info.archived ?? false}.`
+      );
+      if (
+        info.state !== "completed" &&
+        info.state !== "awaitingUserFeedback" &&
+        info.state !== "paused"
+      ) {
+        throw new Error(
+          `Previous session is not ready for a follow-up (state: ${info.state}).`
+        );
       }
       ownsSession = true;
       await session.unarchive();

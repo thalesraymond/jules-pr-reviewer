@@ -135,6 +135,13 @@ describe("review execution through the Jules SDK seam", () => {
       if (failure === "busy" || failure === "missing")
         expect(previous.archive).not.toHaveBeenCalled();
       else expect(previous.archive).toHaveBeenCalledOnce();
+      if (failure === "busy") {
+        expect(previous.unarchive).not.toHaveBeenCalled();
+        expect(previous.send).not.toHaveBeenCalled();
+        expect(core.warning).toHaveBeenCalledWith(
+          expect.stringContaining("state: inProgress")
+        );
+      }
       expect(fresh.archive).toHaveBeenCalledOnce();
     }
   );
@@ -194,46 +201,58 @@ describe("review execution through the Jules SDK seam", () => {
       expect(fresh.archive).toHaveBeenCalledOnce();
     }
   );
-  it("reuses an archived session and ignores its old review", async () => {
-    let sent = false;
-    const session = {
-      ...makeSession("existing"),
-      info: vi.fn().mockResolvedValue({ state: "completed" }),
-      unarchive: vi.fn().mockResolvedValue(undefined),
-      send: vi.fn().mockImplementation(async () => {
-        sent = true;
-      }),
-      history: async function* () {
-        yield {
-          id: "old",
-          type: "agentMessaged",
-          message: '{"summary":"stale","verdict":"block"}',
-        };
-        if (sent)
+  it.each(["completed", "awaitingUserFeedback", "paused"])(
+    "reuses an archived %s session and ignores its old review",
+    async (state) => {
+      let sent = false;
+      const session = {
+        ...makeSession("existing"),
+        info: vi.fn().mockResolvedValue({ state, archived: true }),
+        unarchive: vi.fn().mockResolvedValue(undefined),
+        send: vi.fn().mockImplementation(async () => {
+          sent = true;
+        }),
+        history: async function* () {
           yield {
-            id: "new",
+            id: "old",
             type: "agentMessaged",
-            message: '{"summary":"current","verdict":"approve"}',
+            message: '{"summary":"stale","verdict":"block"}',
           };
-      },
-    };
-    createSession.mockReturnValue(session);
-    const result = await run("prompt", { sessionId: "existing", followups: 2 });
-    expect(result).toMatchObject({
-      sessionId: "existing",
-      sessionFollowups: 3,
-      reviewResult: { summary: "current" },
-    });
-    expect(createSession).toHaveBeenCalledExactlyOnceWith("existing");
-    expect(session.send).toHaveBeenCalledWith(
-      expect.stringContaining("from scratch")
-    );
-    expect(session.send).toHaveBeenCalledWith(
-      expect.stringContaining("src/a.ts")
-    );
-    expect(session.unarchive).toHaveBeenCalledOnce();
-    expect(session.archive).toHaveBeenCalledOnce();
-  });
+          if (sent)
+            yield {
+              id: "new",
+              type: "agentMessaged",
+              message: '{"summary":"current","verdict":"approve"}',
+            };
+        },
+      };
+      createSession.mockReturnValue(session);
+      const result = await run("prompt", {
+        sessionId: "existing",
+        followups: 2,
+      });
+      expect(result).toMatchObject({
+        sessionId: "existing",
+        sessionFollowups: 3,
+        reviewResult: { summary: "current" },
+      });
+      expect(createSession).toHaveBeenCalledExactlyOnceWith("existing");
+      expect(session.send).toHaveBeenCalledWith(
+        expect.stringContaining("from scratch")
+      );
+      expect(session.send).toHaveBeenCalledWith(
+        expect.stringContaining("src/a.ts")
+      );
+      expect(session.unarchive).toHaveBeenCalledOnce();
+      expect(session.unarchive.mock.invocationCallOrder[0]).toBeLessThan(
+        session.send.mock.invocationCallOrder[0]
+      );
+      expect(core.info).toHaveBeenCalledWith(
+        `Session existing reuse state: ${state}; archived: true.`
+      );
+      expect(session.archive).toHaveBeenCalledOnce();
+    }
+  );
   beforeEach(() => {
     vi.clearAllMocks();
     createSession.mockReset();
