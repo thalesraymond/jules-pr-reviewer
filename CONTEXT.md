@@ -20,10 +20,12 @@
 
 **Errors module** (`src/errors.ts`) — cross-cutting error handling. Exports `getErrorMessage` (extract a message from Error objects, message-bearing objects, and raw values), the failure taxonomy (`FailureKind`, `ReviewFailure`, `QuotaExceededError`, `AuthError`, `QUOTA_HINT`), `isQuotaError` / `isAuthError` classifiers, and `classifyFailure` which maps any thrown value to `{ kind, stage, message, summary }` so the check run and structured log describe the root cause. `timeoutExitSummary` is the shared wording for the no-review timeout exit.
 
-**Session module** (`src/session.ts`) — runs a single Jules session to completion: creates the session, waits for it to be ready, polls for the review message, parses the response, and archives the session on every exit. Exports `runSession` which reports its outcome as `review`, `timeout`, or `creation_failed`. It wraps Jules quota/auth errors into the typed `QuotaExceededError`/`AuthError` (classifiers live in `src/errors.ts`) and logs unparseable responses as `review_failed` with `kind: "parse"`.
+**Session module** (`src/session.ts`) — runs one fresh or reused Jules session to completion: creates and waits for readiness, or reopens a completed/awaiting-feedback session, unarchives it, snapshots prior activity IDs, and sends a follow-up. Polls for a new review, parses it, and archives on every exit after adoption; rejected busy/inaccessible candidates are untouched. Exports `runSession` which reports its outcome as `review`, `timeout`, or `creation_failed` (including reuse setup/send failures). It wraps Jules quota/auth errors into the typed `QuotaExceededError`/`AuthError` (classifiers live in `src/errors.ts`) and logs unparseable responses as `review_failed` with `kind: "parse"`.
+
+**Session reuse storage** (`src/sessionReuse.ts`) — finds the authenticated token owner's latest Jules PR review across all review pages. A deterministic marker before model-generated text records session ID, follow-up count, and review mode. Rejects exhausted, malformed, or mode-incompatible markers without resurrecting an older session. Lookup failure warns and starts fresh. See ADR-022.
 
 **Review execution module** (`src/executeReview.ts`) — owns prompt construction,
-mode selection, timeout-only prompt retry, agentic-to-prompt fallback, and
+mode selection, timeout-only fresh prompt retry, bounded reuse recovery, agentic-to-prompt fallback, and
 informational changed-file verification behind `executeReview`. Single-session
 lifecycle remains in the session module. Execution emits exactly one
 `jules_api_called` completion event across all attempts, including cleanup, with
@@ -48,7 +50,7 @@ still a successful execution; an unparseable-response fallback review is not.
 
 **Strictness profile** — the review-culture dial (`quiet` | `chill` | `assertive`): steers the prompt (per-level trusted instruction block) and the report threshold (which severities surface). `chill` is the default and renders no block, keeping the prompt byte-identical to earlier versions.
 
-**Jules session** — a single unit of work on the Jules side: a created session that receives the review prompt and produces a review message.
+**Jules session** — a conversation on the Jules side that receives a review prompt and produces a review message. With opt-in reuse, it can receive bounded follow-up review requests for the same PR.
 
 **OpenThread** — a previously-posted review comment that is still unresolved. Tracked by index so the LLM can mark them as fixed (`resolvedCommentIds`) and, when `dedupe` is enabled, told not to re-report them in `newComments`.
 

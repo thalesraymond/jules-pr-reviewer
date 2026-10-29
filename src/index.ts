@@ -7,6 +7,7 @@ import { evaluateSkipPolicy } from "./skipPolicy.js";
 import { prepareReview } from "./reviewPreparation.js";
 import { executeReview } from "./executeReview.js";
 import { submitResults } from "./submitResults.js";
+import { findReusableSession } from "./sessionReuse.js";
 import {
   getErrorMessage,
   classifyFailure,
@@ -134,7 +135,24 @@ async function run(): Promise<void> {
       }
     );
 
-    const { reviewResult, sessionId, reviewCoverage } = await executeReview(
+    const reusableSession = config.sessionReuse
+      ? await findReusableSession(
+          octokit,
+          owner,
+          repo,
+          prNumber,
+          config.diffMode,
+          config.sessionReuseMaxFollowups
+        )
+      : undefined;
+
+    const {
+      reviewResult,
+      sessionId,
+      reviewCoverage,
+      sessionFollowups,
+      sessionMode,
+    } = await executeReview(
       config.apiKey,
       prNumber,
       {
@@ -156,6 +174,7 @@ async function run(): Promise<void> {
         largePrThreshold: config.largePrThreshold,
         largePrStrategy: config.largePrStrategy,
         timeoutMinutes: config.timeoutMinutes,
+        ...(reusableSession ? { reusableSession } : {}),
       }
     );
 
@@ -194,6 +213,14 @@ async function run(): Promise<void> {
         blockOn: config.blockOn,
         failOn: config.failOn,
         statusContext: config.statusContext,
+        ...(config.sessionReuse
+          ? {
+              sessionReuse: {
+                mode: sessionMode ?? config.diffMode,
+                followups: sessionFollowups ?? 0,
+              },
+            }
+          : {}),
       },
       reviewStartTime
     );

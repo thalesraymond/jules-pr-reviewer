@@ -128,6 +128,26 @@ describe("submitResults", () => {
     );
   });
 
+  it("persists opt-in session metadata before any model-generated text", async () => {
+    await submitResults(
+      octokit,
+      "owner",
+      "repo",
+      1,
+      "headSHA",
+      42,
+      baseReviewResult,
+      undefined,
+      [],
+      "session-id",
+      { ...baseConfig, sessionReuse: { mode: "prompt", followups: 3 } },
+      Date.now()
+    );
+    expect(mockSubmitReview.mock.calls[0][5]).toMatch(
+      /^<!-- jules-pr-reviewer -->\n<!-- jules-session: session-id followups: 3 mode: prompt -->\n/
+    );
+  });
+
   it("resolves threads when resolvedCommentIds are provided", async () => {
     await submitResults(
       octokit,

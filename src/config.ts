@@ -29,6 +29,8 @@ export interface Config {
   rulesDirectory?: string;
   ignoredPaths?: string;
   timeoutMinutes: number;
+  sessionReuse: boolean;
+  sessionReuseMaxFollowups: number;
   enableSuggestions: boolean;
   enableApprove: boolean;
   dedupe: boolean;
@@ -152,12 +154,30 @@ export function loadConfig(io: InputReader): ConfigResult {
     };
   }
 
+  const followupsRaw = io.getInput("session_reuse_max_followups") || "5";
+  const sessionReuseMaxFollowups = Number(followupsRaw);
+  if (
+    !/^\d+$/.test(followupsRaw) ||
+    !Number.isSafeInteger(sessionReuseMaxFollowups)
+  ) {
+    return {
+      ok: false,
+      error:
+        "Invalid session_reuse_max_followups: must be a non-negative safe integer.",
+    };
+  }
+
+  let sessionReuse: boolean;
   let skipDrafts: boolean;
   let skipForks: boolean;
   let enableSuggestions: boolean;
   let enableApprove: boolean;
   let dedupe: boolean;
   try {
+    sessionReuse =
+      io.getInput("session_reuse") === ""
+        ? false
+        : io.getBooleanInput("session_reuse");
     skipDrafts = io.getBooleanInput("skip_drafts");
     skipForks = io.getBooleanInput("skip_forks");
     enableSuggestions = io.getBooleanInput("enable_suggestions");
@@ -171,6 +191,8 @@ export function loadConfig(io: InputReader): ConfigResult {
     ok: true,
     config: {
       apiKey,
+      sessionReuse,
+      sessionReuseMaxFollowups,
       token,
       failOn: failOnRaw,
       strictness: strictnessRaw,

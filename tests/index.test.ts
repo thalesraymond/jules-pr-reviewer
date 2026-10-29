@@ -78,6 +78,8 @@ describe("index.ts", () => {
   const mockSubmitResults = vi.fn();
 
   const defaultConfig = {
+    sessionReuse: false,
+    sessionReuseMaxFollowups: 5,
     apiKey: "dummy_key",
     token: "dummy_token",
     failOn: "any",
@@ -218,6 +220,43 @@ describe("index.ts", () => {
 
     expect(mockSetSecret).toHaveBeenCalledWith("dummy_key");
     expect(mockSetSecret).toHaveBeenCalledWith("dummy_token");
+  });
+
+  it("carries a persisted PR session through execution into the next review marker", async () => {
+    mockConfigHelper.loadConfig.mockReturnValue({
+      ok: true,
+      config: { ...defaultConfig, sessionReuse: true },
+    });
+    mockOctokit.graphql = vi
+      .fn()
+      .mockResolvedValue({ viewer: { login: "github-actions[bot]" } });
+    mockOctokit.paginate = vi.fn().mockResolvedValue([
+      {
+        id: 1,
+        user: { login: "github-actions[bot]" },
+        state: "COMMENTED",
+        body: "<!-- jules-pr-reviewer -->\n<!-- jules-session: session-id followups: 1 mode: prompt -->\nReview",
+      },
+    ]);
+    mockJulesHelper.promptSession.mockResolvedValue({
+      kind: "review",
+      sessionId: "session-id",
+      sessionFollowups: 2,
+      reviewResult: {
+        verdict: "approve",
+        summary: "Current review",
+        newComments: [],
+      },
+    });
+    await loadIndex();
+    expect(mockJulesHelper.promptSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reusableSession: { sessionId: "session-id", followups: 1 },
+      })
+    );
+    expect(mockSubmissionHelper.submitReview.mock.calls[0][5]).toContain(
+      "<!-- jules-session: session-id followups: 2 mode: prompt -->"
+    );
   });
 
   it("forwards the prepared diff directly to the Execution module", async () => {

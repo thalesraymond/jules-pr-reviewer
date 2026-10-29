@@ -77,6 +77,14 @@ inputs:
     description: "How long to wait for Jules to return a review before giving up. Default 30. Real reviews on non-trivial PRs often take 15-25 minutes; do not set below 20 or you will miss legitimate reviews."
     required: false
     default: "30"
+  session_reuse:
+    description: "Reuse the last successful review session for this PR. Opt-in; serialize review jobs with concurrency."
+    required: false
+    default: "false"
+  session_reuse_max_followups:
+    description: "Maximum follow-up reviews per session before rotation. Non-negative integer; 0 always starts fresh."
+    required: false
+    default: "5"
   enable_suggestions:
     description: "Enable GitHub-native one-click suggested changes in review comments. Default false."
     required: false
