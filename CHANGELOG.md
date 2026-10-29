@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.8.0...v1.9.0) (2026-10-29)
+
+
+### Features
+
+* reuse jules session ([#211](https://github.com/thalesraymond/jules-pr-reviewer/issues/211)) ([bea3bac](https://github.com/thalesraymond/jules-pr-reviewer/commit/bea3bac8153fb5257f41e2d84e480ef3ad862fed))
+
 ## [1.8.0](https://github.com/thalesraymond/jules-pr-reviewer/compare/v1.7.0...v1.8.0) (2026-09-29)
 
 
