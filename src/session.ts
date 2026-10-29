@@ -12,6 +12,7 @@ import {
 } from "./errors.js";
 import { logStructured } from "./logging.js";
 import { sleep } from "./utils.js";
+import type { ReusableSession } from "./sessionReuse.js";
 
 type PollableSession = SessionClient & { hydrate: () => Promise<number> };
 
@@ -25,7 +26,12 @@ const PARSE_FAILURE_REVIEW: ReviewResult = {
 };
 
 export type SessionOutcome =
-  | { kind: "review"; reviewResult: ReviewResult; sessionId: string }
+  | {
+      kind: "review";
+      reviewResult: ReviewResult;
+      sessionId: string;
+      sessionFollowups?: number;
+    }
   | { kind: "timeout"; sessionId: string }
   | { kind: "creation_failed"; sessionId: ""; error: unknown };
 
@@ -35,23 +41,30 @@ export interface RunSessionOptions {
   source: SourceInput;
   title: string;
   timeoutMinutes: number;
+  reusableSession?: ReusableSession;
 }
 
 export async function runSession(
   options: RunSessionOptions
 ): Promise<SessionOutcome> {
   const customJules = jules.with({ apiKey: options.apiKey });
-  core.info("Creating Jules session…");
+  core.info(
+    options.reusableSession
+      ? "Reopening Jules session…"
+      : "Creating Jules session…"
+  );
 
   let session: SessionClient;
   try {
-    session = await customJules.session({
-      prompt: options.prompt,
-      source: options.source,
-      requireApproval: false,
-      title: options.title,
-      autoPr: false,
-    });
+    session = options.reusableSession
+      ? customJules.session(options.reusableSession.sessionId)
+      : await customJules.session({
+          prompt: options.prompt,
+          source: options.source,
+          requireApproval: false,
+          title: options.title,
+          autoPr: false,
+        });
   } catch (err) {
     return {
       kind: "creation_failed",
@@ -61,12 +74,39 @@ export async function runSession(
   }
   core.info(`Jules session: ${session.id}`);
 
+  let ownsSession = !options.reusableSession;
   try {
-    await waitUntilSessionReady(session);
+    const previousActivityIds = new Set<string>();
+    if (options.reusableSession) {
+      const info = await session.info();
+      core.info(
+        `Session ${session.id} reuse state: ${info.state}; archived: ${info.archived ?? false}.`
+      );
+      if (
+        info.state !== "completed" &&
+        info.state !== "awaitingUserFeedback" &&
+        info.state !== "paused"
+      ) {
+        throw new Error(
+          `Previous session is not ready for a follow-up (state: ${info.state}).`
+        );
+      }
+      ownsSession = true;
+      await session.unarchive();
+      await (session as PollableSession).hydrate();
+      for await (const activity of session.history())
+        previousActivityIds.add(activity.id);
+      await session.send(
+        `Review the current PR from scratch. Do not rely on earlier reviews or conclusions. The following prompt replaces all earlier review requests.\n\n${options.prompt}`
+      );
+    } else {
+      await waitUntilSessionReady(session);
+    }
 
     const reviewMessage = await pollForReview(
       session as PollableSession,
-      options.timeoutMinutes * 60 * 1000
+      options.timeoutMinutes * 60 * 1000,
+      previousActivityIds
     );
     core.info(`Collected review (${reviewMessage.length} chars)`);
 
@@ -95,9 +135,24 @@ export async function runSession(
     }
 
     await archiveSession(session);
-    return { kind: "review", reviewResult, sessionId: session.id };
+    return {
+      kind: "review",
+      reviewResult,
+      sessionId: session.id,
+      ...(options.reusableSession
+        ? { sessionFollowups: options.reusableSession.followups + 1 }
+        : {}),
+    };
   } catch (err) {
-    await archiveSession(session);
+    // A busy or inaccessible candidate may still belong to another run.
+    if (ownsSession) await archiveSession(session);
+    if (options.reusableSession) {
+      return {
+        kind: "creation_failed",
+        sessionId: "",
+        error: wrapJulesError(err) ?? err,
+      };
+    }
     throw err;
   }
 }
@@ -130,7 +185,8 @@ async function waitUntilSessionReady(session: {
 
 async function pollForReview(
   session: PollableSession,
-  timeoutMs: number
+  timeoutMs: number,
+  previousActivityIds: ReadonlySet<string>
 ): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   let attempt = 0;
@@ -140,7 +196,8 @@ async function pollForReview(
       await session.hydrate();
       let last = "";
       for await (const a of session.history()) {
-        if (a.type === "agentMessaged") last = a.message;
+        if (a.type === "agentMessaged" && !previousActivityIds.has(a.id))
+          last = a.message;
       }
       if (last) {
         core.info(`Got agentMessaged on attempt ${attempt}.`);

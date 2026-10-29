@@ -19,6 +19,8 @@ const DEFAULT_INPUTS: Record<string, string> = {
   rules_directory: ".github/jules-rules",
   ignored_paths: "[]",
   timeout_minutes: "30",
+  session_reuse: "false",
+  session_reuse_max_followups: "5",
   enable_suggestions: "false",
   enable_approve: "false",
   dedupe: "true",
@@ -95,6 +97,29 @@ function parseActionYmlInputDefaults(yml: string): Record<string, string> {
 }
 
 describe("loadConfig", () => {
+  it("defaults session reuse off and permits a bounded opt-in", () => {
+    expect(loadConfig(makeIo().io)).toMatchObject({
+      ok: true,
+      config: { sessionReuse: false, sessionReuseMaxFollowups: 5 },
+    });
+    expect(
+      loadConfig(
+        makeIo({ session_reuse: "true", session_reuse_max_followups: "2" }).io
+      )
+    ).toMatchObject({
+      ok: true,
+      config: { sessionReuse: true, sessionReuseMaxFollowups: 2 },
+    });
+  });
+
+  it.each(["-1", "1.5", "abc", "Infinity", "9007199254740992"])(
+    "rejects invalid session follow-up limit %s",
+    (value) => {
+      expect(
+        loadConfig(makeIo({ session_reuse_max_followups: value }).io)
+      ).toMatchObject({ ok: false });
+    }
+  );
   beforeEach(() => {
     delete process.env.JULES_API_KEY;
     delete process.env.GITHUB_TOKEN;
@@ -124,6 +149,8 @@ describe("loadConfig", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(expectConfig(result)).toEqual({
+      sessionReuse: false,
+      sessionReuseMaxFollowups: 5,
       apiKey: "test-api-key",
       token: "test-token",
       failOn: "any",
@@ -313,6 +340,8 @@ describe("loadConfig", () => {
     if (!result.ok) return;
     expect(expectConfig(result)).toEqual({
       apiKey: "test-api-key",
+      sessionReuse: false,
+      sessionReuseMaxFollowups: 5,
       token: "test-token",
       failOn: "never",
       strictness: "chill",

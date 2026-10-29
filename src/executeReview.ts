@@ -2,7 +2,8 @@ import * as core from "@actions/core";
 import type { SourceInput } from "@google/jules-sdk";
 import { buildReviewPrompt } from "./prompt.js";
 import { runSession } from "./session.js";
-import { getErrorMessage, QuotaExceededError } from "./errors.js";
+import { getErrorMessage, QuotaExceededError, AuthError } from "./errors.js";
+import type { ReusableSession } from "./sessionReuse.js";
 import { preparePromptDiff } from "./coverage.js";
 import { logStructured } from "./logging.js";
 import type { PreparedDiff } from "./reviewPreparation.js";
@@ -23,11 +24,14 @@ export type ExecuteReviewConfig = {
   largePrThreshold: number;
   largePrStrategy: LargePrStrategy;
   timeoutMinutes: number;
+  reusableSession?: ReusableSession;
 };
 
 export type ReviewExecutionResult = {
   reviewResult: ReviewResult | null;
   sessionId: string;
+  sessionFollowups?: number;
+  sessionMode?: DiffMode;
   reviewCoverage?: ReviewCoverage;
 };
 
@@ -79,10 +83,13 @@ export async function executeReview(
 
       const agentic = await runAgenticReview(
         apiKey,
-        agenticPrompt,
+        config.reusableSession
+          ? `Before reviewing, refresh the repository checkout to the current PR head, not the previous review's checkout. Run git fetch origin ${baseSha} ${headSha}, then git checkout --detach ${headSha}. If either fails, report the failure; do not review the stale checkout.\n\n${agenticPrompt}`
+          : agenticPrompt,
         { github: ownerRepo, baseBranch: pr.head.ref },
         config.timeoutMinutes,
-        prepared.changedFiles
+        prepared.changedFiles,
+        config.reusableSession
       );
 
       if (agentic) {
@@ -95,6 +102,9 @@ export async function executeReview(
         return {
           reviewResult: agentic.reviewResult,
           sessionId: agentic.sessionId,
+          ...(agentic.sessionFollowups !== undefined
+            ? { sessionFollowups: agentic.sessionFollowups }
+            : {}),
         };
       }
     }
@@ -117,7 +127,9 @@ export async function executeReview(
       apiKey,
       prompt,
       { github: ownerRepo, baseBranch: pr.base.ref },
-      config.timeoutMinutes
+      config.timeoutMinutes,
+      config.diffMode === "prompt" ? config.reusableSession : undefined,
+      config.diffMode === "agentic" && config.reusableSession ? 1 : 2
     );
     success =
       promptResult.reviewResult !== null &&
@@ -126,7 +138,13 @@ export async function executeReview(
     return {
       reviewResult: promptResult.reviewResult,
       sessionId: promptResult.sessionId,
+      ...(promptResult.sessionFollowups !== undefined
+        ? { sessionFollowups: promptResult.sessionFollowups }
+        : {}),
       reviewCoverage: promptDiff.coverage,
+      ...(config.diffMode === "agentic"
+        ? { sessionMode: "prompt" as const }
+        : {}),
     };
   } finally {
     logStructured("jules_api_called", {
@@ -140,31 +158,50 @@ async function runJulesReview(
   apiKey: string,
   prompt: string,
   source: SourceInput,
-  timeoutMinutes: number
+  timeoutMinutes: number,
+  reusableSession?: ReusableSession,
+  maxAttempts = 2
 ): Promise<ReviewExecutionResult> {
   let firstSessionId = "";
 
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const outcome = await runSession({
       apiKey,
       prompt,
       source,
       title: "Code Review",
       timeoutMinutes,
+      ...(attempt === 1 && reusableSession ? { reusableSession } : {}),
     });
 
     if (outcome.kind === "creation_failed") {
+      if (
+        attempt === 1 &&
+        reusableSession &&
+        !(outcome.error instanceof QuotaExceededError) &&
+        !(outcome.error instanceof AuthError)
+      ) {
+        core.warning(
+          `Session reuse failed; starting fresh: ${getErrorMessage(outcome.error)}`
+        );
+        continue;
+      }
       throw outcome.error;
     }
 
     if (outcome.kind === "review") {
+      if (attempt === 1 && reusableSession && outcome.reviewResult.unparseable)
+        continue;
       return {
         reviewResult: outcome.reviewResult,
         sessionId: outcome.sessionId,
+        ...(outcome.sessionFollowups !== undefined
+          ? { sessionFollowups: outcome.sessionFollowups }
+          : {}),
       };
     }
 
-    if (attempt === 1) {
+    if (attempt < maxAttempts) {
       core.info(
         `Jules session ${outcome.sessionId} timed out. Retrying with a fresh session…`
       );
@@ -178,7 +215,9 @@ async function runJulesReview(
       firstSessionId = outcome.sessionId;
     } else {
       core.error(
-        `Jules did not respond: session ${firstSessionId} and retry session ${outcome.sessionId} both timed out within ${timeoutMinutes} minutes each.`
+        firstSessionId
+          ? `Jules did not respond: session ${firstSessionId} and retry session ${outcome.sessionId} both timed out within ${timeoutMinutes} minutes each.`
+          : `Jules session ${outcome.sessionId} timed out within ${timeoutMinutes} minutes.`
       );
       return { reviewResult: null, sessionId: outcome.sessionId };
     }
@@ -192,25 +231,38 @@ async function runAgenticReview(
   prompt: string,
   source: SourceInput,
   timeoutMinutes: number,
-  actualChangedFiles: string[]
-): Promise<{ reviewResult: ReviewResult; sessionId: string } | null> {
+  actualChangedFiles: string[],
+  reusableSession?: ReusableSession
+): Promise<{
+  reviewResult: ReviewResult;
+  sessionId: string;
+  sessionFollowups?: number;
+} | null> {
   const outcome = await runSession({
     apiKey,
     prompt,
     source,
     title: "Code Review (Agentic)",
     timeoutMinutes,
+    ...(reusableSession ? { reusableSession } : {}),
   });
 
   if (outcome.kind === "creation_failed") {
-    if (outcome.error instanceof QuotaExceededError) {
+    if (
+      outcome.error instanceof QuotaExceededError ||
+      (reusableSession && outcome.error instanceof AuthError)
+    ) {
       // A prompt session would fail against the same exhausted quota.
       throw outcome.error;
     }
     const msg = getErrorMessage(outcome.error);
-    core.warning(`Agentic session creation failed: ${msg}`);
+    core.warning(
+      `Agentic session ${reusableSession ? "reuse" : "creation"} failed: ${msg}`
+    );
     logStructured("agentic_fallback", {
-      reason: "session_creation_failed",
+      reason: reusableSession
+        ? "session_reuse_failed"
+        : "session_creation_failed",
       error: msg,
     });
     return null;
@@ -219,6 +271,11 @@ async function runAgenticReview(
   if (outcome.kind === "timeout") {
     core.info(`Agentic session ${outcome.sessionId} timed out.`);
     logStructured("agentic_fallback", { reason: "timeout" });
+    return null;
+  }
+
+  if (reusableSession && outcome.reviewResult.unparseable) {
+    logStructured("agentic_fallback", { reason: "reuse_parse_failed" });
     return null;
   }
 
@@ -245,5 +302,11 @@ async function runAgenticReview(
     });
   }
 
-  return { reviewResult: outcome.reviewResult, sessionId: outcome.sessionId };
+  return {
+    reviewResult: outcome.reviewResult,
+    sessionId: outcome.sessionId,
+    ...(outcome.sessionFollowups !== undefined
+      ? { sessionFollowups: outcome.sessionFollowups }
+      : {}),
+  };
 }

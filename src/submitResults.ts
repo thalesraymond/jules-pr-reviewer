@@ -18,6 +18,7 @@ import {
   FailOn,
   Strictness,
   ReviewOutputs,
+  DiffMode,
 } from "./types.js";
 
 const COMMENT_MARKER = "<!-- jules-pr-reviewer -->";
@@ -38,6 +39,7 @@ export type SubmitResultsConfig = {
   blockOn?: Severity;
   failOn: FailOn;
   statusContext: string;
+  sessionReuse?: { mode: DiffMode; followups: number };
 };
 
 export async function submitResults(
@@ -87,7 +89,11 @@ export async function submitResults(
     reportedComments.length === 0
       ? "No findings reported."
       : `**Findings:** ${reportedComments.length} (${highCount} High, ${warningCount} Warning, ${infoCount} Info)`;
-  const finalBody = `${COMMENT_MARKER}\n## 🤖 Jules Review\n\n${summary}${
+  const sessionMarker =
+    config.sessionReuse && !unparseable
+      ? `<!-- jules-session: ${sessionId} followups: ${config.sessionReuse.followups} mode: ${config.sessionReuse.mode} -->\n`
+      : "";
+  const finalBody = `${COMMENT_MARKER}\n${sessionMarker}## 🤖 Jules Review\n\n${summary}${
     coverageNote ? `\n\n${coverageNote}` : ""
   }\n\n${countsLine}\n\n---\n_Session: \`${sessionId}\`_`;
 

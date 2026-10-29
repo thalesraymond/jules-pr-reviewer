@@ -83,13 +83,30 @@ That's the whole workflow — every other input has a sane default (see [Inputs]
 
 ### Why the `concurrency` block matters
 
-Each review run creates one Jules session (billed against your 15-sessions/24h free quota) and owns a `jules/review` check run. Without a `concurrency` guard, two runs for the same PR can overlap: both spawn Jules sessions and both finalize the same-named check run, so the last one to finish wins — which may be the *older* verdict. GitHub's `concurrency` key is the only reliable mutual-exclusion for GitHub Actions jobs:
+By default, each review run creates one Jules session (counted against your session quota) and owns a `jules/review` check run. Without a `concurrency` guard, two runs for the same PR can overlap: both spawn Jules sessions and both finalize the same-named check run, so the last one to finish wins — which may be the *older* verdict. GitHub's `concurrency` key is the only reliable mutual-exclusion for GitHub Actions jobs:
 
 - `group: jules-review-${{ github.event.pull_request.number }}` — one review in flight per PR. Change the prefix (`jules-review-`) to make the group unique to this action if you also run other workflows on the same PR.
 - `cancel-in-progress: true` — a new push cancels the in-flight review job so a stale run never overwrites a fresh verdict.
 - `cancel-in-progress: false` — queued runs wait for the running one to finish. Safer for quota but slower: a burst of pushes can stack several full reviews.
 
 Forks are skipped by default (`skip_forks: true`), and each run is also scoped to its head SHA via the check run, so two pushes to the *same* branch in quick succession are the main overlap case the `concurrency` block covers. If you prefer to keep the workflow file minimal, the check run name is configurable with `status_context` (default `jules/review`) so you can run this action under a different context alongside other tools.
+
+### Reuse sessions across PR updates (optional)
+
+To reduce session creation on re-reviews, add:
+
+```yaml
+session_reuse: true
+session_reuse_max_followups: 5
+```
+
+The first review creates a session. Later reviews on the same PR reuse it for up to five follow-ups, then rotate to a fresh session. Set the limit to any non-negative safe integer; `0` always starts fresh. Reuse works across supported PR events, not just pushes, and needs no Actions cache, checkout step, or additional permissions.
+
+The action stores a hidden session marker in its posted review and reads only the authenticated token owner's latest Jules review. Deleting the marker, changing the token owner or review mode, or reaching the follow-up limit starts fresh. Completed, awaiting-feedback, and paused sessions are eligible; the action unarchives the session and sends the follow-up message (the API exposes no separate resume operation). Sessions are still archived after each review. Missing, busy, or inaccessible sessions also fall back to a fresh session. Reuse logs include the reported session state to explain readiness fallbacks.
+
+Each follow-up receives the current rules, instructions, open threads, and diff context, with an instruction to review from scratch. Agentic follow-ups fetch and check out the current head first. Only activity IDs not present before the follow-up are accepted as a new reply. Failed reuse (including timeout or invalid JSON) gets **one fresh-session recovery attempt**: prompt mode retries in prompt mode; agentic mode falls back to prompt mode. Jules quota/auth errors fail fast rather than spending another session. When reuse is disabled or no eligible marker exists, existing retry/fallback behavior is unchanged.
+
+**Keep the PR-scoped concurrency guard.** `cancel-in-progress: false` is preferable for reuse: cancelling a runner does not cancel its remote Jules work, and a cancelled run cannot persist a new marker or guarantee archiving. Do not share a session between overlapping jobs. Reuse can reduce session creation but does not guarantee exemption from Jules message/token limits, retention limits, or plan-specific quotas. Earlier conversation context can still anchor conclusions; the follow-up cap limits its growth.
 
 ### 3. (Optional) Gate merges on the review
 
@@ -218,6 +235,8 @@ The workflow's `extra_instructions` is appended after the rules file content. Gl
 | `rules_directory`    | `.github/jules-rules`           | Directory in repo with per-path rule files; each `.md` file's path relative to the directory is a glob applied to the PR's changed files (e.g. `src/**.md` → `src/**`). Only matching rules are injected. Set empty to disable. |
 | `ignored_paths`      | `[]`                            | JSON array **or** comma/newline-separated list of paths/globs to exclude from diff (e.g. `["dist/**", "*.lock"]` or `dist/**, *.lock`). |
 | `timeout_minutes`    | `30`                            | How long to wait for Jules to return a review.                    |
+| `session_reuse`      | `false`                         | Reuse the PR's last eligible Jules session for follow-up reviews. See [session reuse](#reuse-sessions-across-pr-updates-optional). |
+| `session_reuse_max_followups` | `5`                     | Maximum follow-ups before rotating to a fresh session. Non-negative safe integer; `0` disables follow-ups. |
 | `enable_suggestions` | `false`                         | Enable GitHub-native one-click suggested changes in review comments. |
 | `enable_approve`     | `false`                         | When `true` and the review verdict is `approve`, post a GitHub PR approval (`event: APPROVE`) instead of a comment. Never approves on `comment` or `block` verdicts. Requires `pull-requests: write`. |
 | `dedupe`             | `true`                          | Don't re-report previously posted, still-open findings on subsequent reviews. Set to `false` to allow Jules to re-review and re-report prior findings. |

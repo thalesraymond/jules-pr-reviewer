@@ -29605,7 +29605,7 @@ __nccwpck_require__.d(core_namespaceObject, {
   getMultilineInput: () => (getMultilineInput),
   getState: () => (getState),
   group: () => (group),
-  info: () => (info),
+  info: () => (core_info),
   isDebug: () => (isDebug),
   markdownSummary: () => (markdownSummary),
   notice: () => (notice),
@@ -32482,7 +32482,7 @@ function notice(message, properties = {}) {
  * Writes info to log with console.log.
  * @param message info message
  */
-function info(message) {
+function core_info(message) {
     process.stdout.write(message + external_os_namespaceObject.EOL);
 }
 /**
@@ -37485,7 +37485,7 @@ async function loadRulesFromBase(octokit, owner, repo, path, baseSha) {
         const { content } = data;
         if (typeof content === "string") {
             const decoded = Buffer.from(content, "base64").toString("utf8");
-            info(`Loaded ${decoded.length} chars from ${path} at base SHA`);
+            core_info(`Loaded ${decoded.length} chars from ${path} at base SHA`);
             return decoded;
         }
     }
@@ -37586,7 +37586,7 @@ async function resolveThreads(octokit, threadIds) {
             }
           }
         `, { id }), GITHUB_RETRY_OPTIONS);
-            info(`Resolved thread ${id}`);
+            core_info(`Resolved thread ${id}`);
         }
         catch (e) {
             warning(`Failed to resolve thread ${id}: ${e}`);
@@ -40500,7 +40500,7 @@ async function loadPerPathRules(octokit, owner, repo, rulesDir, baseSha, changed
         rules.push({ path: candidate.path, glob: candidate.glob, content });
     }
     if (rules.length > 0) {
-        info(`Matched ${rules.length} per-path rule file(s): ${rules
+        core_info(`Matched ${rules.length} per-path rule file(s): ${rules
             .map((r) => r.path)
             .join(", ")}`);
     }
@@ -40518,10 +40518,10 @@ async function prepareReview(octokit, owner, repo, prNumber, scope, config) {
         Boolean(scope.before);
     const diffBaseSha = isIncremental && scope.before ? scope.before : scope.baseSha;
     if (isIncremental) {
-        info(`Synchronize event detected. Reviewing incremental changes from ${diffBaseSha} to ${scope.headSha}`);
+        core_info(`Synchronize event detected. Reviewing incremental changes from ${diffBaseSha} to ${scope.headSha}`);
     }
     else {
-        info(`Reviewing full PR diff from ${diffBaseSha} to ${scope.headSha}`);
+        core_info(`Reviewing full PR diff from ${diffBaseSha} to ${scope.headSha}`);
     }
     const [diff, rulesFromFile, openThreads] = await Promise.all([
         fetchDiff(octokit, owner, repo, { number: prNumber }, diffBaseSha, scope.headSha),
@@ -45291,7 +45291,7 @@ function logStructured(event, payload) {
         payload: scrubbed,
     };
     const line = `::structured:: ${JSON.stringify(entry)}`;
-    info(line);
+    core_info(line);
 }
 /**
  * Set GitHub Action outputs for the review results.
@@ -45324,16 +45324,20 @@ const PARSE_FAILURE_REVIEW = {
 };
 async function runSession(options) {
     const customJules = jules.with({ apiKey: options.apiKey });
-    info("Creating Jules session…");
+    core_info(options.reusableSession
+        ? "Reopening Jules session…"
+        : "Creating Jules session…");
     let session;
     try {
-        session = await customJules.session({
-            prompt: options.prompt,
-            source: options.source,
-            requireApproval: false,
-            title: options.title,
-            autoPr: false,
-        });
+        session = options.reusableSession
+            ? customJules.session(options.reusableSession.sessionId)
+            : await customJules.session({
+                prompt: options.prompt,
+                source: options.source,
+                requireApproval: false,
+                title: options.title,
+                autoPr: false,
+            });
     }
     catch (err) {
         return {
@@ -45342,11 +45346,30 @@ async function runSession(options) {
             error: wrapJulesError(err) ?? err,
         };
     }
-    info(`Jules session: ${session.id}`);
+    core_info(`Jules session: ${session.id}`);
+    let ownsSession = !options.reusableSession;
     try {
-        await waitUntilSessionReady(session);
-        const reviewMessage = await pollForReview(session, options.timeoutMinutes * 60 * 1000);
-        info(`Collected review (${reviewMessage.length} chars)`);
+        const previousActivityIds = new Set();
+        if (options.reusableSession) {
+            const info = await session.info();
+            core_info(`Session ${session.id} reuse state: ${info.state}; archived: ${info.archived ?? false}.`);
+            if (info.state !== "completed" &&
+                info.state !== "awaitingUserFeedback" &&
+                info.state !== "paused") {
+                throw new Error(`Previous session is not ready for a follow-up (state: ${info.state}).`);
+            }
+            ownsSession = true;
+            await session.unarchive();
+            await session.hydrate();
+            for await (const activity of session.history())
+                previousActivityIds.add(activity.id);
+            await session.send(`Review the current PR from scratch. Do not rely on earlier reviews or conclusions. The following prompt replaces all earlier review requests.\n\n${options.prompt}`);
+        }
+        else {
+            await waitUntilSessionReady(session);
+        }
+        const reviewMessage = await pollForReview(session, options.timeoutMinutes * 60 * 1000, previousActivityIds);
+        core_info(`Collected review (${reviewMessage.length} chars)`);
         if (!reviewMessage) {
             await archiveSession(session);
             return { kind: "timeout", sessionId: session.id };
@@ -45371,10 +45394,26 @@ async function runSession(options) {
             };
         }
         await archiveSession(session);
-        return { kind: "review", reviewResult, sessionId: session.id };
+        return {
+            kind: "review",
+            reviewResult,
+            sessionId: session.id,
+            ...(options.reusableSession
+                ? { sessionFollowups: options.reusableSession.followups + 1 }
+                : {}),
+        };
     }
     catch (err) {
-        await archiveSession(session);
+        // A busy or inaccessible candidate may still belong to another run.
+        if (ownsSession)
+            await archiveSession(session);
+        if (options.reusableSession) {
+            return {
+                kind: "creation_failed",
+                sessionId: "",
+                error: wrapJulesError(err) ?? err,
+            };
+        }
         throw err;
     }
 }
@@ -45384,7 +45423,7 @@ async function waitUntilSessionReady(session) {
     for (let i = 0; i < maxAttempts; i++) {
         try {
             await session.info();
-            info(`Session ${session.id} is ready after ${i + 1} attempt(s).`);
+            core_info(`Session ${session.id} is ready after ${i + 1} attempt(s).`);
             return;
         }
         catch (err) {
@@ -45395,14 +45434,14 @@ async function waitUntilSessionReady(session) {
             if (!msg.includes("404")) {
                 throw new Error(`Jules session.info() failed: ${msg}`, { cause: err });
             }
-            info(`Session not yet ready (attempt ${i + 1}/${maxAttempts})…`);
+            core_info(`Session not yet ready (attempt ${i + 1}/${maxAttempts})…`);
             await sleep(delay);
             delay = Math.min(delay * 1.5, 15000);
         }
     }
     throw new Error("Session did not become ready within timeout.");
 }
-async function pollForReview(session, timeoutMs) {
+async function pollForReview(session, timeoutMs, previousActivityIds) {
     const deadline = Date.now() + timeoutMs;
     let attempt = 0;
     while (Date.now() < deadline) {
@@ -45411,20 +45450,20 @@ async function pollForReview(session, timeoutMs) {
             await session.hydrate();
             let last = "";
             for await (const a of session.history()) {
-                if (a.type === "agentMessaged")
+                if (a.type === "agentMessaged" && !previousActivityIds.has(a.id))
                     last = a.message;
             }
             if (last) {
-                info(`Got agentMessaged on attempt ${attempt}.`);
+                core_info(`Got agentMessaged on attempt ${attempt}.`);
                 return last;
             }
-            info(`No agentMessaged yet (attempt ${attempt})…`);
+            core_info(`No agentMessaged yet (attempt ${attempt})…`);
         }
         catch (err) {
             const wrapped = wrapJulesError(err);
             if (wrapped)
                 throw wrapped;
-            info(`hydrate/history error (attempt ${attempt}): ${getErrorMessage(err)}`);
+            core_info(`hydrate/history error (attempt ${attempt}): ${getErrorMessage(err)}`);
         }
         await sleep(20_000);
     }
@@ -45450,7 +45489,7 @@ function authMessage(msg) {
 async function archiveSession(session) {
     try {
         await session.archive();
-        info(`Archived session ${session.id}.`);
+        core_info(`Archived session ${session.id}.`);
     }
     catch (err) {
         warning(`Failed to archive session ${session.id}: ${getErrorMessage(err)}`);
@@ -45609,15 +45648,20 @@ async function executeReview(apiKey, prNumber, pr, prepared, ownerRepo, baseSha,
                 ignoredPaths: config.ignoredPaths,
                 largePrCoverage,
             });
-            const agentic = await runAgenticReview(apiKey, agenticPrompt, { github: ownerRepo, baseBranch: pr.head.ref }, config.timeoutMinutes, prepared.changedFiles);
+            const agentic = await runAgenticReview(apiKey, config.reusableSession
+                ? `Before reviewing, refresh the repository checkout to the current PR head, not the previous review's checkout. Run git fetch origin ${baseSha} ${headSha}, then git checkout --detach ${headSha}. If either fails, report the failure; do not review the stale checkout.\n\n${agenticPrompt}`
+                : agenticPrompt, { github: ownerRepo, baseBranch: pr.head.ref }, config.timeoutMinutes, prepared.changedFiles, config.reusableSession);
             if (agentic) {
                 success = !agentic.reviewResult.unparseable;
                 if (agentic.reviewResult.changedFiles) {
-                    info(`Jules reported reviewing ${agentic.reviewResult.changedFiles.length} files: ${JSON.stringify(agentic.reviewResult.changedFiles)}`);
+                    core_info(`Jules reported reviewing ${agentic.reviewResult.changedFiles.length} files: ${JSON.stringify(agentic.reviewResult.changedFiles)}`);
                 }
                 return {
                     reviewResult: agentic.reviewResult,
                     sessionId: agentic.sessionId,
+                    ...(agentic.sessionFollowups !== undefined
+                        ? { sessionFollowups: agentic.sessionFollowups }
+                        : {}),
                 };
             }
         }
@@ -45629,14 +45673,20 @@ async function executeReview(apiKey, prNumber, pr, prepared, ownerRepo, baseSha,
             diffTruncatedNote: promptDiff.diffTruncatedNote,
             largePrCoverage: promptDiff.coverage,
         });
-        const promptResult = await runJulesReview(apiKey, prompt, { github: ownerRepo, baseBranch: pr.base.ref }, config.timeoutMinutes);
+        const promptResult = await runJulesReview(apiKey, prompt, { github: ownerRepo, baseBranch: pr.base.ref }, config.timeoutMinutes, config.diffMode === "prompt" ? config.reusableSession : undefined, config.diffMode === "agentic" && config.reusableSession ? 1 : 2);
         success =
             promptResult.reviewResult !== null &&
                 !promptResult.reviewResult.unparseable;
         return {
             reviewResult: promptResult.reviewResult,
             sessionId: promptResult.sessionId,
+            ...(promptResult.sessionFollowups !== undefined
+                ? { sessionFollowups: promptResult.sessionFollowups }
+                : {}),
             reviewCoverage: promptDiff.coverage,
+            ...(config.diffMode === "agentic"
+                ? { sessionMode: "prompt" }
+                : {}),
         };
     }
     finally {
@@ -45646,28 +45696,41 @@ async function executeReview(apiKey, prNumber, pr, prepared, ownerRepo, baseSha,
         });
     }
 }
-async function runJulesReview(apiKey, prompt, source, timeoutMinutes) {
+async function runJulesReview(apiKey, prompt, source, timeoutMinutes, reusableSession, maxAttempts = 2) {
     let firstSessionId = "";
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         const outcome = await runSession({
             apiKey,
             prompt,
             source,
             title: "Code Review",
             timeoutMinutes,
+            ...(attempt === 1 && reusableSession ? { reusableSession } : {}),
         });
         if (outcome.kind === "creation_failed") {
+            if (attempt === 1 &&
+                reusableSession &&
+                !(outcome.error instanceof QuotaExceededError) &&
+                !(outcome.error instanceof AuthError)) {
+                warning(`Session reuse failed; starting fresh: ${getErrorMessage(outcome.error)}`);
+                continue;
+            }
             throw outcome.error;
         }
         if (outcome.kind === "review") {
+            if (attempt === 1 && reusableSession && outcome.reviewResult.unparseable)
+                continue;
             return {
                 reviewResult: outcome.reviewResult,
                 sessionId: outcome.sessionId,
+                ...(outcome.sessionFollowups !== undefined
+                    ? { sessionFollowups: outcome.sessionFollowups }
+                    : {}),
             };
         }
-        if (attempt === 1) {
-            info(`Jules session ${outcome.sessionId} timed out. Retrying with a fresh session…`);
-            info(JSON.stringify({
+        if (attempt < maxAttempts) {
+            core_info(`Jules session ${outcome.sessionId} timed out. Retrying with a fresh session…`);
+            core_info(JSON.stringify({
                 event: "jules_retry",
                 failedSessionId: outcome.sessionId,
                 attempt: 1,
@@ -45675,36 +45738,46 @@ async function runJulesReview(apiKey, prompt, source, timeoutMinutes) {
             firstSessionId = outcome.sessionId;
         }
         else {
-            error(`Jules did not respond: session ${firstSessionId} and retry session ${outcome.sessionId} both timed out within ${timeoutMinutes} minutes each.`);
+            error(firstSessionId
+                ? `Jules did not respond: session ${firstSessionId} and retry session ${outcome.sessionId} both timed out within ${timeoutMinutes} minutes each.`
+                : `Jules session ${outcome.sessionId} timed out within ${timeoutMinutes} minutes.`);
             return { reviewResult: null, sessionId: outcome.sessionId };
         }
     }
     throw new Error("Unexpected: retry loop exhausted without returning");
 }
-async function runAgenticReview(apiKey, prompt, source, timeoutMinutes, actualChangedFiles) {
+async function runAgenticReview(apiKey, prompt, source, timeoutMinutes, actualChangedFiles, reusableSession) {
     const outcome = await runSession({
         apiKey,
         prompt,
         source,
         title: "Code Review (Agentic)",
         timeoutMinutes,
+        ...(reusableSession ? { reusableSession } : {}),
     });
     if (outcome.kind === "creation_failed") {
-        if (outcome.error instanceof QuotaExceededError) {
+        if (outcome.error instanceof QuotaExceededError ||
+            (reusableSession && outcome.error instanceof AuthError)) {
             // A prompt session would fail against the same exhausted quota.
             throw outcome.error;
         }
         const msg = getErrorMessage(outcome.error);
-        warning(`Agentic session creation failed: ${msg}`);
+        warning(`Agentic session ${reusableSession ? "reuse" : "creation"} failed: ${msg}`);
         logStructured("agentic_fallback", {
-            reason: "session_creation_failed",
+            reason: reusableSession
+                ? "session_reuse_failed"
+                : "session_creation_failed",
             error: msg,
         });
         return null;
     }
     if (outcome.kind === "timeout") {
-        info(`Agentic session ${outcome.sessionId} timed out.`);
+        core_info(`Agentic session ${outcome.sessionId} timed out.`);
         logStructured("agentic_fallback", { reason: "timeout" });
+        return null;
+    }
+    if (reusableSession && outcome.reviewResult.unparseable) {
+        logStructured("agentic_fallback", { reason: "reuse_parse_failed" });
         return null;
     }
     // Verification is informational: a mismatch must not discard a valid review.
@@ -45727,7 +45800,13 @@ async function runAgenticReview(apiKey, prompt, source, timeoutMinutes, actualCh
             actualCount: actualChangedFiles.length,
         });
     }
-    return { reviewResult: outcome.reviewResult, sessionId: outcome.sessionId };
+    return {
+        reviewResult: outcome.reviewResult,
+        sessionId: outcome.sessionId,
+        ...(outcome.sessionFollowups !== undefined
+            ? { sessionFollowups: outcome.sessionFollowups }
+            : {}),
+    };
 }
 
 ;// CONCATENATED MODULE: ./src/submission.ts
@@ -45977,7 +46056,10 @@ async function submitResults(octokit, owner, repo, prNumber, headSha, checkRunId
     const countsLine = reportedComments.length === 0
         ? "No findings reported."
         : `**Findings:** ${reportedComments.length} (${highCount} High, ${warningCount} Warning, ${infoCount} Info)`;
-    const finalBody = `${COMMENT_MARKER}\n## 🤖 Jules Review\n\n${summary}${coverageNote ? `\n\n${coverageNote}` : ""}\n\n${countsLine}\n\n---\n_Session: \`${sessionId}\`_`;
+    const sessionMarker = config.sessionReuse && !unparseable
+        ? `<!-- jules-session: ${sessionId} followups: ${config.sessionReuse.followups} mode: ${config.sessionReuse.mode} -->\n`
+        : "";
+    const finalBody = `${COMMENT_MARKER}\n${sessionMarker}## 🤖 Jules Review\n\n${summary}${coverageNote ? `\n\n${coverageNote}` : ""}\n\n${countsLine}\n\n---\n_Session: \`${sessionId}\`_`;
     const commentsForReview = reportedComments.map((c) => {
         const copy = { ...c };
         if (!config.enableSuggestions) {
@@ -46046,7 +46128,40 @@ async function submitResults(octokit, owner, repo, prNumber, headSha, checkRunId
             }
             : {}),
     });
-    info(`Verdict: ${verdict}. Check run conclusion: ${conclusion}.`);
+    core_info(`Verdict: ${verdict}. Check run conclusion: ${conclusion}.`);
+}
+
+;// CONCATENATED MODULE: ./src/sessionReuse.ts
+
+
+/** Only the authenticated review author's latest Jules review can select a session. */
+async function findReusableSession(octokit, owner, repo, prNumber, mode, maxFollowups) {
+    try {
+        const { viewer } = await octokit.graphql("query { viewer { login } }");
+        const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
+            owner,
+            repo,
+            pull_number: prNumber,
+            per_page: 100,
+        });
+        const latest = reviews
+            .filter((review) => review.user?.login === viewer.login &&
+            review.state !== "PENDING" &&
+            review.body?.startsWith("<!-- jules-pr-reviewer -->\n"))
+            .sort((a, b) => b.id - a.id)[0];
+        // The marker must precede model-generated text, which may itself contain markers.
+        const match = latest?.body?.match(/^<!-- jules-pr-reviewer -->\n<!-- jules-session: ([A-Za-z0-9_-]+) followups: (\d+) mode: (prompt|agentic) -->\n/);
+        if (!match || match[3] !== mode)
+            return undefined;
+        const followups = Number(match[2]);
+        if (!Number.isSafeInteger(followups) || followups >= maxFollowups)
+            return undefined;
+        return { sessionId: match[1], followups };
+    }
+    catch (err) {
+        warning(`Session reuse lookup failed; starting fresh: ${getErrorMessage(err)}`);
+        return undefined;
+    }
 }
 
 ;// CONCATENATED MODULE: ./src/config.ts
@@ -46145,12 +46260,26 @@ function loadConfig(io) {
             error: `Invalid block_on: "${blockOnRaw}". Must be one of: ${VALID_SEVERITY_GATES.join(", ")}.`,
         };
     }
+    const followupsRaw = io.getInput("session_reuse_max_followups") || "5";
+    const sessionReuseMaxFollowups = Number(followupsRaw);
+    if (!/^\d+$/.test(followupsRaw) ||
+        !Number.isSafeInteger(sessionReuseMaxFollowups)) {
+        return {
+            ok: false,
+            error: "Invalid session_reuse_max_followups: must be a non-negative safe integer.",
+        };
+    }
+    let sessionReuse;
     let skipDrafts;
     let skipForks;
     let enableSuggestions;
     let enableApprove;
     let dedupe;
     try {
+        sessionReuse =
+            io.getInput("session_reuse") === ""
+                ? false
+                : io.getBooleanInput("session_reuse");
         skipDrafts = io.getBooleanInput("skip_drafts");
         skipForks = io.getBooleanInput("skip_forks");
         enableSuggestions = io.getBooleanInput("enable_suggestions");
@@ -46164,6 +46293,8 @@ function loadConfig(io) {
         ok: true,
         config: {
             apiKey,
+            sessionReuse,
+            sessionReuseMaxFollowups,
             token,
             failOn: failOnRaw,
             strictness: strictnessRaw,
@@ -46205,6 +46336,7 @@ function loadConfig(io) {
 
 
 
+
 const SKIPPED_OUTPUTS = {
     verdict: "skipped",
     issues_count: 0,
@@ -46213,7 +46345,7 @@ const SKIPPED_OUTPUTS = {
     info_issues_count: 0,
 };
 function skipReview(message) {
-    info(message);
+    core_info(message);
     setReviewOutputs(SKIPPED_OUTPUTS);
 }
 function failWithConfigError(reason) {
@@ -46295,7 +46427,10 @@ async function run() {
             rulesFilePath: config.rulesFilePath,
             rulesDirectory: config.rulesDirectory,
         });
-        const { reviewResult, sessionId, reviewCoverage } = await executeReview(config.apiKey, prNumber, {
+        const reusableSession = config.sessionReuse
+            ? await findReusableSession(octokit, owner, repo, prNumber, config.diffMode, config.sessionReuseMaxFollowups)
+            : undefined;
+        const { reviewResult, sessionId, reviewCoverage, sessionFollowups, sessionMode, } = await executeReview(config.apiKey, prNumber, {
             title: pr.title,
             body: pr.body,
             head: pr.head,
@@ -46309,6 +46444,7 @@ async function run() {
             largePrThreshold: config.largePrThreshold,
             largePrStrategy: config.largePrStrategy,
             timeoutMinutes: config.timeoutMinutes,
+            ...(reusableSession ? { reusableSession } : {}),
         });
         if (!reviewResult) {
             await finalizeCheckRun(octokit, owner, repo, checkRunId, "failure", {
@@ -46331,6 +46467,14 @@ async function run() {
             blockOn: config.blockOn,
             failOn: config.failOn,
             statusContext: config.statusContext,
+            ...(config.sessionReuse
+                ? {
+                    sessionReuse: {
+                        mode: sessionMode ?? config.diffMode,
+                        followups: sessionFollowups ?? 0,
+                    },
+                }
+                : {}),
         }, reviewStartTime);
     }
     catch (err) {
